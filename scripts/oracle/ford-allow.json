@@ -1,0 +1,36 @@
+[
+  {
+    "reason": "FORD types a LOGICAL dummy function that is also declared EXTERNAL (LAPACK's SELECT and SELCTG) as real; the declaration says LOGICAL.",
+    "ids": [
+      "cgees.f|cgees|195|SELECT|type",
+      "cgeesx.f|cgeesx|236|SELECT|type",
+      "cgges.f|cgges|267|SELCTG|type",
+      "cgges3.f|cgges3|267|SELCTG|type",
+      "cggesx.f|cggesx|326|SELCTG|type",
+      "dgees.f|dgees|214|SELECT|type",
+      "dgeesx.f|dgeesx|278|SELECT|type",
+      "dgges.f|dgges|281|SELCTG|type",
+      "dgges3.f|dgges3|281|SELCTG|type",
+      "dggesx.f|dggesx|361|SELCTG|type",
+      "sgees.f|sgees|214|SELECT|type",
+      "sgeesx.f|sgeesx|278|SELECT|type",
+      "sgges.f|sgges|281|SELCTG|type",
+      "sgges3.f|sgges3|281|SELCTG|type",
+      "sggesx.f|sggesx|361|SELCTG|type",
+      "zgees.f|zgees|195|SELECT|type",
+      "zgeesx.f|zgeesx|236|SELECT|type",
+      "zgges.f|zgges|267|SELCTG|type",
+      "zgges3.f|zgges3|267|SELCTG|type",
+      "zggesx.f|zggesx|326|SELCTG|type"
+    ]
+  },
+  {
+    "reason": "FORD reads a per-entity character length (CHARACTER NAME*(*) in iparmq) as a dimension; NAME is an assumed-length scalar.",
+    "ids": [
+      "iparmq.f|iparmq|229|NAME|dims",
+      "iparmq.f|iparmq|229|NAME|len",
+      "iparmq.f|iparmq|229|OPTS|dims",
+      "iparmq.f|iparmq|229|OPTS|len"
+    ]
+  }
+]

@@ -1,0 +1,11 @@
+node_modules/
+*.tgz
+test/out/
+.DS_Store
+# the public test corpora, fetched by scripts/fetch-corpus.sh (some are GPL and must not be committed)
+.corpus/
+# local tool folders and caches
+.dev/
+.cache/
+# local preview servers, with this machine's paths
+.claude/launch.json

@@ -1,0 +1,75 @@
+{
+  "module:solver_kernels/interface:@1/procedure:matvec_iface": [
+    "self class(abstract_matrix) intent(in)",
+    "x real(dp) intent(in) dims(:)",
+    "y real(dp) intent(out) dims(:)"
+  ],
+  "module:solver_kernels/interface:solve_dense/procedure:solve_dense_real": [
+    "a real(dp) intent(inout) dims(:,:)",
+    "b real(dp) intent(inout) dims(:,:)",
+    "info integer intent(out) optional"
+  ],
+  "module:solver_kernels/interface:solve_dense/procedure:solve_dense_complex": [
+    "a complex(dp) intent(inout) dims(:,:)",
+    "b complex(dp) intent(inout) dims(:,:)",
+    "info integer intent(out) optional"
+  ],
+  "module:solver_kernels/interface:@2/procedure:matrix_free": [
+    "n integer(c_int) intent(in) value",
+    "x real(c_double) intent(in) dims(n)"
+  ],
+  "module:solver_kernels/procedure:matrix_order": [
+    "self class(abstract_matrix) intent(in)"
+  ],
+  "module:solver_kernels/procedure:write_matrix": [
+    "self class(abstract_matrix) intent(in)",
+    "unit integer intent(in)",
+    "iotype character(*) intent(in)",
+    "v_list integer intent(in) dims(:)",
+    "iostat integer intent(out)",
+    "iomsg character(*) intent(inout)"
+  ],
+  "module:solver_kernels/procedure:dense_matvec": [
+    "self class(dense_matrix) intent(in)",
+    "x real(dp) intent(in) dims(:)",
+    "y real(dp) intent(out) dims(:)"
+  ],
+  "module:solver_kernels/procedure:banded_matvec": [
+    "self class(banded_matrix(k=dp,kl=*,ku=*)) intent(in)",
+    "x real(dp) intent(in) dims(:)",
+    "y real(dp) intent(out) dims(:)"
+  ],
+  "module:solver_kernels/procedure:dense_finalize": [
+    "self type(dense_matrix) intent(inout)"
+  ],
+  "module:solver_kernels/procedure:add_dense": [
+    "a type(dense_matrix) intent(in)",
+    "b type(dense_matrix) intent(in)"
+  ],
+  "module:solver_kernels/procedure:assign_from_array": [
+    "lhs type(dense_matrix) intent(out)",
+    "rhs real(dp) intent(in) dims(:,:)"
+  ],
+  "module:solver_kernels/procedure:norm2_parallel": [
+    "x real(dp) intent(in) dims(:)",
+    "comm type(MPI_Comm) intent(in) if(defined(USE_MPI))"
+  ],
+  "module:solver_kernels/procedure:axpy_elem": [
+    "a real(dp) value",
+    "x real(dp) value",
+    "y real(dp) value"
+  ],
+  "module:solver_kernels/procedure:rank_sum": [
+    "x real(dp) intent(in) dims(..)",
+    "total real(dp) intent(out) codims[*]"
+  ],
+  "module:solver_kernels/procedure:concurrent_scale": [
+    "x real(dp) intent(inout) dims(:)",
+    "alpha real(dp) intent(in)"
+  ],
+  "submodule:solver_kernels:solver_kernels_lapack/procedure:solve_dense_real": [
+    "a real(dp) intent(inout) dims(:,:)",
+    "b real(dp) intent(inout) dims(:,:)",
+    "info integer intent(out) optional"
+  ]
+}

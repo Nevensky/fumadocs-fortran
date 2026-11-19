@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: If you use fumadocs-fortran in published work, please cite it as below.
+type: software
+title: "fumadocs-fortran: Fortran API reference for fumadocs"
+abstract: >-
+  Fortran API reference for fumadocs documentation sites, generated as MDX by its own parser. It reads FORD, Doxygen
+  and LAPACK doc comments and understands HPC code: OpenMP and OpenACC directives, MPI, coarrays, and calls into BLAS,
+  LAPACK and ScaLAPACK.
+authors:
+  - family-names: Golenić
+    given-names: Neven
+    website: https://github.com/Nevensky
+license: MIT
+repository-code: https://github.com/Nevensky/fumadocs-fortran
+url: https://nevensky.github.io/fumadocs-fortran/
+keywords:
+  - Fortran
+  - API documentation
+  - high-performance computing
+  - fumadocs
+  - MDX

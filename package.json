@@ -1,0 +1,60 @@
+{
+  "name": "fumadocs-fortran",
+  "version": "0.0.0",
+  "description": "Fortran API reference for fumadocs: its own parser, FORD, Doxygen and LAPACK doc comments, and HPC awareness (OpenMP, OpenACC, MPI, BLAS, LAPACK, ScaLAPACK)",
+  "keywords": [
+    "fumadocs",
+    "fortran",
+    "documentation",
+    "api-reference",
+    "ford",
+    "doxygen",
+    "lapack",
+    "openmp",
+    "mpi",
+    "hpc",
+    "mdx"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "Neven Golenić",
+    "url": "https://github.com/Nevensky"
+  },
+  "funding": "https://thanks.dev/u/gh/nevensky",
+  "homepage": "https://nevensky.github.io/fumadocs-fortran/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nevensky/fumadocs-fortran.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Nevensky/fumadocs-fortran/issues"
+  },
+  "type": "module",
+  "bin": {
+    "fumadocs-fortran": "bin/fumadocs-fortran.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "types",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./types/index.d.ts",
+  "scripts": {
+    "test": "node test/run.mjs",
+    "gate": "node scripts/gate.mjs",
+    "prepublishOnly": "node test/run.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

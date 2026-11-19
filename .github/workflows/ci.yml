@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # weekly, so that the pinned corpora and the oldest Node keep being exercised
+    - cron: '17 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # the oldest Node the package supports (engines), up to the current LTS
+        node: [18, 20, 22, 24, 26]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      # the package has no dependencies, so there is nothing to install
+      - run: npm test
+
+  gate:
+    name: Parser gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Fetch the pinned public corpora
+        run: scripts/fetch-corpus.sh
+      - name: Check the parser against them (gcc's cpp is the oracle for preprocessing)
+        run: node scripts/gate.mjs
+
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Lint the package (exports, files, types)
+        run: npx --yes publint@0.3 --strict
+      - name: Check the type declarations
+        run: |
+          npm install --no-save --no-package-lock typescript@5 @types/node@24
+          npx tsc --noEmit --strict --target es2022 --lib es2022 --module nodenext --moduleResolution nodenext --types node types/index.d.ts
+      - name: List what would be published
+        run: npm pack --dry-run
+      - name: Install the packed package in a new project and use it
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          mkdir "$RUNNER_TEMP/consumer" && cp test/fixtures/modern/modern_ford.F90 "$RUNNER_TEMP/consumer/" && cd "$RUNNER_TEMP/consumer"
+          npm init -y >/dev/null && npm pkg set type=module
+          npm install "$RUNNER_TEMP"/fumadocs-fortran-*.tgz
+          npx fumadocs-fortran dump --summary -DUSE_MPI modern_ford.F90
+          node --input-type=module -e "
+            const { extract, parseSource } = await import('fumadocs-fortran');
+            const ir = await extract({ sources: ['modern_ford.F90'], cpp: { macros: { USE_MPI: 1 } } });
+            const one = parseSource('subroutine s(n)\n integer, intent(in) :: n\nend subroutine\n');
+            const args = Object.values(ir.entities).reduce((n, e) => n + (e.args?.length ?? 0), 0);
+            if (args !== 41 || one.entities['procedure:s'].args[0].intent !== 'in') process.exit(1);
+            console.log('the packed package installs, imports and parses');
+          "
