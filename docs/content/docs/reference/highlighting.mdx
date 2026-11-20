@@ -1,0 +1,242 @@
+---
+title: Highlighting
+description: Shiki grammars for Fortran code blocks, with OpenMP, OpenACC and CUDA directives, fypp and code notations.
+---
+
+`fumadocs-fortran/shiki` holds Shiki grammars for Fortran, in free and fixed form, and two transformers for fumadocs'
+code blocks. Shiki's own Fortran grammars read a directive such as `!$omp parallel do` as a comment. These highlight
+it as a directive and mark its line, so that OpenMP, OpenACC and CUDA Fortran stand out in every theme. Every
+Fortran code block on this site uses them.
+
+```f90 title="smooth.F90"
+subroutine smooth(u, v, n)
+  integer, intent(in) :: n
+  real(dp), intent(in) :: u(n, n)
+  real(dp), intent(out) :: v(n, n)
+  integer :: i, j
+  !$ integer :: threads
+  !$ threads = omp_get_max_threads()
+#ifdef _OPENACC
+  !$acc parallel loop collapse(2) copyin(u) copyout(v)
+#else
+  !$omp parallel do private(i) schedule(static)
+#endif
+  do j = 2, n - 1
+    !dir$ ivdep
+    do i = 2, n - 1
+      v(i, j) = 0.25_dp * (u(i - 1, j) + u(i + 1, j) + u(i, j - 1) + u(i, j + 1))
+    end do
+  end do
+end subroutine smooth
+```
+
+The module is plain JavaScript and imports neither Shiki nor fumadocs, so it works with the versions the site has. It
+needs Node 18 or later, like the rest of the package.
+
+## What they highlight
+
+- **Free form**, as `fortran`, and under the ids `fortran-free-form`, `f90`, `f95`, `f03`, `f08`, `f18`, `f23`, `fpp`
+  and `fypp`. **Fixed form**, as `fortran-fixed`, and under `fortran-fixed-form`, `f`, `for`, `f77` and `ftn`. The ids
+  of Shiki's own grammars are among them, and Shiki resolves them first, so every Fortran fence uses these grammars,
+  whichever loads first.
+- **Directives**, in both forms (`!$omp` after blanks, or `c$omp` and `*$omp` in column 1 of fixed form): OpenMP 6.1
+  and the spellings of 5.2 and earlier, OpenACC 3.4, CUDA Fortran's `!$cuf kernel do`, conditional compilation (`!$`
+  and `!@cuf` lines), and the compiler directives `!dir$`, `!dec$`, `!gcc$`, `!ms$`, `!cdir$`, `!nec$`, `!pgi$` and
+  `!ibm*`. Directive names, clauses and modifiers each have a scope. A directive ends with its line, so an
+  unclosed parenthesis cannot colour the code after it.
+- **fypp**, in free form: `#:if`, `$:` and `@:` lines, and `${…}$`, `#{…}#` and `@{…}@`, also in strings and
+  comments.
+- **Fortran 2018 and 2023**: enumeration types, `typeof` and `classof`, `simple` procedures, conditional expressions,
+  the locality of `do concurrent`, `change team` and `notify wait`.
+- **Doc comments** (`!!`, `!>` and `!<`, and `*>` in fixed form) have a scope of their own, which themes can colour.
+- **Fixed-form columns**: text after column 72 is a comment, as compilers ignore it, such as the sequence numbers of
+  old card decks.
+
+```f77 title="dscal.f"
+      SUBROUTINE DSCAL(N, DA, DX)                                       DSCA0010
+      INTEGER N, I                                                      DSCA0020
+      DOUBLE PRECISION DA, DX(*)                                        DSCA0030
+C$OMP PARALLEL DO                                                       DSCA0040
+      DO 10 I = 1, N                                                    DSCA0050
+         DX(I) = DA*DX(I)                                               DSCA0060
+   10 CONTINUE                                                          DSCA0070
+      END                                                               DSCA0080
+```
+
+Code that the grammars do not know stays plain and never takes an error colour. They are made from the grammars of
+fortran-lang's VS Code extension, as tm-grammars publishes them (MIT), with patches; `shiki/NOTICE` in the package
+carries both notices.
+
+## Set up
+
+Give fumadocs' `rehypeCode` the grammars and the transformers with `fortranRehypeCode()`, in the MDX options:
+
+```ts title="lib/source.ts"
+import { defineDocs } from 'fumadocs-mdx/macro';
+import { applyMdxPreset } from 'fumadocs-mdx/config';
+import { rehypeCodeDefaultOptions } from 'fumadocs-core/mdx-plugins';
+import { fortranRehypeCode } from 'fumadocs-fortran/shiki';
+
+const docs = defineDocs({
+  dir: 'content/docs',
+  docs: {
+    mdxOptions: applyMdxPreset({
+      rehypeCodeOptions: fortranRehypeCode(rehypeCodeDefaultOptions),
+    }),
+  },
+});
+```
+
+A site with a `source.config.ts` sets the same option there:
+
+```ts title="source.config.ts"
+import { defineConfig } from 'fumadocs-mdx/config';
+import { rehypeCodeDefaultOptions } from 'fumadocs-core/mdx-plugins';
+import { fortranRehypeCode } from 'fumadocs-fortran/shiki';
+
+export default defineConfig({
+  mdxOptions: {
+    rehypeCodeOptions: fortranRehypeCode(rehypeCodeDefaultOptions),
+  },
+});
+```
+
+`fortranRehypeCode(base)` returns `base` with the grammars added to its `langs` and the two transformers to its
+`transformers`. Pass `rehypeCodeDefaultOptions`, or the site's own options, as `base`: `rehypeCode` replaces its
+default transformers with the ones it is given, so a base without them would lose fumadocs' notations in other
+languages. Do not add a `langAlias` for Fortran, which makes fumadocs create a second highlighter.
+
+The line tints come from `fumadocs-fortran/style.css`, which a site with the generated pages already imports (see
+[Components](/docs/reference/components#set-up)). This site does both, in
+[`lib/source.ts`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/lib/source.ts) and
+[`app/layout.tsx`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/app/layout.tsx).
+
+With Shiki alone, load the grammars as a set, since the fixed-form grammar includes the free-form one and the
+directives come in through both:
+
+```ts
+import { createHighlighter } from 'shiki';
+import { fortranLanguages, transformerFortranDirectives, transformerFortranNotation } from 'fumadocs-fortran/shiki';
+
+const highlighter = await createHighlighter({ langs: fortranLanguages, themes: ['github-light', 'github-dark'] });
+const html = highlighter.codeToHtml(code, {
+  lang: 'f90',
+  themes: { light: 'github-light', dark: 'github-dark' },
+  transformers: [transformerFortranNotation(), transformerFortranDirectives()],
+});
+```
+
+## Options
+
+`getFortranLanguages(options)` returns the grammars with other options, and `fortranRehypeCode(base, options)` passes
+them on. `fortranLanguages` holds the grammars with the defaults.
+
+<TypeTable
+  type={{
+    fixedLineLength: {
+      type: 'number | false',
+      default: '72',
+      description:
+        'The last column of a fixed-form line: text after it is a comment, as compilers ignore it. 132 suits codes compiled with -ffixed-line-length-132; false sets no limit.',
+    },
+    directives: {
+      type: 'boolean',
+      default: 'true',
+      description:
+        "Highlight OpenMP, OpenACC, CUDA Fortran and compiler directives, and !$ lines. With false they read as comments, as in Shiki's own grammars.",
+    },
+    fypp: {
+      type: 'boolean',
+      default: 'true',
+      description: "Highlight fypp's directive lines and its inline ${…}$, #{…}# and @{…}@ forms, in free form.",
+    },
+  }}
+/>
+
+```ts
+fortranRehypeCode(rehypeCodeDefaultOptions, { fixedLineLength: 132, fypp: false });
+```
+
+## Directive lines
+
+`transformerFortranDirectives()` gives each directive line the class `fdf-directive`, the class of its model's colour,
+and a `data-directive` attribute:
+
+| Line | Classes | `data-directive` |
+| --- | --- | --- |
+| `!$omp`, `!$ompx`, `c$omp` | `fdf-directive fdf-kind-omp` | `openmp` |
+| `!$acc`, `c$acc` | `fdf-directive fdf-kind-acc` | `openacc` |
+| `!$cuf` | `fdf-directive fdf-kind-cuda` | `cuf` |
+| `!$` (conditional compilation) | `fdf-directive fdf-kind-omp` | `conditional` |
+| `!@cuf` (conditional compilation) | `fdf-directive fdf-kind-cuda` | `conditional` |
+| `!dir$`, `cdir$` and the other compiler directives | `fdf-directive` | `compiler` |
+
+`fumadocs-fortran/style.css` tints these lines and draws a bar at their start, in the OpenMP, OpenACC and CUDA colours
+of the badges, and in the cpp colour for compiler directives:
+
+```css
+.fdf-directive {
+  background-color: color-mix(in oklab, var(--fdf-c, var(--fdf-cpp)) 8%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in oklab, var(--fdf-c, var(--fdf-cpp)) 70%, transparent);
+}
+```
+
+The colours are the variables `--fdf-omp`, `--fdf-acc`, `--fdf-cuda` and `--fdf-cpp`, which a site can change (see
+[Styling](/docs/reference/components#styling)). fumadocs' highlighted and diff lines are more specific, so a directive
+line marked with a notation takes their colours. For a style of its own, a site can select the lines by
+`data-directive`, or give them another class with `transformerFortranDirectives({ className: 'my-directive' })`.
+
+## Code notations
+
+fumadocs' notations work in Fortran comments: `[!code highlight]`, `[!code focus]`, `[!code ++]`, `[!code --]` and
+`[!code word:name]`, each with an optional `:n` for the number of lines. They go after a `!`, or in a `C`, `c` or `*`
+comment line in fixed form. A notation alone on a comment line applies to the next line, and the comment is removed.
+`transformerFortranNotation()` reads them, since Shiki's notation transformers do not know `!` comments.
+
+<Tabs items={['Preview', 'MDX']}>
+<Tab value="Preview">
+
+```f90 title="saxpy.f90"
+subroutine saxpy(n, a, x, y)
+  integer, intent(in) :: n
+  real, intent(in) :: a, x(n)
+  real, intent(inout) :: y(n)
+  integer :: i
+  ! [!code --]
+  !$omp parallel do
+  ! [!code ++]
+  !$omp target teams distribute parallel do map(to: x) map(tofrom: y)
+  do i = 1, n
+    y(i) = y(i) + a * x(i) ! [!code highlight]
+  end do
+end subroutine saxpy
+```
+
+</Tab>
+<Tab value="MDX">
+
+````mdx
+```f90 title="saxpy.f90"
+subroutine saxpy(n, a, x, y)
+  integer, intent(in) :: n
+  real, intent(in) :: a, x(n)
+  real, intent(inout) :: y(n)
+  integer :: i
+  ! [!code --]
+  !$omp parallel do
+  ! [!code ++]
+  !$omp target teams distribute parallel do map(to: x) map(tofrom: y)
+  do i = 1, n
+    y(i) = y(i) + a * x(i) ! [!code highlight]
+  end do
+end subroutine saxpy
+```
+````
+
+</Tab>
+</Tabs>
+
+## The generated pages
+
+`fumadocs-fortran generate` writes signatures in `f90` and `f77` fences. These are ids of Shiki's own grammars, so the
+pages build on a site without `fumadocs-fortran/shiki`; with it, they use these grammars.

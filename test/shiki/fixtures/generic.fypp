@@ -1,0 +1,27 @@
+#:include "common.fypp"
+#:set RC_KINDS_TYPES = REAL_KINDS_TYPES + CMPLX_KINDS_TYPES
+#! a fypp comment, removed from the output
+module stdlib_linalg_diag
+  implicit none
+  interface diag
+  #:for k1, t1 in RC_KINDS_TYPES
+    module function diag_${t1[0]}$${k1}$(v) result(res)
+      ${t1}$, intent(in) :: v(:)
+      ${t1}$ :: res(size(v),size(v))
+    end function diag_${t1[0]}$${k1}$
+  #:endfor
+  end interface
+contains
+  #:if defined('WITH_QP') and &
+      & WITH_QP
+  $:"! quadruple precision"
+  #:endif
+  @:assert(size(v) > 0)
+  subroutine s(x)
+    real(${k}$) :: x ! kind ${k}$ in a comment
+    print *, 'kind ${k}$ in a string'
+    x = @{maxval(x)}@ + #{if DEBUG}#1#{else}#0#{endif}#
+    y = ${broken
+    !$omp parallel do private(${var}$)
+  end subroutine s
+end module stdlib_linalg_diag

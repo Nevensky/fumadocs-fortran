@@ -1,9 +1,9 @@
 # fumadocs-fortran: the plan
 
-Adopted on 19 November 2026, with every decision taken as recommended. Milestone M0 is done and v0.1 is under way; the
-[CHANGELOG](CHANGELOG.md) says what exists. The plan rests on eight research reports, Docker experiments on public
-Fortran code, and three independent design proposals compared on risk, maintainability and user value
-([§17](#17-evidence)).
+Adopted on 19 November 2026, with every decision taken as recommended. Milestone M0 is done, v0.1 is under way, and
+the Shiki grammars (v0.2) and the HPC registry (the first part of v0.3) are built; the [CHANGELOG](CHANGELOG.md) says
+what exists. The plan rests on eight research reports, Docker experiments on public Fortran code, and three
+independent design proposals compared on risk, maintainability and user value ([§17](#17-evidence)).
 
 ## In one paragraph
 

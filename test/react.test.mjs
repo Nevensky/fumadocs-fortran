@@ -606,6 +606,13 @@ export default async function ({ ok, eq }) {
       h(FortranGraph, { title: 'g' }, 'd'), h(FortranGraph, { title: 'g', collapsed: true }, 'd'),
       ...fortranToc(toc, kinds).map((item) => item.title)));
     const drawn = new Set([...gallery.matchAll(/class="([^"]*)"/g)].flatMap((m) => m[1].split(' ')).filter((c) => c.startsWith('fdf-')));
+    // directive lines in code blocks are drawn by transformerFortranDirectives (./shiki), with the line classes it adds
+    const { transformerFortranDirectives } = await import('../shiki/index.js');
+    for (const source of ['!$omp parallel', '!$acc kernels', '!$cuf kernel do', '!dir$ ivdep']) {
+      const addClassToHast = (node, cls) => [cls].flat().forEach((c) => drawn.add(c));
+      const code = { children: [{ type: 'element', tagName: 'span', properties: {}, children: [] }] };
+      transformerFortranDirectives().code.call({ options: { lang: 'fortran' }, source, addClassToHast }, code);
+    }
     const styled = new Set(rules.flatMap(([sels]) => sels.flatMap((s) => [...s.matchAll(/\.(fdf-[\w-]+)/g)].map((m) => m[1]))));
     const hook = (c) => c === 'fdf-arg-conditional' || c === 'fdf-intent-arrow' || (c.startsWith('fdf-kind-') && !HPC.includes(c.slice(9)));
     eq([...drawn].filter((c) => !styled.has(c) && !hook(c)), [], 'every class the components draw is styled, apart from the hooks');

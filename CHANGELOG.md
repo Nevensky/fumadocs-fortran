@@ -4,7 +4,38 @@ All notable changes to fumadocs-fortran are listed here. The project follows [se
 
 ## Unreleased
 
-Milestone M0, the parser and its gate, and the first parts of v0.1.
+Milestone M0, the parser and its gate; the first parts of v0.1; the Shiki grammars of v0.2; and the HPC registry, the
+first part of v0.3.
+
+- **Shiki grammars (v0.2).** `fumadocs-fortran/shiki` highlights Fortran code blocks in free and fixed form. Where
+  Shiki's own grammars read directives as comments, these highlight OpenMP 6.1 (and the spellings of 5.2 and
+  earlier), OpenACC 3.4, CUDA Fortran and compiler directives, and `!$` lines, with their names, clauses and
+  modifiers. They also cover fypp, Fortran 2018 and 2023 constructs, doc comments and the column limit of fixed form
+  (72, 132 or none), and give nothing an error colour. They carry the ids of Shiki's Fortran grammars (`f90`,
+  `f77`, `fortran-free-form` and the rest) as aliases, so every Fortran fence uses them in whichever order the
+  grammars load. `fortranRehypeCode()` adds them to fumadocs' `rehypeCode` with two transformers: one marks directive
+  lines, which `style.css` tints in the colours of the badges, and one makes fumadocs' `[!code …]` notations work in
+  `!` comments. `scripts/build-grammars.mjs` builds them from tm-grammars 1.32.22 (MIT), checking every upstream rule
+  it patches. `npm run test:shiki` checks scope snapshots on both of Shiki's regex engines, load orders in Shiki and
+  through fumadocs-core 16.19, the transformers, and the cost of the directives and fypp: under 10% more tokenising
+  time on Shiki's JavaScript engine and 15–20% on Oniguruma, within a budget of 25%. The documentation site uses them,
+  and its Highlighting page describes them.
+- **HPC registry (v0.3, first part).** `registry/` holds the build-time data of the HPC layer: 4,568 entries, and 533
+  more of vendor data, in 1.12 MB (0.22 MB gzipped). It covers BLAS and LAPACK 3.12.1 (2,265 routines in 584
+  precision families, taken from `\ingroup`), ScaLAPACK 2.2.2 with its tools, PBLAS, REDIST and BLACS (1,009), the
+  MPI 5.0 procedures callable from Fortran with their callbacks (463, with MPI 4.1 as an alias), OpenMP 6.1, 6.0 and
+  5.2 (466 directives, clauses, routines, environment variables, kinds and constants), OpenACC 3.4 (147), the Fortran
+  intrinsics (218), and oneMKL's lapack95 and blas95 names, OpenBLAS and cuBLAS. Entries carry their arguments
+  (name, intent and type), summaries, hint tags (LWORK = -1 workspace queries, leading dimensions, INFO, array
+  descriptors, MPI collectives and nonblocking calls) and what the link providers need: Netlib, oneMKL, Open MPI,
+  MPICH, the MPI standard, the OpenMP and OpenACC specifications, fortran-lang.org and gfortran.
+  `scripts/registry/*.mjs` build it in Docker from pinned upstream sources (`npm run registry`): every download is
+  checked against its SHA-256, and a `--frozen` build from an empty cache reproduces the files byte for byte.
+  `registry/SOURCES.md` lists the sources with their versions, licences and URLs, and `registry/NOTICE` their licence
+  texts. Only names, page numbers and fragment IDs come from the specifications and the GCC manuals; the OpenMP,
+  OpenACC, BLACS and vendor one-liners are our own. `npm run test:registry` checks the counts, the size, known
+  entries, links, sources and notices on every Node version CI runs. The package ships it; resolution, links, hints
+  and hover cards, which will use it, come next.
 
 - **Doc comments.** The engine reads each entity's comments in the style they were written in: FORD (Markdown,
   metadata lines, `@note`…`@endnote`, `[[links]]`, `\( \)` maths), Doxygen (`\brief`, `\param[in]`, `\return`,

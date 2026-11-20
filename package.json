@@ -40,6 +40,8 @@
     "bin",
     "src",
     "react",
+    "registry",
+    "shiki",
     "types",
     "style.css",
     "README.md",
@@ -59,14 +61,23 @@
       "types": "./types/math.d.ts",
       "default": "./src/docs/math.js"
     },
+    "./shiki": {
+      "types": "./types/shiki.d.ts",
+      "default": "./shiki/index.js"
+    },
+    "./shiki/*.json": "./shiki/*.json",
     "./style.css": "./style.css",
     "./package.json": "./package.json"
   },
   "types": "./types/index.d.ts",
   "scripts": {
     "test": "node test/run.mjs",
+    "test:registry": "node test/registry/check.mjs",
+    "test:shiki": "node test/shiki/run.mjs",
     "gate": "node scripts/gate.mjs",
-    "prepublishOnly": "node test/run.mjs"
+    "registry": "node scripts/registry/build.mjs",
+    "build:grammars": "node scripts/build-grammars.mjs",
+    "prepublishOnly": "node test/run.mjs && node test/registry/check.mjs"
   },
   "peerDependencies": {
     "react": ">=18"

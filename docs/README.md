@@ -18,6 +18,9 @@ scripts/docs.sh stop    # stops a dev server started elsewhere
 
 With Node 22.22 or later, `npm install` and `npm run dev` or `npm run build` here work too.
 
+Restart the dev server after a change to the `exports` of the package's own `package.json`: Node reads a package's
+`package.json` once per process, so a new export does not resolve until then, and the pages that import it fail.
+
 ## Content
 
 - `content/docs/` holds the pages; each folder's `meta.json` orders the sidebar.
@@ -26,9 +29,10 @@ With Node 22.22 or later, `npm install` and `npm run dev` or `npm run build` her
 - `content/docs/reference/components.mdx` shows every component of `fumadocs-fortran/react` live, so a build checks
   that they all render.
 - The site registers fumadocs-fortran's components, as `fortranMdxComponents` from `components/mdx/fortran.tsx`,
-  and fumadocs-ui's Tabs, Steps, TypeTable, Accordions and Files for MDX in `components/mdx.tsx`, adds remark-math
-  and rehype-katex in `lib/source.ts`, and imports KaTeX's stylesheet and `fumadocs-fortran/style.css` in
-  `app/layout.tsx`, before `global.css`, so that `global.css` can override their variables.
+  and fumadocs-ui's Tabs, Steps, TypeTable, Accordions and Files for MDX in `components/mdx.tsx`, adds remark-math,
+  rehype-katex and the Fortran grammars of `fumadocs-fortran/shiki` in `lib/source.ts`, and imports KaTeX's
+  stylesheet and `fumadocs-fortran/style.css` in `app/layout.tsx`, before `global.css`, so that `global.css` can
+  override their variables.
 - The graphs are ```` ```mermaid ```` blocks, which `remarkMdxMermaid` (in `lib/source.ts`) hands to
   `components/mdx/mermaid.tsx`; it draws them as SVG at build time with [Pele](https://github.com/obsidianmd/pele),
   and shows a diagram Pele cannot parse as its code. `fumadocs-fortran/style.css` maps Pele's colours to fumadocs'

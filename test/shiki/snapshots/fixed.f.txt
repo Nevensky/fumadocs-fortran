@@ -1,0 +1,24 @@
+1: *>⟨punctuation.definition.comment.documentation.fortran⟩ \brief SAXPY computes y := a*x + y.⟨comment.line.documentation.fortran⟩
+2: C>⟨punctuation.definition.comment.documentation.fortran⟩ More documentation.⟨comment.line.documentation.fortran⟩
+3: C⟨comment.line.fortran⟩ A plain comment.⟨comment.line.fortran⟩
+4: c⟨comment.line.fortran⟩ Another plain comment.⟨comment.line.fortran⟩
+5: SUBROUTINE⟨keyword.other.subroutine.fortran⟩ SAXPY⟨entity.name.function.subroutine.fortran⟩ (⟨punctuation.definition.parameters.begin.fortran⟩ N⟨variable.parameter.fortran⟩ ,⟨meta.dummy-variable-list⟩ A⟨variable.parameter.fortran⟩ ,⟨meta.dummy-variable-list⟩ X⟨variable.parameter.fortran⟩ ,⟨meta.dummy-variable-list⟩ Y⟨variable.parameter.fortran⟩ )⟨punctuation.definition.parameters.end.fortran⟩
+6: INTEGER⟨storage.type.integer.fortran⟩ N⟨meta.parameter.fortran⟩ ,⟨meta.name-list.fortran⟩ I⟨meta.parameter.fortran⟩
+7: REAL⟨storage.type.real.fortran⟩ A⟨meta.parameter.fortran⟩ ,⟨meta.name-list.fortran⟩ X⟨meta.parameter.fortran⟩ (⟨punctuation.parentheses.left.fortran⟩ N⟨meta.parameter.fortran⟩ )⟨punctuation.parentheses.right.fortran⟩ ,⟨meta.name-list.fortran⟩ Y⟨meta.parameter.fortran⟩ (⟨punctuation.parentheses.left.fortran⟩ N⟨meta.parameter.fortran⟩ )⟨punctuation.parentheses.right.fortran⟩
+8: C$OMP⟨keyword.control.directive.openmp.fortran⟩ PARALLEL DO⟨keyword.other.directive.openmp.fortran⟩ PRIVATE⟨entity.other.attribute-name.clause.openmp.fortran⟩ (⟨punctuation.parentheses.left.fortran⟩ I⟨meta.directive.openmp.fortran⟩ )⟨punctuation.parentheses.right.fortran⟩
+9: *$OMP⟨keyword.control.directive.openmp.fortran⟩ &⟨keyword.operator.line-continuation.fortran⟩ SHARED⟨entity.other.attribute-name.clause.openmp.fortran⟩ (⟨punctuation.parentheses.left.fortran⟩ X,Y⟨meta.directive.openmp.fortran⟩ )⟨punctuation.parentheses.right.fortran⟩
+10: !$OMP⟨keyword.control.directive.openmp.fortran⟩ &⟨keyword.operator.line-continuation.fortran⟩ SCHEDULE⟨entity.other.attribute-name.clause.openmp.fortran⟩ (⟨punctuation.parentheses.left.fortran⟩ STATIC⟨keyword.other.modifier.openmp.fortran⟩ )⟨punctuation.parentheses.right.fortran⟩
+11: DO⟨keyword.control.do.fortran⟩ 10⟨constant.numeric.fortran⟩ I⟨meta.parameter.fortran⟩ =⟨keyword.operator.assignment.fortran⟩ 1⟨constant.numeric.fortran⟩ ,⟨meta.do.labeled.fortran⟩ N⟨meta.parameter.fortran⟩
+12: Y⟨meta.parameter.fortran⟩ (⟨punctuation.parentheses.left.fortran⟩ I⟨meta.parameter.fortran⟩ )⟨punctuation.parentheses.right.fortran⟩ =⟨keyword.operator.assignment.fortran⟩ A⟨meta.parameter.fortran⟩ *⟨keyword.operator.multiplication.fortran⟩ X⟨meta.parameter.fortran⟩ (⟨punctuation.parentheses.left.fortran⟩ I⟨meta.parameter.fortran⟩ )⟨punctuation.parentheses.right.fortran⟩ +⟨keyword.operator.addition.fortran⟩ Y⟨meta.parameter.fortran⟩ (⟨punctuation.parentheses.left.fortran⟩ I⟨meta.parameter.fortran⟩ )⟨punctuation.parentheses.right.fortran⟩ SEQ00010⟨comment.line-end.fortran⟩
+13: 10⟨constant.numeric.fortran⟩ CONTINUE⟨keyword.control.continue.fortran⟩
+14: C$OMP⟨keyword.control.directive.openmp.fortran⟩ END PARALLEL DO⟨keyword.other.directive.openmp.fortran⟩
+15: c$acc⟨keyword.control.directive.openacc.fortran⟩ kernels⟨keyword.other.directive.openacc.fortran⟩
+16: C$⟨keyword.control.directive.conditional.fortran⟩ CALL⟨keyword.control.call.fortran⟩ OMP_SET_NUM_THREADS⟨entity.name.function.subroutine.fortran⟩ (⟨punctuation.parentheses.left.fortran⟩ 4⟨constant.numeric.fortran⟩ )⟨punctuation.parentheses.right.fortran⟩
+17: D⟨comment.line.debug.fortran⟩ PRINT *, 'debug'⟨comment.line.debug.fortran⟩
+18: X⟨meta.parameter.fortran⟩ =⟨keyword.operator.assignment.fortran⟩ A⟨meta.parameter.fortran⟩ +⟨keyword.operator.addition.fortran⟩ B⟨meta.parameter.fortran⟩ 1234567890 TRAILING⟨comment.line-end.fortran⟩
+19: &⟨keyword.line-continuation-operator.fortran⟩ +⟨keyword.operator.addition.fortran⟩ C⟨meta.parameter.fortran⟩
+20: CALL⟨keyword.control.call.fortran⟩ DAXPY⟨entity.name.function.subroutine.fortran⟩ (⟨punctuation.parentheses.left.fortran⟩ N⟨meta.parameter.fortran⟩ ,⟨meta.statement.control.call.fortran⟩ A⟨meta.parameter.fortran⟩ ,⟨meta.statement.control.call.fortran⟩ X⟨meta.parameter.fortran⟩ ,⟨meta.statement.control.call.fortran⟩ 1⟨constant.numeric.fortran⟩ ,⟨meta.statement.control.call.fortran⟩ Y⟨meta.parameter.fortran⟩ ,⟨meta.statement.control.call.fortran⟩ 1⟨constant.numeric.fortran⟩ )⟨punctuation.parentheses.right.fortran⟩ !⟨comment.line.fortran⟩ trailing comment⟨comment.line.fortran⟩
+21: PRINT⟨keyword.control.print.fortran⟩ *⟨keyword.operator.multiplication.fortran⟩ ,⟨meta.block.specification.subroutine.fortran⟩ '⟨punctuation.definition.string.begin.fortran⟩ A STRING THAT IS LONG ENOUGH TO RUN PAST COLUMN 72 OF TH⟨string.quoted.single.fortran⟩ E CARD'⟨comment.line-end.fortran⟩
+22: CDIR$⟨keyword.control.directive.compiler.fortran⟩ IVDEP⟨keyword.other.directive.compiler.fortran⟩
+23: END⟨keyword.other.endsubroutine.fortran⟩
+24:
