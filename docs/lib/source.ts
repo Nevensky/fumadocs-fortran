@@ -5,9 +5,11 @@ import { basePath, docsRoute } from './shared';
 import { defineDocs } from 'fumadocs-mdx/macro';
 import { applyMdxPreset } from 'fumadocs-mdx/config';
 import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
+import { rehypeCodeDefaultOptions } from 'fumadocs-core/mdx-plugins';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { katexMacros } from 'fumadocs-fortran/math';
+import { fortranRehypeCode } from 'fumadocs-fortran/shiki';
 
 // the commands Fortran docs write that KaTeX lacks (the physics package, \mathbbm, \vv, …); a copy, as KaTeX adds
 // a page's \gdef to the object it is given
@@ -21,6 +23,10 @@ const docs = defineDocs({
     mdxOptions: applyMdxPreset({
       remarkPlugins: [remarkMath],
       rehypePlugins: (defaults) => [katex, ...defaults],
+      // Fortran code blocks with the package's grammars: OpenMP, OpenACC and other directive lines are highlighted
+      // and marked, and fumadocs' [!code …] notations work in ! comments. fumadocs' own options are the base, since
+      // rehypeCode replaces its default transformers with the ones it is given.
+      rehypeCodeOptions: fortranRehypeCode(rehypeCodeDefaultOptions),
     }),
     schema: pageSchema,
     postprocess: {

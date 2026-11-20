@@ -67,6 +67,26 @@ const one = parseSource('subroutine hello(n)\n  integer, intent(in) :: n\nend su
 
 It needs Node 18 or later.
 
+## Highlighting Fortran code blocks
+
+`fumadocs-fortran/shiki` has Shiki grammars for Fortran, in free and fixed form. Unlike Shiki's own, they highlight
+OpenMP, OpenACC, CUDA Fortran and compiler directives rather than reading them as comments, and fypp too. Give them
+to fumadocs' `rehypeCode` with fumadocs' default options as the base:
+
+```ts
+import { rehypeCodeDefaultOptions } from 'fumadocs-core/mdx-plugins';
+import { fortranRehypeCode } from 'fumadocs-fortran/shiki';
+
+// in defineDocs: docs.mdxOptions
+applyMdxPreset({
+  rehypeCodeOptions: fortranRehypeCode(rehypeCodeDefaultOptions),
+});
+```
+
+Every Fortran fence then uses them (`fortran`, `f90`, `f77` and Shiki's other Fortran ids), directive lines are tinted
+by `fumadocs-fortran/style.css`, and fumadocs' `[!code highlight]` notations work in `!` comments. With Shiki alone,
+load `fortranLanguages` and add the transformers `transformerFortranDirectives()` and `transformerFortranNotation()`.
+
 ## Development
 
 The scripts run in Docker, so the machine needs no Node: `scripts/dev.sh` runs a command in a `node:24-bookworm`
@@ -88,6 +108,10 @@ scripts/dev.sh node scripts/gate.mjs
 ScaLAPACK, json-fortran, Quantum ESPRESSO, stdlib, Wannier90 and miniWeather, and they are never committed.
 `gate.mjs` then checks the parser against them.
 
+`scripts/build-grammars.mjs` builds the Shiki grammars in `shiki/` from tm-grammars, and `npm run test:shiki` tests
+them with Shiki (and through fumadocs-core, when it is installed). These tools are not dependencies of the package:
+install the versions that `.github/workflows/ci.yml` installs, with `npm install --no-save`.
+
 Two further checks run on demand:
 - `scripts/oracle/ford.sh` runs FORD 7.0.13 in Docker, and `scripts/oracle/compare-ford.mjs` compares every dummy
   argument with FORD's, field by field. The FORD script is GPL-3.0-or-later, like FORD, and is not part of the
@@ -96,4 +120,8 @@ Two further checks run on demand:
 
 ## Licence
 
-MIT. Test corpora keep their own licences and are only fetched, never committed or shipped.
+MIT. The package also ships material from other projects under their own licences: the HPC registry draws on
+Reference-LAPACK, ScaLAPACK, Open MPI, LLVM and others (BSD-style licences, MIT, Apache-2.0 with the LLVM
+exception), and the code-block grammars on vscode-fortran-support (MIT). Their notices are in `registry/NOTICE` and
+`shiki/NOTICE`.
+Test corpora keep their own licences and are only fetched, never committed or shipped.

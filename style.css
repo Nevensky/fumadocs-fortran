@@ -1,5 +1,6 @@
-/* fumadocs-fortran: badges, argument lists and source lines on generated Fortran pages. Plain CSS on fumadocs'
-   --color-fd-* variables: no Tailwind setup, and light and dark follow the site's theme (.dark on <html>). */
+/* fumadocs-fortran: badges, argument lists and source lines on generated Fortran pages, and directive lines in Fortran
+   code blocks. Plain CSS on fumadocs' --color-fd-* variables: no Tailwind setup, and light and dark follow the site's
+   theme (.dark on <html>). */
 
 /* Library and intent colours, a mid tone each. Text mixes the tone with black (light) or white (dark), so one value
    serves both themes; set any of them on :root to change it. The defaults sit in :where(), which has no specificity,
@@ -242,4 +243,14 @@
   outline: 2px solid var(--color-fd-ring, currentColor);
   outline-offset: 2px;
   border-radius: 0.25rem;
+}
+
+/* ---- code blocks: directive lines (transformerFortranDirectives in fumadocs-fortran/shiki) ---- */
+
+/* A tint and a bar at the start of the line, in the tone of its model (.fdf-kind-omp, -acc or -cuda on the line), or
+   in the cpp tone for compiler directives (!dir$ and its kin), which have none. fumadocs-ui's highlighted and diff
+   lines are more specific, so a directive line marked with [!code highlight] or [!code ++] takes their colours. */
+.fdf-directive {
+  background-color: color-mix(in oklab, var(--fdf-c, var(--fdf-cpp)) 8%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in oklab, var(--fdf-c, var(--fdf-cpp)) 70%, transparent);
 }

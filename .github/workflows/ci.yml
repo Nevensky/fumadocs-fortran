@@ -30,6 +30,22 @@ jobs:
       # the committed HPC registry: counts, size, known entries, links, sources and notices (no network)
       - run: npm run test:registry
 
+  shiki:
+    name: Shiki grammars
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # the grammar pack's development tools, at the versions it was built and tested with (tm-grammars as pinned in
+      # scripts/build-grammars.mjs); installed without saving them, as the package keeps no devDependencies
+      - run: npm install --no-save --no-package-lock shiki@4.6.0 tm-grammars@1.32.22 fumadocs-core@16.19.5
+      # that shiki/ is what scripts/build-grammars.mjs writes, scope snapshots on both regex engines, load orders in
+      # Shiki and through fumadocs' rehypeCode, the transformers, and what the directives and fypp add to tokenising
+      # time (at most 25%)
+      - run: npm run test:shiki
+
   gate:
     name: Parser gate
     runs-on: ubuntu-latest
@@ -56,7 +72,8 @@ jobs:
       - name: Check the type declarations
         run: |
           npm install --no-save --no-package-lock typescript@5 @types/node@24 @types/react@19
-          npx tsc --noEmit --strict --target es2022 --lib es2022,dom --module nodenext --moduleResolution nodenext --types node types/index.d.ts types/math.d.ts types/react.d.ts
+          npx tsc --noEmit --strict --target es2022 --lib es2022,dom --module nodenext --moduleResolution nodenext \
+            --types node types/index.d.ts types/math.d.ts types/react.d.ts types/shiki.d.ts
       - name: List what would be published
         run: npm pack --dry-run
       - name: Install the packed package in a new project and use it
@@ -78,6 +95,15 @@ jobs:
             const { lookup } = await import('./node_modules/fumadocs-fortran/registry/read.mjs');
             if (lookup('lapack', 'dgesv')?.family?.id !== 'gesv' || !lookup('mpi', 'MPI_Allreduce')?.links.openmpi) process.exit(1);
             console.log('the packed HPC registry loads');
+          "
+          node --input-type=module -e "
+            const { fortranLanguages, fortranRehypeCode } = await import('fumadocs-fortran/shiki');
+            const { createRequire } = await import('node:module');
+            const free = createRequire(process.cwd() + '/')('fumadocs-fortran/shiki/fortran.json');
+            const names = fortranLanguages.map((lang) => lang.name).join(' ');
+            if (names !== 'fortran fortran-fixed fortran-directives fortran-fypp') process.exit(1);
+            if (typeof fortranRehypeCode !== 'function' || free.scopeName !== 'source.fortran.free.fd') process.exit(1);
+            console.log('the packed grammar pack loads');
           "
 
   docs:
