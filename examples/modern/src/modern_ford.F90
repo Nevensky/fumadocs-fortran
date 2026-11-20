@@ -145,6 +145,7 @@ contains
     real(dp), intent(in)  :: x(:)
     real(dp), intent(out) :: y(:)
     integer :: i
+    call check_length(self%n, size(x), 'x')
     !$omp parallel do default(shared) private(i) schedule(static)
     do i = 1, self%n
       y(i) = dot_product(self%a(i,:), x)
@@ -157,8 +158,17 @@ contains
     class(banded_matrix(k=dp, kl=*, ku=*)), intent(in) :: self
     real(dp), intent(in)  :: x(:)
     real(dp), intent(out) :: y(:)
+    call check_length(self%n, size(x), 'x')
     call dgbmv('N', self%n, self%n, self%kl, self%ku, 1.0_dp, self%ab, self%kl+self%ku+1, x, 1, 0.0_dp, y, 1)
   end subroutine banded_matvec
+
+  !> Stops with a message when a vector of length `m` does not fit a matrix of order `n`.
+  subroutine check_length(n, m, what)
+    integer, intent(in) :: n !! the matrix's order
+    integer, intent(in) :: m !! the vector's length
+    character(*), intent(in) :: what !! the vector's name, for the message
+    if (m /= n) error stop 'solver_kernels: ' // what // ' does not fit the matrix'
+  end subroutine check_length
 
   impure elemental subroutine dense_finalize(self)
     type(dense_matrix), intent(inout) :: self
@@ -254,6 +264,7 @@ contains
     real(dp), intent(inout) :: b(:,:)
     integer,  intent(out), optional :: info
     integer :: ipiv(size(a,1)), stat
+    call check_length(size(a,1), size(b,1), 'b')
     call dgesv(size(a,1), size(b,2), a, size(a,1), ipiv, b, size(b,1), stat)
     if (present(info)) info = stat
   end subroutine solve_dense_real
@@ -268,12 +279,17 @@ end submodule solver_kernels_lapack
 !> A driver program.
 program demo
   !! Runs the kernels; distributed with ScaLAPACK `pdgesv` when built with MPI.
+  use, intrinsic :: iso_fortran_env, only: dp => real64
   use solver_kernels
   implicit none
   type(dense_matrix) :: m
+  real(dp) :: a(2,2), b(2,1)
   integer :: ctxt, desca(9), info
-  m = reshape([1.0d0, 0.0d0, 0.0d0, 1.0d0], [2, 2])
+  a = reshape([2.0_dp, 1.0_dp, 1.0_dp, 3.0_dp], [2, 2])
+  b = reshape([1.0_dp, 2.0_dp], [2, 1])
+  m = a
+  call solve_dense(a, b, info)
   call blacs_get(-1, 0, ctxt)
   call descinit(desca, 2, 2, 2, 2, 0, 0, ctxt, 2, info)
-  print *, m%order()
+  print *, m%order(), b(:, 1)
 end program demo

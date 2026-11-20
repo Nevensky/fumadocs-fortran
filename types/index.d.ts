@@ -122,11 +122,73 @@ export interface PageOptions {
   math?: 'katex' | 'code';
   /** The output folder starts open in the sidebar. */
   defaultOpen?: boolean;
-  /** Reads FORD's `{!file!}` includes (`generate` reads them relative to the project root); without it they are dropped. */
+  /**
+   * Reads FORD's `{!file!}` includes (`generate` reads them relative to the project root, and only from under it);
+   * without it they are dropped.
+   */
   include?: (file: string) => string | null;
   /** FORD's `|name|` aliases; a name not here stays as written. */
   aliases?: Record<string, string>;
+  /**
+   * Reads a source file, by its path in the model (relative to the project root), for the source blocks. `generate`
+   * reads the files the model lists (the sources and the files they include) wherever they lie, and any other file
+   * (one a `#line` marker names) only from under the root. Without it, entities only link to their lines.
+   */
+  readSource?: (file: string) => string | null;
+  /**
+   * `embed` (the default when `readSource` is given): each procedure, type, interface, variable and enum shows its
+   * source lines in a collapsible block under it; `link`: only a link to them. Modules, submodules and programs only
+   * ever link.
+   */
+  source?: 'embed' | 'link';
+  /** The most lines an entity may span for its source to be embedded. Default: 400. */
+  sourceMaxLines?: number;
+  /**
+   * The graphs, as ```` ```mermaid ```` blocks for fumadocs' `remarkMdxMermaid` (default on): each unit's
+   * dependencies, each type's inheritance, each procedure's and generic's calls, and the overview's modules. `false`
+   * leaves them out; an object sets how far they go and names the libraries of routines called by name.
+   */
+  graphs?: boolean | Pick<GraphOptions, 'depth' | 'maxNodes' | 'classify'>;
 }
+
+export interface GraphOptions {
+  /** The entity's page URL with its anchor; null for an entity without a heading (its node is not linked). */
+  url?: (entity: Entity) => string | null;
+  /**
+   * The access filter: what it hides is not drawn, except what a page names anyway (a shown generic's specifics, a
+   * shown binding's implementation, a type's ancestors). Default: every entity.
+   */
+  shown?: (entity: Entity) => boolean;
+  /**
+   * The library a routine called by name is from, by its lower-case name: a class such as `fdfLapack`, or a family
+   * word such as `lapack`, `scalapack`, `blas` or `mpi`; null when the name is not known. MPI, OpenMP, OpenACC, CUDA
+   * (names starting with cuda, cublas, cufft, curand, cusparse or cusolver), coarray collectives and BLAS are recognised
+   * without it.
+   */
+  classify?: (name: string) => string | null;
+  /**
+   * The most nodes a graph draws, the "… N more" node included (default 40; below 2 counts as 2, the subject and
+   * "… N more"); for the overview, the most units (default 80).
+   */
+  maxNodes?: number;
+  /** How far uses and callees are followed (default 2). */
+  depth?: number;
+}
+
+/** Mermaid flowchart source (without a fence) for one IR's graphs; each method returns null when there is no graph. */
+export interface FortranGraphs {
+  /** What a unit uses (to `depth`), the units that use it, and its submodules and parents. */
+  dependencies(unit: Entity | string): string | null;
+  /** The types a type extends, up to the root, and those that extend it. */
+  inheritance(type: Entity | string): string | null;
+  /** A procedure's callees (to `depth`) and callers; also a program's callees and a generic's specifics. */
+  calls(procedure: Entity | string): string | null;
+  /** Every module, submodule and program, and the HPC libraries they use; null past `maxNodes` units. */
+  overview(): string | null;
+}
+
+/** The graphs of an IR, as Mermaid flowcharts whose node classes `fumadocs-fortran/style.css` colours. */
+export declare function buildGraphs(ir: FortranIR, options?: GraphOptions): FortranGraphs;
 
 export interface GeneratedPage {
   /** Relative to the output folder. */
@@ -136,13 +198,25 @@ export interface GeneratedPage {
   mdx: string;
 }
 
+/** The `fortran` field of a generated page's front matter (the overview page has none). */
+export interface FortranFrontmatter {
+  /** The unit's kind, or `procedures` for a page of external procedures. */
+  kind: 'module' | 'submodule' | 'program' | 'blockdata' | 'procedures';
+  /** What each `###` heading is, by its anchor (without `#`): for `fortranToc()` from `fumadocs-fortran/react`. */
+  toc: Record<string, 'type' | 'interface' | 'subroutine' | 'function' | 'variable' | 'parameter' | 'enum'>;
+}
+
 /** Builds the pages and sidebar files for an IR. */
 export declare function buildPages(ir: FortranIR, options?: PageOptions): { pages: GeneratedPage[]; metas: Array<{ path: string; data: { title: string; pages: string[] } }> };
 
 /** Writes pages into a content folder; a manifest lets later runs delete only their own stale files. */
 export declare function writePages(result: { pages: GeneratedPage[]; metas: Array<{ path: string; data: object }> }, outDir: string): { written: string[]; changed: string[]; removed: string[] };
 
-/** Reads the sources, builds the pages and writes them into `out`. */
+/**
+ * Reads the sources, builds the pages and writes them into `out`. Without `readSource`, the source blocks are read from
+ * the files the model lists (the sources and the files they include) wherever they lie, and from any other file only
+ * under the root; without `include`, FORD's `{!file!}` includes are read from under the root only.
+ */
 export declare function generate(options: ExtractOptions & PageOptions & { out: string }): Promise<{ ir: FortranIR; pages: GeneratedPage[]; written: string[]; changed: string[]; removed: string[] }>;
 
 /** The anchor of an entity on its page: its lower-case name; operators get fixed slugs such as `operator-plus`. */
@@ -304,7 +378,10 @@ export interface Entity {
   separate?: boolean;
   uses?: Use[];
   calls?: Call[];
-  /** Names referenced with parentheses that are not local arrays: candidate procedure references. */
+  /**
+   * Names referenced with parentheses that are not local arrays: candidate procedure references. A reference through
+   * components, such as a type-bound function's `a%b%f(…)`, is kept as its path, `a%b%f`.
+   */
   refs?: string[];
   hpc?: { directives?: Directive[]; coarray?: boolean };
   commons?: Array<{ name: string; members: string[]; line: number }>;

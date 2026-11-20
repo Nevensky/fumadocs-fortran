@@ -1,8 +1,19 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Link from 'next/link';
-import { FortranArg, FortranArgs, FortranBadge, FortranBadges, FortranSource } from 'fumadocs-fortran/react';
+import { highlight } from 'fumadocs-core/highlight';
+import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
+import {
+  FortranArg,
+  FortranArgs,
+  FortranBadge,
+  FortranBadges,
+  FortranGraph,
+  FortranSource,
+  type FortranRefTarget,
+} from 'fumadocs-fortran/react';
 import { Credits } from '@/components/credits';
+import { Mermaid } from '@/components/mdx/mermaid';
 import { getShowcaseUrl } from '@/lib/source';
 import { gitConfig, githubUrl } from '@/lib/shared';
 
@@ -28,11 +39,25 @@ end function norm2_parallel`;
 const FILE = 'examples/modern/src/modern_ford.F90';
 const NAME = 'norm2_parallel';
 
+// its call graph, as the generator writes it for the Showcase
+const CALLS = `flowchart LR
+  classDef fdfProcedure fill:#98b6c8,stroke:#386a86,color:#111111
+  classDef fdfMpi fill:#85c19a,stroke:#057743,color:#111111
+  classDef fdfFocus stroke-width:3px
+  n1("${NAME}")
+  n2("MPI_Allreduce")
+  n1 -- "USE_MPI" --> n2
+  class n1 fdfProcedure
+  class n1 fdfFocus
+  class n2 fdfMpi
+  click n1 href "/docs/showcase/modern/solver_kernels#${NAME}"`;
+
 /**
- * The first and last lines of `function <name>` in a file of the repository, read when the page is rendered, so that
- * the source link follows edits to the example. Undefined, with a warning in the log, when either is missing.
+ * `function <name>` in a file of the repository, read when the page is rendered, so that the sample follows edits to
+ * the example: its first and last lines, its code, and the line of the use statement before it that renames real64 to
+ * dp. Undefined, with a warning in the log, when the function is missing.
  */
-function functionLines(file: string, name: string): { line: number; lineEnd: number } | undefined {
+function readFunction(file: string, name: string) {
   let lines: string[] = [];
   try {
     // next runs in docs/, one folder below the repository
@@ -43,22 +68,55 @@ function functionLines(file: string, name: string): { line: number; lineEnd: num
   const tail = new RegExp(`^\\s*end\\s*function\\s+${name}\\b`, 'i');
   const start = lines.findIndex((l) => head.test(l));
   const end = lines.findIndex((l, i) => i > start && tail.test(l));
-  if (start >= 0 && end > start) return { line: start + 1, lineEnd: end + 1 };
-  console.warn(`home page: function ${name} not found in ${file}, so its source line is left out`);
+  if (start < 0 || end <= start) {
+    console.warn(`home page: function ${name} not found in ${file}, so its source is left out`);
+    return undefined;
+  }
+  const renames = lines.slice(0, start).findLastIndex((l) => /^[^!]*\buse\b.*\bdp\s*=>\s*real64\b/i.test(l));
+  return {
+    line: start + 1,
+    lineEnd: end + 1,
+    code: lines.slice(start, end + 1).join('\n'),
+    renames: renames < 0 ? undefined : renames + 1,
+  };
+}
+
+/** The code highlighted as the generated page's source block shows it, numbered from `line`. */
+function codeBlock(code: string, line: number) {
+  return highlight(code, {
+    lang: 'f90',
+    components: {
+      pre: ({ className, style, children }) => (
+        <CodeBlock className={className} style={style} data-line-numbers data-line-numbers-start={line}>
+          <Pre>{children}</Pre>
+        </CodeBlock>
+      ),
+    },
+  });
 }
 
 const FEATURES: [string, string][] = [
   ['Its own parser', 'Written in plain JavaScript with no dependencies, so it needs no Python, no compiler and no build of your code.'],
   ['The comments you have', 'FORD, Doxygen and LAPACK doc comments are read as they are, with Markdown and maths.'],
-  ['HPC aware', 'OpenMP and OpenACC directives, MPI and coarrays, and calls into BLAS, LAPACK and ScaLAPACK show as badges.'],
-  ['cpp conditions', 'What exists only under #ifdef USE_MPI says so, on the entity and on each argument.'],
-  ['Arguments in full', 'Every argument shows its type, dimensions, intent and attributes, with full Markdown under it.'],
-  ['Plain MDX pages', 'fumadocs builds the reference like hand-written pages: search, a table of contents and static export included.'],
+  ['HPC aware', 'OpenMP and OpenACC directives, MPI, coarrays and CUDA Fortran show as badges, and what exists only under #ifdef USE_MPI says so, on the entity and on each argument.'],
+  ['Arguments in full', 'Arguments, results and components are rows that open to their docs in full Markdown and their declarations; kind names and types show a card on hover.'],
+  ['Graphs and source', 'Dependency, inheritance and call graphs as Mermaid, and the code of each entry in a block that opens, numbered as in its file.'],
+  ['Plain MDX pages', "fumadocs builds the reference like hand-written pages: search, a table of contents with each entry's kind, and static export included."],
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
   const showcase = getShowcaseUrl() ?? '/docs';
-  const lines = functionLines(FILE, NAME);
+  const fn = readFunction(FILE, NAME);
+  const code = fn && (await codeBlock(fn.code, fn.line));
+  // the hover card of dp, as the generator writes it for a kind that a use statement renames
+  const dp: Record<string, FortranRefTarget> = {
+    dp: {
+      href: 'https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fFORTRAN_005fENV.html',
+      title: 'dp ⇒ real64',
+      detail: 'Real kind with a storage size of 64 bits: double precision',
+      note: fn?.renames ? `Renamed in the use statement at ${FILE}:${fn.renames}` : undefined,
+    },
+  };
 
   return (
     <main className="flex flex-1 flex-col">
@@ -82,7 +140,8 @@ export default function HomePage() {
         <p className="mt-6 text-sm text-fd-muted-foreground">In development: this site is the first slice of v0.1.</p>
       </section>
 
-      <section className="mx-auto grid w-full max-w-5xl items-start gap-6 px-4 pb-16 md:grid-cols-2">
+      {/* side by side only where the rendered entry gets the 34rem its tables need for all their columns */}
+      <section className="mx-auto grid w-full max-w-6xl items-start gap-6 px-4 pb-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         <figure className="min-w-0">
           <pre className="overflow-x-auto rounded-xl border bg-fd-card p-4 text-left font-mono text-[13px] leading-relaxed">
             {SOURCE}
@@ -94,30 +153,44 @@ export default function HomePage() {
             <p className="mt-0 font-mono font-semibold">{NAME}</p>
             <FortranBadges>
               <FortranBadge kind="function" />
-              <FortranBadge kind="omp" label="OpenMP parallel region" />
-              <FortranBadge kind="mpi" conditional="USE_MPI" />
+              <FortranBadge kind="omp" label="OpenMP parallel region" title="parallel do" />
+              <FortranBadge kind="mpi" label="MPI" conditional="USE_MPI" title="MPI_Allreduce" />
             </FortranBadges>
             <p>2-norm reduced across OpenMP threads and MPI ranks.</p>
-            <FortranArgs>
-              <FortranArg name="x" type="real(dp)" dims="(:)" intent="in">
-                local slice of the vector
+            <FortranArgs columns="type shape intent attrs">
+              <FortranArg name="x" type="real(dp)" dims="(:)" intent="in" decl="real(dp), intent(in) :: x(:)" refs={dp}>
+                <p>local slice of the vector</p>
               </FortranArg>
-              <FortranArg name="comm" type="type(MPI_Comm)" intent="in" cond="USE_MPI">
-                communicator
+              <FortranArg
+                name="comm"
+                type="type(MPI_Comm)"
+                intent="in"
+                cond="USE_MPI"
+                decl="type(MPI_Comm), intent(in) :: comm"
+              >
+                <p>communicator</p>
               </FortranArg>
             </FortranArgs>
-            <FortranArgs title="Result">
-              <FortranArg name="nrm" type="real(dp)">
-                the global 2-norm
+            <FortranArgs title="Result" columns="type intent">
+              <FortranArg name="nrm" type="real(dp)" result decl="real(dp) :: nrm" refs={dp}>
+                <p>the global 2-norm</p>
               </FortranArg>
             </FortranArgs>
-            {lines && (
+            <p>
+              <strong>Calls:</strong> <code>MPI_Allreduce</code> when USE_MPI
+            </p>
+            <FortranGraph title="Call graph" collapsed>
+              <Mermaid chart={CALLS} />
+            </FortranGraph>
+            {fn && (
               <FortranSource
                 file={FILE}
-                line={lines.line}
-                lineEnd={lines.lineEnd}
-                href={`${githubUrl}/blob/${gitConfig.branch}/${FILE}#L${lines.line}-L${lines.lineEnd}`}
-              />
+                line={fn.line}
+                lineEnd={fn.lineEnd}
+                href={`${githubUrl}/blob/${gitConfig.branch}/${FILE}#L${fn.line}-L${fn.lineEnd}`}
+              >
+                {code}
+              </FortranSource>
             )}
           </div>
           <figcaption className="mt-2 text-sm text-fd-muted-foreground">The same procedure on its generated page</figcaption>

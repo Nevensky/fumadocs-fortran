@@ -57,12 +57,17 @@ Each decision was taken as recommended, and the rest of the plan assumes it. The
   inline code (`math: 'code'`) instead of breaking the page.
 - **Generated API pages** are committed and checked for drift in CI. Very large libraries generate them before the
   build instead (`output.mode: 'prebuild'`).
-- **Graphs:** v1 has "Uses" / "Used by" lists and an HPC overview page. A ```` ```mermaid ```` graph is opt-in, and
-  there is no Graphviz.
+- **Graphs:** dependency (uses and used by), inheritance and call graphs, written as ```` ```mermaid ```` blocks and on
+  by default (`graphs: false`, or `--graphs none`, turns them off). Sites draw them with fumadocs' `remarkMdxMermaid`;
+  the docs site uses Pele, which draws them at build time, and `style.css` gives Pele's graphs the theme's colours.
+  Library routines are coloured by name where the name tells (MPI, OpenMP, OpenACC, CUDA, coarray collectives, BLAS);
+  LAPACK and ScaLAPACK wait for the registry, with the `graphs.classify` option meanwhile. There is no Graphviz.
 - **Dependencies:** none at runtime, and no fumadocs peer dependency. The package works with fumadocs-core 16.18.4 and
   later, the version fumadocs-feynman's site uses.
-- **Hover cards** use the browser's own popovers, with no React UI library.
-- **Source code** is not embedded in pages; each entity links to its lines on GitHub instead.
+- **Hover cards** are HTML and CSS only: no script and no React UI library.
+- **Source code:** each entity's own lines sit in a collapsed "Source code in …" block, with their line numbers and a
+  link to GitHub, read from the files parsed wherever they lie. Modules, programs and entities over 400 lines only link
+  (`source: 'link'` links everything).
 
 ## 1. What v1 does
 
@@ -87,7 +92,6 @@ Each decision was taken as recommended, and the rest of the plan assumes it. The
 - FORD and LFortran backends (decided against; FORD is a test oracle only);
 - a virtual source;
 - running fypp ourselves (a command hook runs it);
-- rendered call graphs;
 - ProTeX, ROBODoc, NEMO and WRF comment styles (one project each);
 - Sphinx `objects.inv` and Doxygen tag-file readers;
 - bundled LAPACK prose (we link to it);
@@ -334,7 +338,8 @@ render only under React Server Components and have no `getText()`.
 - a banner in every generated file.
 
 **Layout of a page:**
-- frontmatter: title, description and an icon per kind;
+- frontmatter: title, description, an icon per kind, and a `fortran` field with each heading's kind, from which the
+  site's table of contents shows a letter per entry (`t` type, `s` subroutine, `f` function, …);
 - badges, then the doc body;
 - `## Types`, `## Interfaces`, `## Procedures` and `## Variables`, with one `###` heading per entity under an explicit ID
   (`### solve [#solve]`).
@@ -344,9 +349,11 @@ Entity sections contain no sub-headings, so fumadocs' own `<include>…#solve</i
 - its signature in an `f90` or `f77` fence. These are Shiki's own language IDs, so the pages build even on a site
   without our grammar pack;
 - its summary and body;
-- an argument list with full Markdown under each argument. Table cells cannot hold LAPACK's `\verbatim` argument docs,
-  code or maths;
-- its result, callouts, external calls with their badges, and a link to its lines on GitHub.
+- an argument table in the manner of fumadocs' TypeTable: name, type (kind and type names link and carry a hover
+  card), shape, intent and attributes in each row, and the full Markdown in the panel the row opens to, since table
+  cells cannot hold LAPACK's `\verbatim` argument docs, code or maths;
+- its result, callouts, external calls with their badges, a call graph, and its own lines in a collapsed block that
+  links to GitHub.
 
 **Search.** fumadocs indexes entity headings and summaries. `remarkFortran` adds one record per argument.
 - Above a size budget, the argument records are dropped (`search.granularity`), because a static export ships the whole
@@ -360,20 +367,29 @@ linker. A FORD-compatible `modules.json` lets FORD sites link into ours.
 
 ## 7. Components and styling
 
-- **Components** (`./react`) are synchronous `createElement` code with no hooks and no `'use client'`, as in
-  fumadocs-feynman, so one set renders both on the server and in client-rendered MDX:
+- **Components** (`./react`) are synchronous `createElement` code with no state, effects or context and no
+  `'use client'`, as in fumadocs-feynman, so one set renders both on the server and in client-rendered MDX. The one
+  hook is `useId`, which server components have too: `FortranRef` ties its card to its name with it.
   - `FortranBadges`/`FortranBadge` (`kind`, `label`, `conditional`, `via`);
   - `FortranVariants` (a precision family, with an anchor per variant);
-  - `FortranRef` (a name that links and carries a hover card);
+  - `FortranArgs`/`FortranArg`, the argument, component and binding tables, whose rows open to the full docs;
+  - `FortranRef` (a name that links and carries a hover card: kind parameters and derived types now, library
+    symbols with the registry);
+  - `FortranSource` (the collapsed source block) and `FortranGraph` (a titled Mermaid diagram);
+  - `fortranToc()`, which adds the kind letters to fumadocs' table of contents;
   - `fortranComponents`, to spread into `getMDXComponents()`.
 - **fumadocs' own components.** Generated MDX also uses `Callout` and `Cards`/`Card`, which every fumadocs site already
   registers. The package never imports from `fumadocs-ui/*`, because the Radix and Base UI packages have different names.
 - **Hover cards.**
-  - Names are ordinary links, and each symbol gets one native `popover` card per page, not one per occurrence.
-  - The card opens on hover where the browser supports `interestfor`, and through a few lines of optional script
-    elsewhere.
-  - Without JavaScript the link and its title remain. The exact mechanism is settled in v0.3.
-- **`style.css`.** Plain `.fdf-*` classes on fumadocs' `--color-fd-*` variables, with `.dark` overrides.
+  - A name is an ordinary link (or, with nowhere to link, a button that does nothing) that holds its card, which CSS
+    shows on hover and on keyboard focus and hides when they leave; nothing needs JavaScript, so Escape cannot
+    dismiss a card. The card describes its name to screen readers (`aria-describedby`), is placed against the screen
+    where the browser has CSS anchor positioning, and is not printed.
+  - Kind parameters and derived types use it now; the registry's library symbols use the same `FortranRef` in v0.3.
+  - Cards are a few hundred bytes each, so one per occurrence is cheaper than the script that sharing one per page
+    would need.
+- **`style.css`.** Plain `.fdf-*` classes on fumadocs' `--color-fd-*` variables, with `.dark` overrides, and Pele's
+  `--pele-*` variables mapped to them for the graphs.
   - Library colour tokens (`--fdf-omp`, `--fdf-mpi`, …) can be overridden by sites.
   - Directive lines get a tint, because theme colours alone do not separate them from keywords.
   - No Tailwind `@source` line is needed.
@@ -405,6 +421,9 @@ committed with `SOURCES.md` and `NOTICE`.
   or FFTW.
 - **Summaries.** v1 writes its own one-liners for the 100 or so most used OpenMP and OpenACC items; the others get a name
   and a link.
+- **Graphs.** The call graphs colour a routine by its library. Until the registry exists they know MPI, OpenMP,
+  OpenACC, CUDA, the coarray collectives and BLAS by name, and LAPACK and ScaLAPACK only through `graphs.classify`;
+  the registry names them all.
 
 **Link providers** (`hpc.links`):
 - `netlib`: member pages from Doxygen's search index, with file pages computed from their hash as the fallback;

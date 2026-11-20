@@ -122,6 +122,19 @@ const TABLE_DELIM = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const FENCE = /^(\s*)(`{3,}|~{3,})(.*)$/;
 const isFence = (f) => f && !(f[2][0] === '`' && f[3].includes('`'));
 const closer = (marks) => new RegExp(`^\\s*${marks[0] === '`' ? '`' : '~'}{${marks.length},}\\s*$`);
+// a line that starts a block of its own, which no paragraph carries on into
+const INTERRUPTS = /^\s*(`{3,}|~{3,}|#{1,6}(\s|$)|>)/;
+/**
+ * Where a list item's text starts, as MDX reads it: past its marker and the blanks after it (a tab to the next
+ * multiple of 4); for an item with no text, one column past its marker.
+ */
+const textColumn = (line) => {
+  const m = /^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]*)/.exec(line);
+  let n = columns(m[1]) + m[2].length;
+  if (m[0].length === line.length) return n + 1;
+  for (const c of m[3]) n = c === '\t' ? n + 4 - (n % 4) : n + 1;
+  return n;
+};
 
 /**
  * Removes HTML comments from doc lines, as FORD and Doxygen do, leaving code alone. A comment that starts a line
@@ -225,28 +238,60 @@ export function safeMarkdown(md, opts = {}) {
     meta.push(kind);
   };
   let fence = null; // the closing pattern of the open code fence
+  let marks = ''; // the run of backticks or tildes that opened it, which closes it when the doc does not
+  let open = ''; // the indentation of the line that opened it, where that closer goes
+  let item = 0; // the text column of the list item it opened in, which MDX ends it with; 0 outside lists
   let para = -1; // where the open paragraph starts in `out` (for setext headings), or -1
   let depth = 0; // the list level the text is in, 4 columns a level as in Python-Markdown (FORD); 0 outside lists
+  // the text columns of the list items open at a line, as MDX reads them: a line left of an item's text ends the item,
+  // unless it carries on the item's paragraph
+  const items = [];
   let table = false;
+  // closes the open fence as far in as it opened, before the blank lines that end it
+  const closeFence = () => {
+    let at = out.length;
+    while (meta[at - 1] === 'fence' && !out[at - 1].trim()) at--;
+    out.splice(at, 0, open + marks);
+    meta.splice(at, 0, 'fence');
+    fence = null;
+  };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (fence) {
-      push(line, 'fence');
-      if (fence.test(line)) fence = null;
-      continue;
-    }
-    const blank = out.length === 0 || out[out.length - 1].trim() === '';
     const ind = columns(line);
+    let cut = false;
+    if (fence) {
+      // a line left of the text of the list item the fence opened in ends the item, and the fence with it
+      if (!(item && line.trim() && ind < item)) {
+        push(line, 'fence');
+        if (fence.test(line)) fence = null;
+        continue;
+      }
+      // so the fence's own closer is moved into the item; another line is read after the fence, closed in the item
+      if (fence.test(line)) {
+        push(open + line.trim(), 'fence');
+        fence = null;
+        continue;
+      }
+      closeFence();
+      cut = true;
+    }
+    const blank = cut || out.length === 0 || out[out.length - 1].trim() === '';
     // a list item sets the level; a line after a blank line that is indented less leaves it
     if (line.trim() && !(blank && ind >= 4 * depth + 4)) {
       if (LIST_ITEM.test(line) && ind < 4 * depth + 4) depth = Math.floor(ind / 4) + 1;
       else if (blank) depth = Math.min(depth, Math.floor(ind / 4));
     }
+    // the list items the line is left of end with it, unless it carries on their paragraph
+    const lazy = /^(text|list)$/.test(meta[meta.length - 1] ?? '') && !LIST_ITEM.test(line) && !INTERRUPTS.test(line);
+    if (line.trim() && !lazy) while (items.length && ind < items[items.length - 1]) items.pop();
     // a fence as MDX reads it: at any indentation (MDX has no indented code), and a backtick fence's info string
     // holds no backtick (so a line that opens with inline ```code``` is text)
     const f = FENCE.exec(line);
     if (isFence(f)) {
       fence = closer(f[2]);
+      marks = f[2];
+      open = f[1];
+      item = items.length ? items[items.length - 1] : 0;
       const info = /^\s*(\{[^}]*\}?|\S*)(.*)$/.exec(f[3]);
       const lang = codeLang(info[1], opts);
       push(`${f[1]}${f[2]}${lang}${lang && info[2] && !/^\s/.test(info[2]) ? ' ' : ''}${info[2]}`, 'fence');
@@ -332,11 +377,14 @@ export function safeMarkdown(md, opts = {}) {
     const kind = !text.trim() ? 'blank' : DISPLAY_LINE.test(text) ? 'math' : table ? 'table' : LIST_ITEM.test(line) ? 'list'
       : /^\s*>/.test(line) ? 'quote' : TAGS_ONLY.test(text) ? 'flow' : 'text';
     push(text, kind);
+    if (kind === 'list') items.push(textColumn(line));
     // paragraph lines, which a setext underline could turn into a heading; a line of nothing but tags is a block
     if (kind !== 'text') para = -1;
     else if (para < 0) para = out.length - 1;
   }
-  if (fence) push(fence.source.includes('~') ? '~~~~~~' : '``````', 'fence');
+  // as long as the fence that opened it (a shorter run would leave it open, to the end of the page), and as far in: a
+  // closer left of a list item's text would end the item and open a fence of its own
+  if (fence) push(open + marks, 'fence');
   return tidy(resolveTags(out, meta, tags)).join('\n');
 }
 

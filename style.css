@@ -1,9 +1,10 @@
-/* fumadocs-fortran: badges, argument lists and source lines on generated Fortran pages. Plain CSS on fumadocs'
-   --color-fd-* variables: no Tailwind setup, and light and dark follow the site's theme (.dark on <html>). */
+/* fumadocs-fortran: badges, argument tables, hover cards, source blocks, graphs and the kind letters of the table of
+   contents on generated Fortran pages. Plain CSS on fumadocs' --color-fd-* variables: no Tailwind setup, and light and
+   dark follow the site's theme (.dark on <html>). */
 
-/* Library and intent colours, a mid tone each. Text mixes the tone with black (light) or white (dark), so one value
-   serves both themes; set any of them on :root to change it. The defaults sit in :where(), which has no specificity,
-   so a site's own :root rule wins whichever stylesheet comes first. */
+/* Library, intent and kind colours, a mid tone each. Text mixes the tone with black (light) or white (dark), so one
+   value serves both themes; set any of them on :root to change it. The defaults sit in :where(), which has no
+   specificity, so a site's own :root rule wins whichever stylesheet comes first. */
 :where(:root) {
   --fdf-omp: oklch(0.6 0.17 258);
   --fdf-acc: oklch(0.62 0.1 215);
@@ -18,23 +19,41 @@
   --fdf-in: oklch(0.6 0.1 190);
   --fdf-out: oklch(0.62 0.14 60);
   --fdf-inout: oklch(0.58 0.17 305);
+  /* kinds of entity, for the letters in the table of contents and the nodes of the graphs. A graph shows modules
+     beside MPI, OpenMP, OpenACC and CUDA, and procedures beside the libraries they call, so the kinds keep clear of
+     those tones */
+  --fdf-k-module: oklch(0.57 0.14 282);
+  --fdf-k-submodule: oklch(0.6 0.13 322);
+  --fdf-k-program: oklch(0.62 0.15 42);
+  --fdf-k-type: oklch(0.6 0.13 238);
+  --fdf-k-interface: oklch(0.62 0.1 182);
+  --fdf-k-subroutine: oklch(0.58 0.16 302);
+  --fdf-k-function: oklch(0.6 0.17 345);
+  --fdf-k-variable: oklch(0.64 0.12 85);
+  --fdf-k-parameter: oklch(0.62 0.15 28);
+  --fdf-k-enum: oklch(0.62 0.13 145);
   /* how text and fills are made from a tone: at least 4.5:1 on fumadocs' themes, light and dark */
   --fdf-text-mix: #000;
   --fdf-text-share: 75%;
   --fdf-fill-share: 12%;
+  /* an open row, and a hover card */
+  --fdf-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.08);
+  --fdf-shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
 
 :where(.dark) {
   --fdf-text-mix: #fff;
   --fdf-text-share: 60%;
   --fdf-fill-share: 16%;
+  --fdf-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+  --fdf-shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.45), 0 4px 6px -4px rgb(0 0 0 / 0.45);
 }
 
 /* Hooks with no style of their own, for sites to target: .fdf-kind-<kind> on the neutral kinds, .fdf-arg-conditional
    on a row that exists only under a cpp condition, and .fdf-intent-arrow. */
 
 /* Values shared by the parts, worked out on each so that they follow the theme where they sit */
-.fdf-badges, .fdf-badge, .fdf-args, .fdf-arg, .fdf-source {
+.fdf-badges, .fdf-badge, .fdf-args, .fdf-arg, .fdf-ref, .fdf-source, .fdf-graph, .fdf-toc {
   --fdf-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace);
   --fdf-line: var(--color-fd-border, rgb(204 204 204 / 0.5));
   /* muted text with a fifth of the foreground: fumadocs' muted-foreground alone is under 4.5:1 on some themes */
@@ -92,6 +111,8 @@
 .fdf-intent-in { --fdf-c: var(--fdf-in); }
 .fdf-intent-out { --fdf-c: var(--fdf-out); }
 .fdf-intent-inout { --fdf-c: var(--fdf-inout); }
+/* a function's result has no intent: the neutral tone, said outright */
+.fdf-intent-result { --fdf-c: var(--fdf-quiet); }
 
 .fdf-badge-hpc, .fdf-intent {
   border-color: color-mix(in oklab, var(--fdf-c) 35%, transparent);
@@ -124,122 +145,748 @@
   white-space: nowrap;
 }
 
-/* ---- argument lists, in the manner of fumadocs' TypeTable ---- */
+/* ---- argument tables, in the manner of fumadocs' TypeTable ---- */
 
+/* The columns: a width each, set on the table, so that the grid of every row (and of the header, and of the panels'
+   fields) has the same tracks and lines up whatever its cells hold. A column that no row fills is left out
+   (FortranArgs' columns, in data-columns): its width is empty, so that it has no track, and its cells are not drawn.
+   The table is a container, for the narrow layout below, and is raised while it is hovered or holds the focus, so
+   that a hover card that runs past its foot is drawn over what follows. Nothing on the way up from a hover card hides
+   overflow, which would cut the card off. */
 .fdf-args {
-  container-type: inline-size;
-  margin: 1rem 0;
+  /* the name a fifth (TypeTable gives it a quarter, beside one other column); the intent as wide as "↔ inout"; the
+     type and the attributes share most of the rest, the shape holds "(lda,*)" */
+  --fdf-col-name: minmax(6rem, 20%);
+  --fdf-col-type: minmax(0, 3fr);
+  --fdf-col-shape: minmax(3.5rem, 1fr);
+  --fdf-col-intent: 4.5rem;
+  --fdf-col-attrs: minmax(0, 2.75fr);
+  position: relative;
+  container: fdf-args / inline-size;
+  margin: 1.5rem 0;
   padding: 0.25rem;
   border: 1px solid var(--fdf-line);
-  border-radius: 0.75rem;
+  border-radius: 1rem;
   background-color: var(--color-fd-card, transparent);
+  color: var(--color-fd-card-foreground, inherit);
   font-size: 0.875rem;
   line-height: 1.5;
 }
 
+.fdf-args:hover, .fdf-args:focus-within { z-index: 1; }
+
+.fdf-args:not([data-columns~='type']) { --fdf-col-type: ; }
+.fdf-args:not([data-columns~='shape']) { --fdf-col-shape: ; }
+.fdf-args:not([data-columns~='intent']) { --fdf-col-intent: ; }
+.fdf-args:not([data-columns~='attrs']) { --fdf-col-attrs: ; }
+
+.fdf-args:not([data-columns~='type']) .fdf-arg-row > .fdf-col-type,
+.fdf-args:not([data-columns~='shape']) .fdf-arg-row > .fdf-col-shape,
+.fdf-args:not([data-columns~='intent']) .fdf-arg-row > .fdf-col-intent,
+.fdf-args:not([data-columns~='attrs']) .fdf-arg-row > .fdf-col-attrs { display: none; }
+
 .fdf-args-title {
   margin: 0;
-  padding: 0.25rem 0.75rem 0;
+  padding: 0.375rem calc(0.75rem + 1px) 0.125rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  color: var(--color-fd-foreground, inherit);
+}
+
+/* name | type | shape | intent | attributes | chevron. The header has the rows' border as padding, to line up. The
+   chevron's track takes the width no column claims (a table of names alone, or of names and intents), so that the
+   chevron stays at the right edge. */
+.fdf-args-head, .fdf-arg-row {
+  display: grid;
+  grid-template-columns: var(--fdf-col-name) var(--fdf-col-type) var(--fdf-col-shape) var(--fdf-col-intent)
+    var(--fdf-col-attrs) minmax(1rem, auto);
+  column-gap: 0.75rem;
+  align-items: baseline;
+}
+
+.fdf-args-head {
+  padding: 0.25rem calc(0.75rem + 1px);
   font-size: 0.8125rem;
   font-weight: 500;
   line-height: 1.25rem;
   color: var(--fdf-quiet);
 }
 
-.fdf-args .fdf-args-list { margin: 0; }
+.fdf-args-head > :is(.fdf-col-name, .fdf-col-type, .fdf-col-shape, .fdf-col-intent, .fdf-col-attrs),
+.fdf-arg-row > :is(.fdf-col-name, .fdf-col-type, .fdf-col-shape, .fdf-col-intent, .fdf-col-attrs) { min-width: 0; }
 
-.fdf-arg { padding: 0.5rem 0.75rem; }
+/* a row: no border until it opens */
+.fdf-arg {
+  border: 1px solid transparent;
+  border-radius: 0.75rem;
+}
 
-.fdf-arg + .fdf-arg { border-top: 1px solid var(--fdf-line); }
+.fdf-arg[open] {
+  border-color: var(--fdf-line);
+  background-color: var(--color-fd-background, transparent);
+  box-shadow: var(--fdf-shadow-sm);
+}
 
-/* name | type, intent, flags, condition: the names make a column where they fit in it */
-.fdf-args .fdf-arg-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.25rem 0.75rem;
-  margin: 0;
-  font-weight: 400;
+.fdf-arg[open]:not(:last-child) { margin-bottom: 0.5rem; }
+
+.fdf-arg-row {
+  padding: 0.5rem 0.75rem;
+  border-radius: calc(0.75rem - 1px);
+}
+
+.fdf-arg > summary {
+  cursor: pointer;
+  list-style: none;
+  transition: background-color 0.15s;
+}
+
+.fdf-arg > summary::-webkit-details-marker { display: none; }
+
+/* not while the pointer is on a hover card, which belongs to the row but floats over the rows below it */
+.fdf-arg > summary:hover:not(:has(.fdf-ref-card:hover)) { background-color: var(--color-fd-accent, transparent); }
+
+.fdf-arg > summary:focus-visible {
+  outline: 2px solid var(--color-fd-ring, currentColor);
+  outline-offset: -2px;
+}
+
+.fdf-arg[open] > summary {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
 }
 
 .fdf-arg-name {
-  min-width: min(30%, 7.5rem);
   font-family: var(--fdf-mono);
   font-size: 0.8125rem;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--color-fd-primary, currentColor);
   overflow-wrap: anywhere;
 }
 
-.fdf-arg-sig {
+/* the type is code cut around the names that carry a hover card, so that a card takes the page's font */
+.fdf-arg-type {
+  font-size: 0.8125rem;
+  color: var(--color-fd-foreground, currentColor);
+  overflow-wrap: anywhere;
+}
+
+.fdf-arg-type > code, .fdf-arg-shape, .fdf-arg-decl, .fdf-arg-field code {
+  font-family: var(--fdf-mono);
+  font-size: 0.8125rem;
+}
+
+.fdf-arg-shape {
+  color: var(--color-fd-foreground, currentColor);
+  overflow-wrap: anywhere;
+}
+
+.fdf-arg-dims { color: var(--color-fd-foreground, currentColor); }
+
+.fdf-arg-codims, .fdf-arg-none { color: var(--fdf-quiet); }
+
+.fdf-arg-row > .fdf-col-attrs {
   display: flex;
-  flex: 1 1 12rem;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.25rem 0.375rem;
-  min-width: 0;
 }
 
-.fdf-arg-type {
-  margin-inline-end: 0.25rem;
-  font-family: var(--fdf-mono);
-  font-size: 0.8125rem;
-  color: var(--color-fd-foreground, currentColor);
-  overflow-wrap: anywhere;
-}
-
-.fdf-arg-dims, .fdf-arg-codims { color: var(--fdf-quiet); }
-
-/* the doc, under the type column */
-.fdf-args .fdf-arg-doc {
-  margin: 0.25rem 0 0;
-  padding-inline-start: calc(min(30%, 7.5rem) + 0.75rem);
-}
-
-.fdf-args .fdf-arg-doc:empty { display: none; }
-
-.fdf-arg-doc > :where(p, ul, ol, pre, figure, blockquote, table, div) { margin-block: 0.5rem; }
-
-.fdf-args .fdf-arg-doc > :first-child { margin-top: 0; }
-
-.fdf-args .fdf-arg-doc > :last-child { margin-bottom: 0; }
-
-/* narrow columns and phones: no name column, the doc a step in */
-@container (max-width: 30rem) {
-  .fdf-arg-name { min-width: 0; }
-  .fdf-args .fdf-arg-doc { padding-inline-start: 1rem; }
-}
-
-/* ---- the source line ---- */
-
-.fdf-source {
-  margin: 1rem 0;
-  font-size: 0.8125rem;
-  line-height: 1.25rem;
+.fdf-chevron {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
   color: var(--fdf-quiet);
+  transition: transform 0.2s;
+}
+
+.fdf-arg-row > .fdf-chevron {
+  align-self: center;
+  justify-self: end;
+}
+
+.fdf-arg[open] > .fdf-arg-row > .fdf-chevron { transform: rotate(180deg); }
+
+/* the panel a row opens to: the doc, then the fields, their labels under the names and their values under the types */
+.fdf-arg-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-top: 1px solid var(--fdf-line);
+}
+
+.fdf-arg-doc {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.fdf-arg-doc > :where(p, ul, ol, pre, figure, blockquote, table, div) { margin-block: 0.75rem; }
+
+.fdf-arg-doc > :first-child { margin-top: 0; }
+
+.fdf-arg-doc > :last-child { margin-bottom: 0; }
+
+/* a wide formula scrolls in its place, rather than widening the table */
+.fdf-arg-doc .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.fdf-arg-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+/* positioned, so that a hover card in a field starts at the field's edge and stays on a phone's screen */
+.fdf-arg-field {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--fdf-col-name, minmax(6rem, 20%)) minmax(0, 1fr);
+  column-gap: 0.75rem;
+  align-items: baseline;
+}
+
+.fdf-arg-field > dt {
+  margin: 0;
+  font-weight: 400;
+  color: var(--fdf-quiet);
+}
+
+.fdf-arg-field > dd {
+  min-width: 0;
+  margin: 0;
   overflow-wrap: anywhere;
 }
 
-.fdf-source code {
-  font-family: var(--fdf-mono);
-  font-size: 0.75rem;
+.fdf-arg-decl {
+  color: var(--color-fd-foreground, currentColor);
+  white-space: pre-wrap;
 }
 
-.fdf-source-link {
+/* a plain row's line for a narrow table: what its hidden cells hold */
+.fdf-arg-alt {
+  position: relative;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  padding: 0 0.75rem 0.5rem;
+}
+
+.fdf-arg-field .fdf-ref, .fdf-arg-alt .fdf-ref { position: static; }
+
+/* there a card starts at the field's (or the line's) edge, a step in from the screen's, so it keeps to that width: on a
+   20rem phone, 100vw - 2rem would run past the screen */
+.fdf-arg-field .fdf-ref-card, .fdf-arg-alt .fdf-ref-card { max-width: min(18rem, 100%); }
+
+/* the copies a narrow table shows instead of the cells it hides */
+.fdf-arg .fdf-arg-narrow, .fdf-arg .fdf-arg-alt { display: none; }
+
+/* narrow tables and phones: a row keeps its name, its intent and the chevron, and its panel shows the rest */
+@container fdf-args (max-width: 34rem) {
+  .fdf-args-head, .fdf-arg-row { grid-template-columns: minmax(0, 1fr) var(--fdf-col-intent) 1rem; }
+
+  .fdf-args-head > :is(.fdf-col-type, .fdf-col-shape, .fdf-col-attrs),
+  .fdf-arg-row > :is(.fdf-col-type, .fdf-col-shape, .fdf-col-attrs) { display: none; }
+
+  .fdf-arg .fdf-arg-field.fdf-arg-narrow { display: grid; }
+
+  .fdf-arg .fdf-arg-field > dd > .fdf-arg-narrow { display: inline; }
+
+  .fdf-arg .fdf-arg-alt { display: flex; }
+
+  /* a plain row and its line read as one */
+  .fdf-arg-plain > .fdf-arg-row:has(+ .fdf-arg-alt) { padding-bottom: 0.125rem; }
+}
+
+/* ---- hover cards: a name that links, and a card that CSS shows while it is hovered or has the focus ---- */
+
+/* The card sits inside the name (a link, or a button without one), so that a click on it follows the link and leaves
+   the row it is in as it was. The name's text is code; the card takes the font of the text around the name. */
+.fdf-ref { position: relative; }
+
+.fdf-ref-name {
   color: inherit;
-  text-decoration: underline;
-  text-decoration-color: color-mix(in oklab, currentColor 45%, transparent);
+  text-decoration: underline dotted;
+  text-decoration-color: color-mix(in oklab, currentColor 50%, transparent);
   text-underline-offset: 0.2em;
+}
+
+.fdf-ref-text { font-family: var(--fdf-mono); }
+
+/* a button set as text */
+.fdf-ref-name:is(button) {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
+  text-transform: inherit;
+  appearance: none;
+}
+
+/* Firefox's inner focus box would pad the name */
+.fdf-ref-name::-moz-focus-inner {
+  padding: 0;
+  border: 0;
+}
+
+.fdf-ref-name:not([href]) { cursor: help; }
+
+.fdf-ref-name[href] {
+  text-decoration-style: solid;
   transition: color 0.15s, text-decoration-color 0.15s;
 }
 
-.fdf-source-link:hover {
-  color: var(--color-fd-foreground, currentColor);
+.fdf-ref-name[href]:hover {
+  color: var(--color-fd-primary, currentColor);
   text-decoration-color: currentColor;
 }
 
-.fdf-source-link:focus-visible {
+/* The card is inside the name, so what a page does to a hovered or focused link it does to the card: fumadocs' prose
+   fades a hovered link to 80%, through which the text under a card showed. The colour above marks the hover. */
+.fdf-ref-name:is(:hover, :focus) { opacity: 1; }
+
+.fdf-ref-name:focus-visible {
   outline: 2px solid var(--color-fd-ring, currentColor);
   outline-offset: 2px;
+  border-radius: 0.125rem;
+}
+
+/* below its name and at most as wide as a phone's screen; it fades out before it goes, so that the pointer can cross
+   the gap into it */
+.fdf-ref-card {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  inset-inline-start: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(18rem, calc(100vw - 2rem));
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--fdf-line);
+  border-radius: 0.5rem;
+  background-color: var(--color-fd-popover, var(--color-fd-background, Canvas));
+  color: var(--color-fd-popover-foreground, var(--color-fd-foreground, CanvasText));
+  box-shadow: var(--fdf-shadow-md);
+  font-size: 0.8125rem;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.15s, visibility 0s 0.15s;
+}
+
+.fdf-ref-name:hover > .fdf-ref-card, .fdf-ref-name:focus > .fdf-ref-card {
+  visibility: visible;
+  opacity: 1;
+  transition: opacity 0.15s;
+}
+
+.fdf-ref-title {
+  font-family: var(--fdf-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-fd-foreground, currentColor);
+  white-space: pre-wrap;
+}
+
+.fdf-ref-detail { display: block; }
+
+.fdf-ref-note {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--fdf-quiet);
+}
+
+/* With anchor positioning the card is placed against its name and the screen, not inside its table or field: below
+   the name from its start, or, where that would run past the screen's edge, ending at the name's end; above the name
+   when there is no room below; across the screen when neither side holds it. Fixed, as the screen is what it must
+   fit, which also keeps it from being cut off by a box that hides overflow. A hidden card is not drawn at all
+   (display: none, after its fade), so that each card is placed afresh as it shows, and a page of thousands of names
+   has no more than one card to place. Without anchor positioning, the rules above hold. */
+@supports (anchor-scope: all) and (position-try-fallbacks: flip-inline) {
+  .fdf-ref { anchor-scope: --fdf-ref; }
+
+  .fdf-ref-name { anchor-name: --fdf-ref; }
+
+  .fdf-ref-name > .fdf-ref-card {
+    display: none;
+    position: fixed;
+    position-anchor: --fdf-ref;
+    inset: auto;
+    position-area: block-end span-inline-end;
+    margin-block-start: 0.25rem;
+    max-width: min(18rem, calc(100vw - 2rem));
+    position-try-fallbacks: flip-inline, flip-block, flip-block flip-inline, --fdf-ref-across,
+      --fdf-ref-across flip-block;
+    transition: opacity 0.15s, visibility 0s 0.15s, display 0.15s allow-discrete;
+  }
+
+  .fdf-ref-name:hover > .fdf-ref-card, .fdf-ref-name:focus > .fdf-ref-card { display: flex; }
+
+  @starting-style {
+    .fdf-ref-name:hover > .fdf-ref-card, .fdf-ref-name:focus > .fdf-ref-card { opacity: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fdf-ref-name > .fdf-ref-card { transition: visibility 0s 0.15s, display 0s 0.15s allow-discrete; }
+  }
+}
+
+@position-try --fdf-ref-across {
+  position-area: block-end span-all;
+  justify-self: center;
+}
+
+/* ---- the source block: "Source code in <file>", its lines and a link, opening to the code ---- */
+
+.fdf-source {
+  margin: 1rem 0;
+  border: 1px solid var(--fdf-line);
+  border-radius: 0.75rem;
+  background-color: var(--color-fd-card, transparent);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.fdf-source-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.125rem 0.5rem;
+  box-sizing: border-box;
+  min-height: 2.375rem;
+  padding: 0.5rem 0.75rem;
+  padding-inline-start: 1rem;
+  border-radius: calc(0.75rem - 1px);
+  color: var(--fdf-quiet);
+  text-decoration: none;
+  transition: background-color 0.15s;
+}
+
+.fdf-source > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.fdf-source > summary::-webkit-details-marker { display: none; }
+
+.fdf-source > summary:hover, .fdf-source > a.fdf-source-head:hover {
+  background-color: var(--color-fd-accent, transparent);
+}
+
+.fdf-source > summary:focus-visible, .fdf-source > a.fdf-source-head:focus-visible {
+  outline: 2px solid var(--color-fd-ring, currentColor);
+  outline-offset: -2px;
+}
+
+.fdf-source[open] > summary {
+  border-bottom: 1px solid var(--fdf-line);
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.fdf-source-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fdf-source-title code {
+  font-family: var(--fdf-mono);
+  font-size: 0.75rem;
+  color: var(--color-fd-foreground, currentColor);
+}
+
+.fdf-source-lines { white-space: nowrap; }
+
+/* the link and the chevron keep to the right; in a block they are one group, which wraps as a whole */
+.fdf-source-head > .fdf-source-link, .fdf-source-end { margin-inline-start: auto; }
+
+.fdf-source-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.fdf-source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 500;
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+.fdf-source-link[href] { border-radius: 0.25rem; }
+
+.fdf-source-link[href]:hover, .fdf-source > a.fdf-source-head:hover > .fdf-source-link {
+  color: var(--color-fd-foreground, currentColor);
+}
+
+.fdf-source-link[href]:focus-visible {
+  outline: 2px solid var(--color-fd-ring, currentColor);
+  outline-offset: 2px;
+}
+
+.fdf-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: none;
+}
+
+/* the code block (fumadocs' own, with its line numbers and copy button) fills the block's foot */
+.fdf-source-body > :is(figure, pre) {
+  margin: 0;
+  border-width: 0;
+  border-radius: 0 0 calc(0.75rem - 1px) calc(0.75rem - 1px);
+}
+
+/* ---- graphs: a card with a small title, or a block that opens to the diagram ---- */
+
+.fdf-graph {
+  margin: 1.5rem 0;
+  border: 1px solid var(--fdf-line);
+  border-radius: 0.75rem;
+  background-color: var(--color-fd-card, transparent);
+}
+
+.fdf-graph-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.625rem 0.75rem 0;
+  padding-inline-start: 1rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  color: var(--fdf-quiet);
+}
+
+.fdf-graph > summary {
+  box-sizing: border-box;
+  min-height: 2.375rem;
+  padding-block: 0.5rem;
+  border-radius: calc(0.75rem - 1px);
+  cursor: pointer;
+  list-style: none;
+  transition: background-color 0.15s;
+}
+
+.fdf-graph > summary::-webkit-details-marker { display: none; }
+
+.fdf-graph > summary:hover { background-color: var(--color-fd-accent, transparent); }
+
+.fdf-graph > summary:focus-visible {
+  outline: 2px solid var(--color-fd-ring, currentColor);
+  outline-offset: -2px;
+}
+
+.fdf-graph[open] > summary {
+  border-bottom: 1px solid var(--fdf-line);
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.fdf-graph-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* a diagram wider than the card scrolls in it */
+.fdf-graph-body {
+  padding: 0.75rem 1rem 1rem;
+  overflow-x: auto;
+}
+
+/* a narrower one is centred: auto margins, which come to nothing when it overflows, so that it scrolls from its start
+   (and text-align would centre the lines of a code block shown instead of a diagram) */
+.fdf-graph-body svg:not(svg svg) {
+  display: block;
+  margin-inline: auto;
+}
+
+/* a closed block's chevron points at its title, and turns down as it opens */
+.fdf-source:not([open]) > summary > .fdf-source-end > .fdf-chevron,
+.fdf-graph:not([open]) > summary > .fdf-chevron { transform: rotate(-90deg); }
+
+/* ---- the table of contents: a letter for each entity's kind (t type, s subroutine, f function, …) ---- */
+
+.fdf-toc {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.fdf-toc-kind {
+  --fdf-c: var(--color-fd-muted-foreground, currentColor);
+  flex: none;
+  box-sizing: border-box;
+  min-width: 1.25rem;
+  padding: 0 0.25rem;
   border-radius: 0.25rem;
+  background-color: color-mix(in oklab, var(--fdf-c) var(--fdf-fill-share), transparent);
+  color: color-mix(in oklab, var(--fdf-c) var(--fdf-text-share), var(--fdf-text-mix));
+  font-family: var(--fdf-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1rem;
+  text-align: center;
+}
+
+.fdf-toc-module { --fdf-c: var(--fdf-k-module); }
+.fdf-toc-submodule { --fdf-c: var(--fdf-k-submodule); }
+.fdf-toc-program { --fdf-c: var(--fdf-k-program); }
+.fdf-toc-type { --fdf-c: var(--fdf-k-type); }
+.fdf-toc-interface { --fdf-c: var(--fdf-k-interface); }
+.fdf-toc-subroutine { --fdf-c: var(--fdf-k-subroutine); }
+.fdf-toc-function { --fdf-c: var(--fdf-k-function); }
+.fdf-toc-variable { --fdf-c: var(--fdf-k-variable); }
+.fdf-toc-parameter { --fdf-c: var(--fdf-k-parameter); }
+.fdf-toc-enum { --fdf-c: var(--fdf-k-enum); }
+
+.fdf-toc-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---- graphs drawn by Pele ---- */
+
+/* Pele takes its fonts and colours from --pele-* variables, and without them draws lines and edge labels for a light
+   page: near-black arrows, which a dark theme hides, and labels in white boxes. These give a generated graph fumadocs'
+   fonts and colours, which follow the theme; the fallbacks serve a page without fumadocs' variables. In :where(),
+   which has no specificity, so that a site's own .pele rule wins whichever stylesheet comes first. */
+:where(.fdf-graph .pele) {
+  --pele-font: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  --pele-font-mono: var(--fdf-mono);
+  --pele-bg: var(--color-fd-background, Canvas);
+  --pele-fg: var(--color-fd-foreground, CanvasText);
+  --pele-muted: var(--color-fd-muted-foreground, GrayText);
+  --pele-line: var(--color-fd-muted-foreground, GrayText);
+  --pele-surface: var(--color-fd-card, Canvas);
+  --pele-surface-alt: var(--color-fd-secondary, Canvas);
+  --pele-border: var(--fdf-line);
+  --pele-accent: var(--color-fd-primary, LinkText);
+}
+
+/* The generated Mermaid gives each node a class (classDef fdf…) with fixed mid tones that read on light and dark; Pele
+   writes those colours inline, so these rules, which follow the theme, need !important. A tone each, from the tokens
+   above: a tint for the shape, the tone for its border, and the label mixed for contrast, as on the pills. A node
+   that links (click … href) has its shapes and label inside an <a>, so the rules reach the shapes as descendants of
+   the node, not as its children. */
+.pele .pele-node.fdfModule { --fdf-c: var(--fdf-k-module); }
+.pele .pele-node.fdfSubmodule { --fdf-c: var(--fdf-k-submodule); }
+.pele .pele-node.fdfProgram { --fdf-c: var(--fdf-k-program); }
+.pele .pele-node.fdfProcedure { --fdf-c: var(--fdf-k-subroutine); }
+.pele .pele-node.fdfGeneric { --fdf-c: var(--fdf-k-interface); }
+.pele .pele-node.fdfType { --fdf-c: var(--fdf-k-type); }
+.pele .pele-node.fdfIntrinsic,
+.pele .pele-node.fdfExternal { --fdf-c: var(--color-fd-muted-foreground, currentColor); }
+.pele .pele-node.fdfMpi { --fdf-c: var(--fdf-mpi); }
+.pele .pele-node.fdfOmp { --fdf-c: var(--fdf-omp); }
+.pele .pele-node.fdfAcc { --fdf-c: var(--fdf-acc); }
+.pele .pele-node.fdfCuda { --fdf-c: var(--fdf-cuda); }
+.pele .pele-node.fdfCoarray { --fdf-c: var(--fdf-coarray); }
+.pele .pele-node.fdfBlas { --fdf-c: var(--fdf-blas); }
+.pele .pele-node.fdfLapack { --fdf-c: var(--fdf-lapack); }
+.pele .pele-node.fdfScalapack { --fdf-c: var(--fdf-scalapack); }
+
+.pele .pele-node:is(.fdfModule, .fdfSubmodule, .fdfProgram, .fdfProcedure, .fdfGeneric, .fdfType, .fdfIntrinsic,
+  .fdfExternal, .fdfMpi, .fdfOmp, .fdfAcc, .fdfCuda, .fdfCoarray, .fdfBlas, .fdfLapack, .fdfScalapack)
+  :is(rect, path, polygon, circle, ellipse) {
+  fill: color-mix(in oklab, var(--fdf-c) var(--fdf-fill-share), var(--color-fd-card, transparent)) !important;
+  stroke: color-mix(in oklab, var(--fdf-c) 70%, transparent) !important;
+}
+
+.pele .pele-node:is(.fdfModule, .fdfSubmodule, .fdfProgram, .fdfProcedure, .fdfGeneric, .fdfType, .fdfIntrinsic,
+  .fdfExternal, .fdfMpi, .fdfOmp, .fdfAcc, .fdfCuda, .fdfCoarray, .fdfBlas, .fdfLapack, .fdfScalapack)
+  :is(.pele-label, .pele-label *) {
+  fill: color-mix(in oklab, var(--fdf-c) var(--fdf-text-share), var(--fdf-text-mix)) !important;
+  color: color-mix(in oklab, var(--fdf-c) var(--fdf-text-share), var(--fdf-text-mix)) !important;
+}
+
+/* the graph's subject: a heavier border; abstract types and what lies outside the project: a dashed one */
+.pele .pele-node.fdfFocus :is(rect, path, polygon, circle, ellipse) {
+  stroke: color-mix(in oklab, var(--fdf-c, currentColor) 90%, var(--fdf-text-mix)) !important;
+  stroke-width: 2.5px !important;
+}
+
+.pele .pele-node:is(.fdfAbstract, .fdfExternal) :is(rect, path, polygon, circle, ellipse) {
+  stroke-dasharray: 5 3 !important;
+}
+
+/* ---- right to left: Fortran reads left to right on any page ---- */
+
+/* Each piece of code is set apart from the text around it, so that a right-to-left page neither reorders it
+   (=> dense_matvec as dense_matvec <=) nor mirrors its brackets. */
+.fdf-arg-name, .fdf-arg-shape, .fdf-arg-decl, .fdf-flag, .fdf-when code, .fdf-cond code, .fdf-arg-field > dd > code,
+.fdf-ref-text, .fdf-ref-title, .fdf-source-title code, .fdf-toc-name {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* A type is set apart in the direction of its first letter, left to right as a Fortran keyword is, and not by
+   direction: ltr, which its hover cards would take too: they keep the page's direction, so that a card opens from its
+   name's start edge and stays over its table. A card's lines of text take the direction of their own words, so that a
+   doc in a right-to-left script reads and aligns as one on any page. */
+.fdf-arg-type, .fdf-ref-detail, .fdf-ref-note { unicode-bidi: plaintext; }
+
+/* ---- print: paper does not open ---- */
+
+/* A row prints its panel, the doc and the declaration being the reference, and looks as an open row does; a chevron
+   would point at nothing. Source blocks and collapsed graphs print as they are on screen, closed unless opened. */
+@media print {
+  .fdf-arg::details-content {
+    display: block;
+    content-visibility: visible;
+  }
+
+  .fdf-arg:not(.fdf-arg-plain) {
+    border-color: var(--fdf-line);
+    box-shadow: none;
+  }
+
+  .fdf-arg:not(.fdf-arg-plain, :last-child) { margin-bottom: 0.5rem; }
+
+  .fdf-arg > summary {
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+    break-after: avoid;
+  }
+
+  .fdf-arg-row, .fdf-arg-field { break-inside: avoid; }
+
+  .fdf-chevron { display: none; }
+
+  /* A hover card is for the screen. One whose name had the focus as the page was printed would print, and, fixed to
+     the screen where anchor positioning places it, on every page. */
+  .fdf-ref-card, .fdf-ref-name:is(:hover, :focus) > .fdf-ref-card { display: none; }
+}
+
+/* ---- motion: none for those who ask for less ---- */
+
+@media (prefers-reduced-motion: reduce) {
+  .fdf-chevron, .fdf-ref-name[href], .fdf-arg > summary, .fdf-source-head, .fdf-source-link,
+  .fdf-graph > summary, .fdf-ref-name:hover > .fdf-ref-card, .fdf-ref-name:focus > .fdf-ref-card { transition: none; }
+
+  /* no fade; the card still waits a moment before it goes, so that the pointer can reach it */
+  .fdf-ref-card { transition: visibility 0s 0.15s; }
 }

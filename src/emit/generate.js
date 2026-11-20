@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { extract } from '../extract.js';
+import { readText } from '../source/files.js';
 import { buildPages } from './pages.js';
 
 export const MANIFEST = '.fumadocs-fortran.json';
@@ -56,23 +57,35 @@ export function writePages(result, outDir) {
 }
 
 /**
- * Reads the sources, builds the pages and writes them.
+ * Reads the sources, builds the pages and writes them. Unless `readSource` is given, the source blocks are read from
+ * the files the model lists (the sources and the files they include) wherever they lie, and from any other file (one
+ * a #line marker names) only under the root; unless `include` is given, FORD's {!file!} includes are read from under
+ * the root only.
  * @param {import('../extract.js').ExtractOptions & import('./pages.js').PageOptions & { out: string }} options
  */
 export async function generate(options) {
   const ir = await extract(options);
-  // FORD's {!file!} includes, read relative to the project root, and never from outside it
+  // paths in the model and in {!file!} are relative to the project root (a root of / ends in a separator already)
   const root = path.resolve(options.root ?? '.');
-  const include = options.include ?? ((file) => {
+  const under = root.endsWith(path.sep) ? root : root + path.sep;
+  const inRoot = (abs) => abs.startsWith(under);
+  // a reader of the files `may` allows, by their absolute path and their path as given
+  const reader = (read, may) => (file) => {
     const abs = path.resolve(root, file);
-    if (abs !== root && !abs.startsWith(root + path.sep)) return null;
+    if (!may(abs, file)) return null;
     try {
-      return fs.readFileSync(abs, 'utf8');
+      return read(abs);
     } catch {
       return null;
     }
-  });
-  const result = buildPages(ir, { ...options, include });
+  };
+  // FORD's {!file!} includes: never from outside the root
+  const include = options.include ?? reader((abs) => fs.readFileSync(abs, 'utf8'), inRoot);
+  // the sources for the source blocks, read as the parser reads them (UTF-8, or Latin-1): the files the parser read,
+  // wherever they lie, as `generate ../src` from a site's folder finds them; another file only from under the root
+  const listed = new Set(ir.files.flatMap((f) => [f.path, ...(f.includes ?? [])]));
+  const readSource = options.readSource ?? reader(readText, (abs, file) => listed.has(file) || inRoot(abs));
+  const result = buildPages(ir, { ...options, include, readSource });
   const out = path.resolve(options.root ?? '.', options.out);
   return { ir, pages: result.pages, ...writePages(result, out) };
 }

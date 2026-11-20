@@ -12,4 +12,5 @@ export { renderDoc } from './docs/index.js';
 export { katexMacros, normaliseTex } from './docs/math.js';
 export { buildPages, anchorOf, prettyType, prettyCond } from './emit/pages.js';
 export { generate, writePages } from './emit/generate.js';
+export { buildGraphs } from './emit/graphs.js';
 export { escapeText, safeMarkdown } from './emit/mdx.js';

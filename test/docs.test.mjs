@@ -1,11 +1,21 @@
 // The doc-comment engine and the MDX safety layer.
 import { renderDoc } from '../src/docs/index.js';
-import { parseSource } from '../src/index.js';
+import { buildPages, parseSource } from '../src/index.js';
 import { escapeText, safeMarkdown, attr, inlineCode, plainText, codeLang } from '../src/emit/mdx.js';
 
 const block = (text, dir = 'after') => [{ dir, line: 1, lines: text.split('\n').map((l) => ` ${l}`) }];
+// the nodes of an MDX syntax tree that pass a test, in document order
+const nodesOf = (tree, test) => {
+  const out = [];
+  const walk = (n) => {
+    if (test(n)) out.push(n);
+    for (const c of n.children ?? []) walk(c);
+  };
+  walk(tree);
+  return out;
+};
 
-export default function ({ ok, eq, out }) {
+export default async function ({ ok, eq, out }) {
   // ---- escaping
   eq(escapeText('B(LDB,*) and A * X = B'), 'B(LDB,\\*) and A \\* X = B', 'LAPACK text is not emphasis');
   eq(escapeText('N >= 0 and x < {y}'), 'N &gt;= 0 and x &lt; \\{y\\}', 'comparisons and braces');
@@ -61,6 +71,22 @@ export default function ({ ok, eq, out }) {
   eq(safeMarkdown('- a\n\n    para of a\n\n- b'), '- a\n\n    para of a\n\n- b', 'a list item continued after a blank line (FORD nests lists 4 columns a level)');
   eq(safeMarkdown('- a\n\n        code'), '- a\n\n    ```text\n    code\n    ```', 'code in a list item is 8 columns in');
   eq(safeMarkdown('```text\n@note x\n```'), '```text\n@note x\n```', 'fenced code is left alone');
+  eq(safeMarkdown('Further Details\n~~~~~~~~~~~~~~~\ntext'), 'Further Details\n~~~~~~~~~~~~~~~\ntext\n~~~~~~~~~~~~~~~',
+    'a fence the doc leaves open is closed by as long a run (a LAPACK-style ~~~ underline is a fence to Markdown)');
+  eq(safeMarkdown('```fortran\nx = 1'), '```f90\nx = 1\n```', 'and a short one by its own run');
+  eq(safeMarkdown('- a list item\n\n    ```fortran\n    a = 1'), '- a list item\n\n    ```f90\n    a = 1\n    ```',
+    'and one opened in a list item inside the item, as far in as the line that opened it');
+  // MDX ends a list item at a line left of its text, and a fence in the item with it: the fence closes in the item
+  eq(safeMarkdown('- a list item\n\n    ```fortran\n    a = 1\n\nSee {x}.'),
+    '- a list item\n\n    ```f90\n    a = 1\n    ```\n\nSee \\{x\\}.', 'before the text that ends the item, which is text');
+  eq(safeMarkdown('- outer\n    - inner\n\n        ```fortran\n        a = 1\n\n    more of outer\n- next'),
+    '- outer\n    - inner\n\n        ```f90\n        a = 1\n        ```\n\n    more of outer\n- next', 'in a nested list');
+  eq(safeMarkdown('- item\n\n    ```fortran\n    a = 1\n```\nafter'), '- item\n\n    ```f90\n    a = 1\n    ```\nafter',
+    'a closer left of the item\'s text is moved into the item');
+  eq([safeMarkdown('- item\ncarried on\n\n    ```fortran\n    a = 1\nafter'), safeMarkdown('```fortran\n- x\na = 1\n```'),
+    safeMarkdown('1. item\n\n  ```fortran\na = 1\n```')],
+  ['- item\ncarried on\n\n    ```f90\n    a = 1\n    ```\nafter', '```f90\n- x\na = 1\n```', '1. item\n\n  ```f90\na = 1\n```'],
+  'a line that carries on an item\'s paragraph keeps the item; a fence outside any item holds lines at the margin');
   ok(!renderDoc(block('Text.\n\n```text\n@note this is code\n```')).body.includes('Callout'), 'a @note in code is code');
   eq(attr('attrs', "= '&lt;'"), " attrs=\"= '&amp;lt;'\"", 'an ampersand in a quoted attribute');
 
@@ -160,5 +186,94 @@ export default function ({ ok, eq, out }) {
     const blas = renderDoc(block('\\brief \\b DSCAL\n\n\\par Purpose:\n\\verbatim\n\n DSCAL scales a vector by a constant.\n\\endverbatim', 'before'), { name: 'DSCAL' });
     eq([blas.summary, (blas.body.match(/DSCAL scales/g) ?? []).length], ['DSCAL scales a vector by a constant.', 1], 'a summary made from Purpose is not repeated in the body');
     eq(d.group, 'gesv', '\\ingroup');
+  }
+
+  // ---- generated pages as MDX reads them: checked where @mdx-js/mdx can be imported, skipped, with one line, where
+  // it cannot (it is not a dependency of the package)
+  let mdx = null;
+  try {
+    mdx = await import('@mdx-js/mdx');
+  } catch {
+    console.log('MDX checks skipped: @mdx-js/mdx is not installed');
+  }
+  if (mdx) {
+    // argument docs that leave a fence open, at the top level and in a list item (as FORD nests lists): each fence
+    // closes in its own row, and the tags after it stay tags
+    const src = [
+      'module fences',
+      'contains',
+      '  subroutine add(a, b, c)',
+      '    !> the first',
+      '    !>',
+      '    !> ```fortran',
+      '    !> a = 1',
+      '    integer, intent(inout) :: a',
+      '    !> the second',
+      '    !>',
+      '    !> - a list item',
+      '    !>',
+      '    !>     ```fortran',
+      '    !>     b = 2',
+      '    integer, intent(in) :: b',
+      '    !> the third, after both',
+      '    integer, intent(in) :: c',
+      '  end subroutine add',
+      'end module fences',
+    ].join('\n');
+    // a page's body; each row of it: its name, then the code blocks inside it; why it does not compile, or ''
+    const bodyOf = (text, file) => {
+      const page = buildPages(parseSource(text, { root: out, path: file })).pages
+        .find((p) => p.path === file.replace(/\.f90$/, '.mdx')).mdx;
+      return page.slice(page.indexOf('\n---\n', 4) + 5);
+    };
+    const rowsOf = (body) => {
+      try {
+        const tree = mdx.createProcessor().parse(body);
+        return nodesOf(tree, (n) => n.type === 'mdxJsxFlowElement' && n.name === 'FortranArg').map((n) => [
+          n.attributes.find((a) => a.name === 'name')?.value,
+          ...nodesOf(n, (c) => c.type === 'code').map((c) => c.value),
+        ]);
+      } catch (e) {
+        return e.message;
+      }
+    };
+    const errorOf = async (body) => {
+      try {
+        await mdx.compile(body);
+        return '';
+      } catch (e) {
+        return e.message;
+      }
+    };
+    const body = bodyOf(src, 'fences.f90');
+    eq(rowsOf(body), [['a', 'a = 1'], ['b', 'b = 2'], ['c']],
+      'a fence a doc leaves open closes in its own row, in a list item or not');
+    eq(await errorOf(body), '', 'and the page compiles');
+    // a fence left open in a list item that the doc goes on after, at the margin: MDX ends the item there
+    const after = bodyOf([
+      'module after',
+      'contains',
+      '  subroutine add(a, b, c)',
+      '    !> - a list item',
+      '    !>',
+      '    !>     ```fortran',
+      '    !>     a = 1',
+      '    !>',
+      '    !> See also the notes.',
+      '    integer, intent(inout) :: a',
+      '    !> - one',
+      '    !>',
+      '    !>     ```fortran',
+      '    !>     b = 2',
+      '    !> - two',
+      '    integer, intent(in) :: b',
+      '    !> the third, after both',
+      '    integer, intent(in) :: c',
+      '  end subroutine add',
+      'end module after',
+    ].join('\n'), 'after.f90');
+    eq(rowsOf(after), [['a', 'a = 1'], ['b', 'b = 2'], ['c']],
+      'a fence left open in a list item that the doc goes on after closes in its row');
+    eq(await errorOf(after), '', 'and that page compiles');
   }
 }

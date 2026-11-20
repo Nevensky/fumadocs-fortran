@@ -1,9 +1,12 @@
-// MDX components for generated Fortran pages: badges, argument lists and a link to the source. No hooks and no
-// 'use client', so one set renders on the server (React Server Components) and in client-rendered MDX alike. Props
-// are plain strings, numbers and booleans, as generated MDX writes them. The look is in style.css (.fdf-* classes,
-// on fumadocs' colour variables); the elements outside Markdown carry fumadocs' not-prose class.
+// MDX components for generated Fortran pages: badges, argument tables with hover cards, source blocks, graphs, and
+// the kind letters of fumadocs' table of contents. No state, effects or context and no 'use client', so one set
+// renders on the server (React Server Components) and in client-rendered MDX alike: what opens and closes is a
+// <details> element, and the hover cards are CSS. The one hook is useId, which server components have too, for the id
+// that ties a hover card to its name. Props are plain strings, numbers, booleans and objects, as generated MDX writes
+// them. The look is in style.css (.fdf-* classes, on fumadocs' colour variables); the parts outside Markdown carry
+// fumadocs' not-prose class.
 
-import { Children, createElement as h } from 'react';
+import { Children, createElement as h, useId } from 'react';
 
 // The label of each known kind. Any other kind is shown as it is written, in the neutral style.
 const LABELS = {
@@ -37,6 +40,22 @@ const INTENTS = {
   inout: { arrow: '↔\uFE0E', title: 'intent(inout): read, and may be changed' },
 };
 
+// The optional columns of an argument table, in the order they are drawn, with their headings. The name column and
+// the expander are always there.
+const COLUMNS = { type: 'Type', shape: 'Shape', intent: 'Intent', attrs: 'Attributes' };
+
+// The letter of each kind in the table of contents
+const LETTERS = {
+  module: 'mod', submodule: 'smod', program: 'prog', type: 't', interface: 'i', subroutine: 's', function: 'f',
+  variable: 'v', parameter: 'p', enum: 'e',
+};
+
+// Hosts a source link is named after; any other shows its own name
+const HOSTS = {
+  'github.com': 'GitHub', 'gitlab.com': 'GitLab', 'codeberg.org': 'Codeberg', 'bitbucket.org': 'Bitbucket',
+  'git.sr.ht': 'sourcehut',
+};
+
 const cx = (...names) => names.filter(Boolean).join(' ');
 const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 const on = (v) => v === true || v === 'true';
@@ -45,9 +64,19 @@ const positive = (v) => {
   const n = Number(v);
   return Number.isInteger(n) && n > 0 ? n : 0;
 };
+// whitespace alone is no content: MDX hands over the blank lines around a block
+const filled = (children) => Children.toArray(children).some((x) => typeof x !== 'string' || x.trim());
 
-// Items with a space between each, which keeps words apart in copied text and for screen readers. In the flex rows
-// the gaps set the items apart and the spaces are not drawn; inside a pill the space is the gap.
+// A link to a page, an anchor or the web. Another scheme (javascript:, data:) is dropped rather than drawn: React
+// would block it anyway, with an error in the console.
+function safeHref(v) {
+  const s = text(v);
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(s.replace(/[\u0000- ]/g, ''))?.[1].toLowerCase();
+  return scheme && scheme !== 'http' && scheme !== 'https' && scheme !== 'mailto' ? '' : s;
+}
+
+// Items with a space between each, which keeps words apart in copied text and for screen readers. In the flex and
+// grid rows the gaps set the items apart and the spaces are not drawn; inside a pill the space is the gap.
 function spaced(items) {
   const out = [];
   for (const item of items) {
@@ -56,18 +85,6 @@ function spaced(items) {
     if (out.length) out.push(' ');
     out.push(item);
   }
-  return out;
-}
-
-// A path that may break after each slash on a narrow screen
-function breakable(s) {
-  const out = [];
-  let start = 0;
-  for (let i = s.indexOf('/'); i >= 0; i = s.indexOf('/', i + 1)) {
-    out.push(s.slice(start, i + 1), h('wbr'));
-    start = i + 1;
-  }
-  out.push(s.slice(start));
   return out;
 }
 
@@ -91,6 +108,19 @@ function splitAttrs(s) {
   out.push(cur.trim());
   return out.filter(Boolean);
 }
+
+// lucide's chevron-down, as fumadocs' TypeTable draws it; CSS turns it when its row or block is open. The size
+// attributes keep it small on a page without the stylesheet.
+const chevron = () => h('svg', {
+  className: 'fdf-chevron', viewBox: '0 0 24 24', width: 16, height: 16, fill: 'none', stroke: 'currentColor',
+  strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true',
+}, h('path', { d: 'm6 9 6 6 6-6' }));
+
+// lucide's arrow-up-right: the link leaves the site
+const arrow = () => h('svg', {
+  className: 'fdf-icon', viewBox: '0 0 24 24', width: 14, height: 14, fill: 'none', stroke: 'currentColor',
+  strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true',
+}, h('path', { d: 'M7 7h10v10' }), h('path', { d: 'M7 17 17 7' }));
 
 /** A wrapping row of badges. */
 export function FortranBadges({ children }) {
@@ -122,27 +152,122 @@ export function FortranBadge({ kind, label, conditional, title }) {
     ...spaced([shown, cond ? h('span', { className: 'fdf-when' }, 'when ', h('code', null, cond)) : null]));
 }
 
-/** A titled definition list of arguments, components or results: FortranArg rows. */
-export function FortranArgs({ title = 'Arguments', children }) {
-  const heading = text(title);
-  return h('div', { className: 'fdf-args' },
-    heading ? h('p', { className: 'fdf-args-title not-prose' }, heading) : null,
-    h('dl', { className: 'fdf-args-list' }, children));
+// The optional columns to show: those `columns` names (space- or comma-separated) in table order; all when absent
+function columnsOf(columns) {
+  if (columns === undefined || columns === null) return Object.keys(COLUMNS);
+  const want = new Set((Array.isArray(columns) ? columns.join(' ') : String(columns)).toLowerCase().split(/[\s,]+/));
+  return Object.keys(COLUMNS).filter((c) => want.has(c));
 }
 
 /**
- * One argument: its name, its type with dimensions and codimensions, an intent marker, flags (optional, value and
- * the attributes in `attrs`), and the cpp condition it exists under; then its Markdown doc, indented.
+ * A table of arguments, components, bindings or results in the manner of fumadocs' TypeTable: a title, a header
+ * row, then the FortranArg rows. `columns` names the optional columns to show (type, shape, intent, attrs; all four
+ * by default). The widths come from the table, through CSS variables, so that every row lines up; data-columns tells
+ * the stylesheet which columns are left out.
  */
-export function FortranArg({ name, type, dims, codims, intent, optional, value, attrs, cond, children }) {
+export function FortranArgs({ title = 'Arguments', columns, children }) {
+  const heading = text(title);
+  const shown = columnsOf(columns);
+  // the header is for the eye: each row reads on its own, and the pills say what they are
+  const head = [
+    h('span', { className: 'fdf-col-name' }, 'Name'),
+    ...shown.map((c) => h('span', { className: `fdf-col-${c}` }, COLUMNS[c])),
+  ];
+  return h('div', { className: 'fdf-args', 'data-columns': shown.join(' ') },
+    heading ? h('p', { className: 'fdf-args-title not-prose' }, heading) : null,
+    h('div', { className: 'fdf-args-head not-prose', 'aria-hidden': 'true' }, ...spaced(head)),
+    children);
+}
+
+// refs as an MDX expression gives them (an object), or as JSON text. Keys are matched without regard to case.
+function refsOf(refs) {
+  let r = refs;
+  if (typeof r === 'string') {
+    try {
+      r = JSON.parse(r);
+    } catch {
+      return null;
+    }
+  }
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
+  const out = new Map();
+  for (const [k, v] of Object.entries(r)) {
+    const key = k.trim().toLowerCase();
+    if (key && v && typeof v === 'object' && !out.has(key)) out.set(key, v);
+  }
+  return out.size ? out : null;
+}
+
+// The type as code, with each whole-word name that `refs` knows as a FortranRef. The code is cut around the names
+// rather than wrapping them, so that a hover card, which sits inside its name, takes the page's font and not the
+// code's. A long type breaks where it must (overflow-wrap in style.css): break opportunities written into it would
+// split the names that screen readers read.
+function typeRuns(t, refs) {
+  const out = [];
+  const code = (s) => h('code', null, s);
+  let from = 0;
+  if (refs) {
+    for (const m of t.matchAll(/[A-Za-z_][\w$]*/g)) {
+      // the tail of a longer word (the dp of 2dp) is not a name
+      if (m.index > 0 && /[\w$]/.test(t[m.index - 1])) continue;
+      const ref = refs.get(m[0].toLowerCase());
+      if (!ref) continue;
+      if (m.index > from) out.push(code(t.slice(from, m.index)));
+      out.push(h(FortranRef, { href: ref.href, title: ref.title, detail: ref.detail, note: ref.note }, m[0]));
+      from = m.index + m[0].length;
+    }
+  }
+  if (from < t.length) out.push(code(t.slice(from)));
+  return out;
+}
+
+/**
+ * The shape in words, from the dimensions, the codimensions and the attributes (lower case): "rank 2, assumed shape",
+ * "rank 1, deferred shape" (allocatable or pointer), "rank 2, assumed size", "assumed rank", then "coarray".
+ */
+function shapeWords(dims, codims, attrs) {
+  const out = [];
+  const specs = dims ? splitAttrs(dims.slice(1, -1)) : [];
+  if (specs.length === 1 && specs[0] === '..') out.push('assumed rank');
+  else if (specs.length) {
+    const last = specs[specs.length - 1];
+    const deferred = attrs.has('allocatable') || attrs.has('pointer');
+    // `:` alone defers or assumes the extent; `lb:` assumes it; `*` (or `lb:*`) last is assumed size
+    const kind = /^(?:.*:)?\s*\*$/.test(last) ? (attrs.has('parameter') ? 'implied shape' : 'assumed size')
+      : specs.every((s) => s === ':') ? (deferred ? 'deferred shape' : 'assumed shape')
+        : specs.every((s) => s.endsWith(':')) ? 'assumed shape'
+          : specs.every((s) => !s.startsWith(':') && !s.endsWith(':')) ? 'explicit shape' : '';
+    out.push(`rank ${specs.length}${kind ? `, ${kind}` : ''}`);
+  }
+  if (codims) {
+    const corank = splitAttrs(codims.slice(1, -1)).length;
+    out.push(corank > 1 ? `coarray, corank ${corank}` : 'coarray');
+  }
+  return out.join('; ');
+}
+
+/**
+ * One row of a FortranArgs table: the name, the type (names in `refs` link and carry a hover card), the shape
+ * (dimensions and codimensions), the intent marker (or "result"), and the attributes with the cpp condition the row
+ * exists under. The row opens, as fumadocs' TypeTable rows do, to a panel with the doc (the children, Markdown), the
+ * declaration, the shape in words and the condition; a row with none of these is a plain row. In a narrow table the
+ * row keeps the name and the intent, and the panel shows the type, the shape and the attributes: both are drawn, and
+ * the stylesheet shows the one that fits.
+ */
+export function FortranArg({
+  name, type, dims, codims, intent, optional, value, attrs, cond, result, decl, refs, children,
+}) {
   const t = text(type);
   let d = text(dims);
   let cd = text(codims);
   if (d && !d.startsWith('(')) d = `(${d})`;
   if (cd && !cd.startsWith('[')) cd = `[${cd}]`;
-  const typeEl = t || d || cd
-    ? h('code', { className: 'fdf-arg-type' },
-      t || null,
+  // The type is drawn twice, in its cell and in the copy for a narrow table: a new element each time, as a server
+  // renders an element it meets twice only once, and the hover cards of both copies would then share one id
+  const r = refsOf(refs);
+  const typeEl = () => (t ? h('span', { className: 'fdf-arg-type' }, ...typeRuns(t, r)) : null);
+  const shapeEl = d || cd
+    ? h('code', { className: 'fdf-arg-shape' },
       d ? h('span', { className: 'fdf-arg-dims' }, d) : null,
       cd ? h('span', { className: 'fdf-arg-codims' }, cd) : null)
     : null;
@@ -150,10 +275,12 @@ export function FortranArg({ name, type, dims, codims, intent, optional, value, 
   const i = text(intent);
   const key = i.toLowerCase().replace(/[\s_]+/g, '');
   const known = INTENTS[key];
-  const intentEl = !i ? null : known
-    ? h('span', { className: `fdf-intent fdf-intent-${key}`, title: known.title },
-      h('span', { className: 'fdf-intent-arrow', 'aria-hidden': 'true' }, known.arrow), ' ', key)
-    : h('span', { className: 'fdf-intent', title: `intent(${i})` }, i);
+  const intentEl = on(result)
+    ? h('span', { className: 'fdf-intent fdf-intent-result', title: 'The function result' }, 'result')
+    : !i ? null : known
+      ? h('span', { className: `fdf-intent fdf-intent-${key}`, title: known.title },
+        h('span', { className: 'fdf-intent-arrow', 'aria-hidden': 'true' }, known.arrow), ' ', key)
+      : h('span', { className: 'fdf-intent', title: `intent(${i})` }, i);
 
   const flags = [];
   const seen = new Set();
@@ -165,37 +292,178 @@ export function FortranArg({ name, type, dims, codims, intent, optional, value, 
 
   const c = text(cond);
   const condEl = c ? h('span', { className: 'fdf-cond' }, 'when ', h('code', null, c)) : null;
-  const sig = spaced([typeEl, intentEl, ...flags, condEl]);
-  // whitespace alone is no doc, and leaves the dd empty
-  const doc = Children.toArray(children).some((x) => typeof x !== 'string' || x.trim()) ? children : null;
+  const words = shapeWords(d, cd, seen);
+  const dc = text(decl);
+  const doc = filled(children) ? children : null;
 
-  return h('div', { className: cx('fdf-arg', c && 'fdf-arg-conditional') },
-    h('dt', { className: 'fdf-arg-head not-prose' },
-      ...spaced([
-        h('code', { className: 'fdf-arg-name' }, text(name)),
-        sig.length ? h('span', { className: 'fdf-arg-sig' }, ...sig) : null,
-      ])),
-    // a definition list needs a dd in every group; an empty one is hidden
-    h('dd', { className: 'fdf-arg-doc' }, doc));
+  // the cells, in column order; an empty one still holds its place in the grid
+  const none = h('span', { className: 'fdf-arg-none', 'aria-hidden': 'true' }, '—');
+  const cells = spaced([
+    h('span', { className: 'fdf-col-name' }, h('code', { className: 'fdf-arg-name' }, text(name))),
+    h('span', { className: 'fdf-col-type' }, typeEl()),
+    h('span', { className: 'fdf-col-shape' }, shapeEl ?? none),
+    h('span', { className: 'fdf-col-intent' }, intentEl),
+    h('span', { className: 'fdf-col-attrs' }, ...spaced([...flags, condEl])),
+  ]);
+
+  if (!doc && !dc && !words && !c) {
+    // nothing to open to: a plain row, and for a narrow table a line with what its hidden cells hold
+    const alt = spaced([typeEl(), shapeEl, ...flags]);
+    return h('div', { className: 'fdf-arg fdf-arg-plain' },
+      h('div', { className: 'fdf-arg-row not-prose' }, ...cells),
+      alt.length ? h('div', { className: 'fdf-arg-alt not-prose' }, ...alt) : null);
+  }
+
+  const field = (label, content, narrow) => h('div', { className: cx('fdf-arg-field', narrow && 'fdf-arg-narrow') },
+    h('dt', null, label), h('dd', null, ...content));
+  const fields = [
+    // the cells a narrow table hides
+    t && field('Type', [typeEl()], true),
+    flags.length && field('Attributes', spaced(flags), true),
+    dc && field('Declaration', [h('code', { className: 'fdf-arg-decl' }, dc)]),
+    shapeEl && field('Shape', spaced([h('span', { className: 'fdf-arg-narrow' }, shapeEl), words]), !words),
+    c && field('Exists when', [h('code', null, c)]),
+  ].filter(Boolean);
+
+  // A reader may open a row before React has hydrated the page: the open attribute the server's markup lacked is
+  // theirs, not a mismatch to warn about. Likewise for the source blocks and the graphs.
+  return h('details', { className: cx('fdf-arg', c && 'fdf-arg-conditional'), suppressHydrationWarning: true },
+    h('summary', { className: 'fdf-arg-row not-prose' }, ...cells, chevron()),
+    h('div', { className: 'fdf-arg-panel' },
+      doc ? h('div', { className: 'fdf-arg-doc' }, doc) : null,
+      fields.length ? h('dl', { className: 'fdf-arg-fields not-prose' }, ...fields) : null));
 }
 
-/** A quiet "Defined in file:line–lineEnd" line, linked when `href` is given. */
-export function FortranSource({ file, line, lineEnd, href }) {
+/**
+ * A name that links to `href` and carries a hover card: `title` in code, then `detail` and a muted `note`. The card
+ * is CSS: it shows while the name is hovered or has focus. It sits inside the name, so that a click on it follows the
+ * link and, in a row, does not open or close the row. Without a link the name is a button that does nothing, which the
+ * keyboard reaches and which shows the card while it has focus. For screen readers the card describes the name
+ * (aria-describedby) and has no text of its own (aria-hidden), so that a row is not read with the card in it. The card
+ * is not prose, so that a name in running text does not give its title the look of inline code.
+ */
+export function FortranRef({ href, title, detail, note, children }) {
+  // before any return: a hook runs on every render
+  const id = useId();
+  if (!filled(children)) return null;
+  const link = safeHref(href);
+  const parts = spaced([
+    text(title) ? h('code', { className: 'fdf-ref-title' }, text(title)) : null,
+    text(detail) ? h('span', { className: 'fdf-ref-detail' }, text(detail)) : null,
+    text(note) ? h('span', { className: 'fdf-ref-note' }, text(note)) : null,
+  ]);
+  const card = parts.length
+    ? h('span', { className: 'fdf-ref-card not-prose', role: 'tooltip', 'aria-hidden': 'true', id }, ...parts)
+    : null;
+  // the name's own text is set as code, apart from the card beside it, which keeps the font of the text around the name
+  const label = h('span', { className: 'fdf-ref-text' }, children);
+  const described = card ? { 'aria-describedby': id } : {};
+  const name = link
+    ? h('a', { className: 'fdf-ref-name', href: link, ...described }, label, card)
+    : card
+      ? h('button', { className: 'fdf-ref-name', type: 'button', ...described }, label, card)
+      : h('span', { className: 'fdf-ref-name' }, label);
+  return h('span', { className: 'fdf-ref' }, name);
+}
+
+// What a source link is called: its host's name, or its host
+function hostOf(link) {
+  try {
+    const host = new URL(link).hostname.replace(/^www\./, '');
+    return HOSTS[host] ?? host;
+  } catch {
+    // a path on the site itself
+    return 'Open';
+  }
+}
+
+/**
+ * Where an entity is defined, as a header in the manner of mkdocstrings: "Source code in <file>", its lines, and a
+ * link to them (`href`). With children (the generated code block) it is a block that opens to the code; without, it
+ * is the header alone, all of it a link when there is one.
+ */
+export function FortranSource({ file, line, lineEnd, href, children }) {
   const f = text(file);
-  const link = text(href);
+  const link = safeHref(href);
   // neither a file nor a link: nothing to point at
   if (!f && !link) return null;
   const start = positive(line);
   const end = positive(lineEnd);
-  const range = !start ? '' : end > start ? `${start}–${end}` : `${start}`;
-  const label = f ? (range ? `${f}:${range}` : f) : link;
-  const lines = !start ? '' : end > start ? `lines ${start} to ${end}` : `line ${start}`;
-  const title = lines ? (f ? `${f}, ${lines}` : lines) : undefined;
-  const code = h('code', null, ...breakable(label));
-  const plain = title ? h('span', { title }, code) : code;
-  return h('p', { className: 'fdf-source not-prose' },
-    'Defined in ', link ? h('a', { className: 'fdf-source-link', href: link, title }, code) : plain);
+  const lines = !start ? '' : end > start ? `lines ${start}–${end}` : `line ${start}`;
+  const spelt = !start ? '' : end > start ? `lines ${start} to ${end}` : `line ${start}`;
+  const title = [f, spelt].filter(Boolean).join(', ') || undefined;
+  const label = h('span', { className: 'fdf-source-title' },
+    ...(f ? ['Source code in ', h('code', null, f)] : ['Source code']));
+  const range = lines ? h('span', { className: 'fdf-source-lines' }, lines) : null;
+  const host = (tag, props) => h(tag, { className: 'fdf-source-link', ...props }, hostOf(link), ' ', arrow());
+
+  if (filled(children)) {
+    // the link is a real one inside the summary: following it does not open the block. It and the chevron are one
+    // group, which wraps as a whole when the line is full, so that the chevron never stands alone. Its title says
+    // what "GitHub" alone does not: the file and the lines it opens.
+    const end = h('span', { className: 'fdf-source-end' }, link ? host('a', { href: link, title }) : null, chevron());
+    return h('details', { className: 'fdf-source', suppressHydrationWarning: true },
+      h('summary', { className: 'fdf-source-head not-prose' }, ...spaced([label, range, end])),
+      h('div', { className: 'fdf-source-body' }, children));
+  }
+  // all of the header a link: its text names the file and the lines already, and a title would have screen readers
+  // say them twice
+  const head = spaced([label, range, link ? host('span', {}) : null]);
+  return h('div', { className: 'fdf-source not-prose' }, link
+    ? h('a', { className: 'fdf-source-head', href: link }, ...head)
+    : h('div', { className: 'fdf-source-head' }, ...head));
+}
+
+/**
+ * A diagram (the site draws the ```mermaid block inside): a card with the title, if any, as a small label or, when
+ * `collapsed`, a block titled by it ("Graph" without one) that starts closed. Nothing without a diagram. The diagram is
+ * not prose: fumadocs' link style would underline the label of every node that links, and set it in a heavier weight
+ * than it was laid out for.
+ */
+export function FortranGraph({ title, collapsed, children }) {
+  if (!filled(children)) return null;
+  const t = text(title);
+  const label = (s) => h('span', { className: 'fdf-graph-title' }, s);
+  const body = h('div', { className: 'fdf-graph-body not-prose' }, children);
+  if (on(collapsed)) {
+    return h('details', { className: 'fdf-graph', suppressHydrationWarning: true },
+      h('summary', { className: 'fdf-graph-head not-prose' }, label(t || 'Graph'), chevron()),
+      body);
+  }
+  return h('figure', { className: 'fdf-graph' },
+    t ? h('figcaption', { className: 'fdf-graph-head not-prose' }, label(t)) : null,
+    body);
+}
+
+/**
+ * fumadocs' table of contents with a letter for each entity's kind: `kinds` maps anchors (without '#') to kinds, as
+ * the generated frontmatter's fortran.toc does. Returns a new array; the items it has no kind for stay as they are.
+ */
+export function fortranToc(toc, kinds) {
+  if (!kinds || typeof kinds !== 'object' || !Array.isArray(toc)) return toc;
+  const kindOf = (anchor) => {
+    if (Object.hasOwn(kinds, anchor)) return kinds[anchor];
+    try {
+      const plain = decodeURIComponent(anchor);
+      return Object.hasOwn(kinds, plain) ? kinds[plain] : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  return toc.map((item) => {
+    const url = typeof item?.url === 'string' ? item.url : '';
+    const kind = text(kindOf(url.slice(url.indexOf('#') + 1))).toLowerCase();
+    if (!Object.hasOwn(LETTERS, kind)) return item;
+    return {
+      ...item,
+      title: h('span', { className: 'fdf-toc' },
+        h('span', { className: `fdf-toc-kind fdf-toc-${kind}`, 'aria-hidden': 'true' }, LETTERS[kind]), ' ',
+        h('span', { className: 'fdf-toc-name' }, item.title)),
+    };
+  });
 }
 
 /** The components, to spread into getMDXComponents(). */
-export const fortranComponents = { FortranBadges, FortranBadge, FortranArgs, FortranArg, FortranSource };
+export const fortranComponents = {
+  FortranBadges, FortranBadge, FortranArgs, FortranArg, FortranRef, FortranSource, FortranGraph,
+};

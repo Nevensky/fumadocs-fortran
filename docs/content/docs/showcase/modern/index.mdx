@@ -39,3 +39,38 @@ description: "The API reference fumadocs-fortran generates for examples/modern: 
 {"1 external procedure: DTRIDS"}
 </Card>
 </Cards>
+
+## Dependencies
+
+<FortranGraph>
+
+```mermaid
+flowchart LR
+  classDef fdfModule fill:#b0a9e0,stroke:#6453a7,color:#111111
+  classDef fdfSubmodule fill:#c8a1d0,stroke:#834791,color:#111111
+  classDef fdfProgram fill:#80bfb6,stroke:#00736a,color:#111111
+  classDef fdfMpi fill:#85c19a,stroke:#057743,color:#111111
+  classDef fdfOmp fill:#88b3f2,stroke:#145ec1,color:#111111
+  n1["eigen_wrappers"]
+  n2["solver_kernels"]
+  n3[["solver_kernels_lapack"]]
+  n4(["demo"])
+  n5("mpi_f08")
+  n6("omp_lib")
+  n2 -- "_OPENMP" --> n6
+  n2 -- "USE_MPI" --> n5
+  n3 -. "submodule of" .-> n2
+  n4 --> n2
+  class n1 fdfModule
+  class n2 fdfModule
+  class n3 fdfSubmodule
+  class n4 fdfProgram
+  class n5 fdfMpi
+  class n6 fdfOmp
+  click n1 href "/docs/showcase/modern/eigen_wrappers"
+  click n2 href "/docs/showcase/modern/solver_kernels"
+  click n3 href "/docs/showcase/modern/solver_kernels_lapack"
+  click n4 href "/docs/showcase/modern/demo"
+```
+
+</FortranGraph>

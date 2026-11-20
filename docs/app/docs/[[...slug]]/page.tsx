@@ -13,6 +13,7 @@ import { Credits } from '@/components/credits';
 import type { Metadata } from 'next';
 import { createRelativeLink } from 'fumadocs-ui/mdx';
 import { getPageImageUrl, getPageMarkdownUrl, gitConfig, githubUrl } from '@/lib/shared';
+import { fortranToc } from 'fumadocs-fortran/react';
 
 export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   const params = await props.params;
@@ -21,13 +22,14 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
 
   const MDX = page.data.body;
   const markdownUrl = getPageMarkdownUrl(page).url;
-  // the Showcase pages are generated and not committed, so they have no file on GitHub to open (their source links
-  // point at the Fortran instead)
+  // the Showcase pages are generated, so the file on GitHub is not one to edit (their source links point at the
+  // Fortran instead)
   const generated = page.path.startsWith('showcase/');
 
   return (
     <DocsPage
-      toc={page.data.toc}
+      // generated API pages mark each entry with its kind: t type, s subroutine, f function, …
+      toc={fortranToc(page.data.toc, page.data.fortran?.toc)}
       full={page.data.full}
       footer={{ children: <Credits className="border-t pt-4 text-xs" /> }}
     >

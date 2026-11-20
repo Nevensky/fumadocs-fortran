@@ -4,6 +4,9 @@
 
 import path from 'node:path';
 import { renderDoc } from '../docs/index.js';
+import { splitTop } from '../parse/text.js';
+import { buildGraphs } from './graphs.js';
+import { INTRINSIC_MODULES } from './kinds.js';
 import { attr, decodeText, escapeText, inlineCode, plainText, yamlString } from './mdx.js';
 
 /**
@@ -19,13 +22,44 @@ import { attr, decodeText, escapeText, inlineCode, plainText, yamlString } from 
  *   site without remark-math
  * @property {boolean} [defaultOpen] the output folder starts open in the sidebar
  * @property {(file: string) => string|null} [include] reads FORD's {!file!} includes (generate reads them relative to
- *   the project root); without it they are dropped
+ *   the project root, and only from under it); without it they are dropped
  * @property {Record<string, string>} [aliases] FORD's |name| aliases; a name not here stays as written
+ * @property {(file: string) => string|null} [readSource] reads a source file, by its path in the IR (relative to the
+ *   project root), for the source blocks. generate reads the files the IR lists (the sources and the files they
+ *   include) wherever they lie, and any other file (one a #line marker names) only from under the root. Without it,
+ *   entities only link to their lines
+ * @property {'embed'|'link'} [source] 'embed' (the default when readSource is given) puts each procedure's, type's,
+ *   interface's, variable's and enum's lines in a collapsible block under it; 'link' only links to them
+ * @property {number} [sourceMaxLines] the most lines an entity may span for its source to be embedded (default 400)
+ * @property {boolean | GraphPageOptions} [graphs] the graphs, as ```mermaid blocks for remarkMdxMermaid (default on):
+ *   each unit's dependencies, each type's inheritance, each procedure's and generic's calls, and the overview's
+ *   modules; false leaves them out
+ */
+
+/**
+ * @typedef {object} GraphPageOptions
+ * @property {number} [depth] how far uses and callees are followed (default 2)
+ * @property {number} [maxNodes] the most nodes a graph draws (default 40; below 2 counts as 2), and the most units
+ *   the overview draws (default 80)
+ * @property {(name: string) => string|null} [classify] the library a routine called by name is from, by its
+ *   lower-case name: 'blas', 'lapack', 'scalapack', 'mpi' and so on, or null when unknown
  */
 
 const OPS = { '+': 'plus', '-': 'minus', '*': 'times', '/': 'divide', '**': 'power', '//': 'concat', '==': 'eq', '/=': 'ne', '<': 'lt', '<=': 'le', '>': 'gt', '>=': 'ge' };
-const HPC_MODULES = { mpi: 'mpi', mpi_f08: 'mpi', mpif: 'mpi', omp_lib: 'omp', omp_lib_kinds: 'omp', openacc: 'acc', cudafor: 'cuda', cublas: 'cuda' };
+const HPC_MODULES = {
+  mpi: 'mpi', mpi_f08: 'mpi', mpif: 'mpi', omp_lib: 'omp', omp_lib_kinds: 'omp', openacc: 'acc',
+  // CUDA Fortran and the NVIDIA libraries' Fortran modules
+  cudafor: 'cuda', cublas: 'cuda', cufft: 'cuda', curand: 'cuda', cusparse: 'cuda', cusolverdn: 'cuda',
+};
 const ATTR_PREFIX = new Set(['pure', 'impure', 'elemental', 'recursive', 'non_recursive', 'simple']);
+// units have pages of their own, too long for a source block
+const UNITS = new Set(['module', 'submodule', 'program', 'blockdata']);
+// a kind or type name that can link: an identifier, not `8`, `kind(1d0)` or `*`
+const IDENT = /^[A-Za-z][A-Za-z0-9_]*$/;
+// the intrinsic types whose kind may be a named constant
+const KINDED = new Set(['integer', 'real', 'complex', 'logical', 'character']);
+// control characters other than tab, which a source block drops
+const CONTROLS = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
 
 /** The anchor of an entity on its page: lower-case name; operators get fixed slugs. */
 export function anchorOf(e) {
@@ -51,9 +85,14 @@ export function buildPages(ir, opts = {}) {
   const E = ir.entities;
   const all = Object.values(E);
   const children = (e) => (e.children ?? []).map((id) => E[id]).filter(Boolean);
+  // the interface bodies of separate module procedures by lower-case name, in the IR's order (findInterface)
+  let separateBodies = null;
   // a separate module procedure has the access of the interface body that declares it
   const accessOf = (e) => e.access ?? (e.scope === 'separate' ? findInterface(e)?.access : undefined);
   const shown = (e) => {
+    // a procedure's internal procedures have no access of their own: they are shown where their host is
+    const host = e.kind === 'procedure' && e.scope === 'internal' ? E[e.parent] : null;
+    if (host?.kind === 'procedure') return shown(host);
     const a = accessOf(e);
     return !a || display.has(a);
   };
@@ -164,6 +203,237 @@ export function buildPages(ir, opts = {}) {
     return hits.length ? pick(hits) : null;
   };
 
+  // ---- graphs, drawn per entity when its section is written. A node links to the entity's heading; a generic's
+  // interface body and a type-bound procedure are documented under their generic's and their type's, and a
+  // procedure's internal procedures in its own entry.
+  const graphUrl = (e) => {
+    if (where.has(e.id)) return where.get(e.id);
+    const p = E[e.parent];
+    const under = e.kind === 'binding'
+      || (e.kind === 'procedure' && ((e.scope === 'interface' && p?.kind === 'interface')
+        || (e.scope === 'internal' && p?.kind === 'procedure')));
+    return (under && p && where.get(p.id)) || null;
+  };
+  const graphOpts = opts.graphs && typeof opts.graphs === 'object' ? opts.graphs : {};
+  const graphs = opts.graphs === false ? null : buildGraphs(ir, {
+    url: graphUrl, shown, classify: graphOpts.classify, depth: graphOpts.depth, maxNodes: graphOpts.maxNodes,
+  });
+  /** A graph card around a ```mermaid block, open or collapsed; nothing when there is no graph. */
+  const graphCard = (title, mermaid, collapsed = false) => {
+    if (!mermaid) return '';
+    let f = '```';
+    while (mermaid.includes(f)) f += '`';
+    const tag = `<FortranGraph${attr('title', title)}${attr('collapsed', collapsed)}>`;
+    return `${tag}\n\n${f}mermaid\n${mermaid}\n${f}\n\n</FortranGraph>`;
+  };
+
+  // ---- scopes: where a kind name or a derived type named in a declaration comes from, for the rows' refs
+  const lc = (s) => String(s ?? '').toLowerCase();
+  const modules = new Map();
+  const submodules = new Map();
+  for (const e of all) {
+    if (e.parent) continue;
+    if (e.kind === 'module' && !modules.has(lc(e.name))) modules.set(lc(e.name), e);
+    const key = `${lc(e.ancestor)}:${lc(e.name)}`;
+    if (e.kind === 'submodule' && !submodules.has(key)) submodules.set(key, e);
+  }
+  // an entity, its hosts and its unit; after a submodule, its parent submodules and its module, whose names it sees
+  const scopeChain = (e) => {
+    const chain = [];
+    const seen = new Set();
+    let x = e;
+    while (x && !seen.has(x.id)) {
+      seen.add(x.id);
+      chain.push(x);
+      if (x.parent) x = E[x.parent];
+      else if (x.kind === 'submodule') {
+        const parentSub = x.parentSubmodule && submodules.get(`${lc(x.ancestor)}:${lc(x.parentSubmodule)}`);
+        x = parentSub || modules.get(lc(x.ancestor));
+      } else x = null;
+    }
+    return chain;
+  };
+  const declaredIn = (unit, key, want) => children(unit)
+    .find((c) => lc(c.name) === key && c.kind === (want === 'type' ? 'type' : 'variable'));
+  // a name the use statements of x give: a project entity (followed through the modules that pass it on), a name of
+  // an intrinsic module, a module outside the project that is known to give it, or null
+  const fromUses = (x, key, want, seen) => {
+    for (const u of x.uses ?? []) {
+      const mod = lc(u.module);
+      let item;
+      if (u.only) {
+        item = u.only.find((i) => lc(i.local ?? i.name) === key);
+        if (!item) continue;
+      } else {
+        item = u.renames?.find((i) => lc(i.local ?? i.name) === key);
+        // a name renamed here is not visible under its own name as well
+        if (!item && u.renames?.some((i) => i.local && lc(i.name) === key)) continue;
+      }
+      const remote = item ? lc(item.name) : key;
+      const project = u.nature === 'intrinsic' ? undefined : modules.get(mod);
+      if (project) {
+        // modules that use each other: each is asked for a name once
+        const visit = `${project.id}\0${remote}`;
+        if (seen.has(visit)) continue;
+        seen.add(visit);
+        const d = declaredIn(project, remote, want);
+        if (d && accessOf(d) !== 'private') return { entity: d };
+        const r = d ? null : fromUses(project, remote, want, seen);
+        if (r) return r;
+      } else if (u.nature !== 'non_intrinsic' && Object.hasOwn(INTRINSIC_MODULES, mod)) {
+        if (item || Object.hasOwn(INTRINSIC_MODULES[mod].names, remote)) {
+          return { intrinsic: mod, name: item?.name ?? remote, renamed: !!item?.local, use: u, at: x };
+        }
+      } else if (item) return { outside: mod };
+    }
+    return null;
+  };
+  const lookupName = (name, want, scope) => {
+    const key = lc(name);
+    for (const x of scopeChain(scope)) {
+      // a component's kind may be a kind parameter of its type
+      if (want === 'kind' && x.kind === 'type') {
+        const p = x.params?.find((q) => lc(q.name) === key);
+        if (p) return { param: p };
+      }
+      if (x.kind === 'module' || x.kind === 'submodule') {
+        const d = declaredIn(x, key, want);
+        if (d) return { entity: d };
+      }
+      const r = fromUses(x, key, want, new Set());
+      if (r) return r;
+    }
+    return null;
+  };
+  // hover text is plain text: a doc's summary without its markup
+  const summaries = new WeakMap();
+  const summaryOf = (x) => {
+    if (!summaries.has(x)) {
+      const how = { resolve, name: x.name, math: opts.math, include: opts.include, aliases: opts.aliases };
+      const s = x.doc?.blocks?.length ? plainText(renderDoc(x.doc.blocks, how).summary) : '';
+      summaries.set(x, s ? clip(s, 200) : '');
+    }
+    return summaries.get(x);
+  };
+  const withDetail = (ref, detail) => (detail ? { ...ref, detail } : ref);
+  const entityRef = (e) => {
+    const href = where.get(e.id);
+    if (!href) return null;
+    return withDetail({ href, title: clip(e.kind === 'type' ? typeDecl(e) : varDecl(e), 100) }, summaryOf(e));
+  };
+  const intrinsicRef = (written, hit) => {
+    const mod = INTRINSIC_MODULES[hit.intrinsic];
+    const key = lc(hit.name);
+    const meaning = Object.hasOwn(mod.names, key) ? mod.names[key] : null;
+    return {
+      href: mod.url,
+      title: lc(written) === key ? written : `${written} ⇒ ${hit.name}`,
+      detail: meaning ?? `A named constant of the intrinsic module ${hit.intrinsic}`,
+      note: `${hit.renamed ? 'Renamed in' : 'From'} the use statement at ${shownPath(hit.at.file)}:${hit.use.line}`,
+    };
+  };
+  const refCache = new Map();
+  // the card for a kind name or a derived type: 1. an entity with a heading, 2. a name of an intrinsic module,
+  // 3. nothing. A name the scope does not explain (declared where the model does not look) is looked up by name.
+  const refOf = (name, want, scope) => {
+    const key = `${want}\0${name}\0${scope?.id ?? ''}\0${current}`;
+    if (refCache.has(key)) return refCache.get(key);
+    const hit = scope ? lookupName(name, want, scope) : null;
+    let ref = null;
+    if (hit?.entity) ref = entityRef(hit.entity);
+    else if (hit?.param) {
+      const p = hit.param;
+      const init = p.init !== undefined ? ` = ${p.init}` : '';
+      const title = `${prettyType(p.type) ?? 'integer'}, ${p.attr ?? 'kind'} :: ${p.name}${init}`;
+      ref = withDetail({ title }, summaryOf(p));
+    } else if (hit?.intrinsic) ref = intrinsicRef(name, hit);
+    else if (!hit) {
+      const fits = (h) => (want === 'type' ? h.kind === 'type' : h.kind === 'variable' && E[h.id]?.parameter);
+      const hits = (index.get(lc(name)) ?? []).filter(fits);
+      if (hits.length) ref = entityRef(E[(hits.find((h) => h.page === current) ?? hits[0]).id]);
+    }
+    refCache.set(key, ref);
+    return ref;
+  };
+  // the type a type extends, as the type's scope sees the name (use, only, renames, host association) and as the
+  // inheritance graph draws it; null for a type from outside the project. A name the scope does not explain (a type a
+  // program declares: lookupName reads only modules' and submodules' declarations) is looked up by name, on this page
+  // first.
+  const parentOf = (t) => {
+    if (!t.extends) return null;
+    const hit = lookupName(t.extends, 'type', t);
+    if (hit) return hit.entity ?? null;
+    const key = lc(t.extends);
+    const hits = (index.get(key) ?? []).filter((h) => h.kind === 'type');
+    if (hits.length) return E[(hits.find((h) => h.page === current) ?? hits[0]).id];
+    return all.find((x) => x.kind === 'type' && lc(x.name) === key) ?? null;
+  };
+  // the values given to the kind parameters of a parameterised type: `dp` in class(banded_matrix(k=dp, kl=*, ku=*))
+  const kindParams = (t, scope) => {
+    if (!t.params || !IDENT.test(t.kind ?? '')) return [];
+    const hit = lookupName(t.kind, 'type', scope);
+    const type = hit?.entity ?? (hit ? null : all.find((x) => x.kind === 'type' && lc(x.name) === lc(t.kind)));
+    if (!type?.params?.length) return [];
+    const out = [];
+    splitTop(t.params, ',').forEach((item, i) => {
+      const m = /^\s*(?:([A-Za-z]\w*)\s*=(?!=))?\s*([\s\S]*?)\s*$/.exec(item);
+      const p = m[1] ? type.params.find((q) => lc(q.name) === lc(m[1])) : type.params[i];
+      if (p?.attr === 'kind') out.push(m[2]);
+    });
+    return out;
+  };
+  /** A row's refs: its type's kind name, or its derived type and the kinds that type is given. */
+  const refsFor = (t, scope) => {
+    if (!t || t.implicit) return undefined;
+    const refs = {};
+    const ref = (name, want) => {
+      if (!IDENT.test(name) || Object.hasOwn(refs, name)) return;
+      const r = refOf(name, want, scope);
+      if (r) refs[name] = r;
+    };
+    if (t.base === 'type' || t.base === 'class') {
+      if (t.kind) ref(t.kind, 'type');
+      for (const k of kindParams(t, scope)) ref(k, 'kind');
+    } else if (KINDED.has(t.base) && t.kind) ref(t.kind, 'kind');
+    return Object.keys(refs).length ? refs : undefined;
+  };
+
+  // ---- source blocks: an entity's own lines, each file read once
+  const embed = typeof opts.readSource === 'function' && opts.source !== 'link';
+  // Infinity is a number too: no cap
+  const cap = opts.sourceMaxLines;
+  const maxLines = typeof cap === 'number' && !Number.isNaN(cap) ? cap : 400;
+  const texts = new Map();
+  const linesOf = (file) => {
+    if (!texts.has(file)) {
+      let text = null;
+      try {
+        text = opts.readSource(file);
+      } catch {
+        // unreadable: the entity links to its lines instead
+      }
+      // lines as the parser numbers them: a carriage return alone ends no line (CONTROLS drops it)
+      texts.set(file, typeof text === 'string' ? text.replace(/^\uFEFF/, '').split(/\r?\n/) : null);
+    }
+    return texts.get(file);
+  };
+  // fixed form is shown as f77; a file another includes is read in the form of the file that includes it
+  const forms = new Map();
+  for (const f of ir.files) if (f.form) forms.set(f.path, f.form);
+  for (const f of ir.files) for (const inc of f.includes ?? []) if (f.form && !forms.has(inc)) forms.set(inc, f.form);
+  const sourceBlock = (e) => {
+    if (!embed || UNITS.has(e.kind) || !(e.line > 0)) return '';
+    const end = e.lineEnd ?? e.line;
+    if (end < e.line || end - e.line + 1 > maxLines) return '';
+    const lines = linesOf(e.file);
+    if (!lines || end > lines.length) return '';
+    const code = lines.slice(e.line - 1, end).map((l) => l.replace(CONTROLS, '')).join('\n');
+    if (!code.trim()) return '';
+    let f = '```';
+    while (code.includes(f)) f += '`';
+    return `${f}${forms.get(e.file) === 'fixed' ? 'f77' : 'f90'} lineNumbers=${e.line}\n${code}\n${f}`;
+  };
+
   // ---- rendering helpers
   let seq = 0;
   const docOf = (x, name) => renderDoc(x?.doc?.blocks, { resolve, name, math: opts.math, ns: `n${++seq}`, include: opts.include, aliases: opts.aliases });
@@ -173,11 +443,30 @@ export function buildPages(ir, opts = {}) {
     const lines = e.lineEnd && e.lineEnd !== e.line ? `#L${e.line}-L${e.lineEnd}` : `#L${e.line}`;
     return `${opts.repo.url.replace(/\/$/, '')}/blob/${opts.repo.rev ?? 'main'}/${file}${lines}`;
   };
-  const source = (e) => `<FortranSource${attr('file', [opts.sourceRoot, e.file].filter(Boolean).join('/'))}${attr('line', e.line)}${e.lineEnd && e.lineEnd !== e.line ? attr('lineEnd', e.lineEnd) : ''}${attr('href', repoHref(e))} />`;
+  function shownPath(file) {
+    return [opts.sourceRoot, file].filter(Boolean).join('/');
+  }
+  const source = (e) => {
+    const lines = attr('line', e.line) + (e.lineEnd && e.lineEnd !== e.line ? attr('lineEnd', e.lineEnd) : '');
+    const tag = `<FortranSource${attr('file', shownPath(e.file))}${lines}${attr('href', repoHref(e))}`;
+    const code = sourceBlock(e);
+    return code ? `${tag}>\n\n${code}\n\n</FortranSource>` : `${tag} />`;
+  };
   const badges = (list) => (list.length ? `<FortranBadges>\n${list.map((b) => `<FortranBadge${attr('kind', b.kind)}${attr('label', b.label)}${attr('conditional', b.conditional)}${attr('title', b.title)} />`).join('\n')}\n</FortranBadges>` : '');
   const link = (name) => {
     const url = resolve(name);
     return url ? `[${inlineCode(name)}](${url})` : inlineCode(name);
+  };
+  // subroutine or function; a separate module procedure written `module procedure` is what its interface says
+  const procKind = (e) => {
+    const proc = e.proc === 'procedure' ? findInterface(e)?.proc : e.proc;
+    return proc === 'function' ? 'function' : 'subroutine';
+  };
+  // what a headed entity is, in the words of the table of contents' letters
+  const kindWord = (e) => {
+    if (e.kind === 'procedure') return procKind(e);
+    if (e.kind === 'variable') return e.parameter ? 'parameter' : 'variable';
+    return e.kind;
   };
 
   const pages = [];
@@ -190,11 +479,13 @@ export function buildPages(ir, opts = {}) {
       : p.procs.length === 1 ? plainText(docOf(p.procs[0], p.procs[0].name).summary) || `The external procedure ${p.procs[0].name}`
         : `External procedures: ${p.procs.map((e) => e.name).join(', ')}`;
     const origin = [...new Set((p.unit ? [p.unit] : p.procs).map((e) => e.file))].join(', ');
+    const toc = headed(p).map((e) => [anchor(e), kindWord(e)]);
+    const note = `{/* Generated by fumadocs-fortran from ${origin.replace(/\*\//g, '* /')}. Do not edit. */}`;
     pages.push({
       path: `${p.slug}.mdx`,
       url: p.url,
       title,
-      mdx: `---\ntitle: ${yamlString(title)}\n${desc ? `description: ${yamlString(clip(desc))}\n` : ''}---\n\n{/* Generated by fumadocs-fortran from ${origin.replace(/\*\//g, '* /')}. Do not edit. */}\n\n${body.trim()}\n`,
+      mdx: `${frontMatter(title, desc, p.unit ? p.unit.kind : 'procedures', toc)}\n${note}\n\n${body.trim()}\n`,
     });
   }
   current = `${base}`;
@@ -229,6 +520,8 @@ export function buildPages(ir, opts = {}) {
       const list = plan.filter((p) => (p.unit ? kinds.includes(p.unit.kind) : kinds.includes('procedures')));
       if (list.length) parts.push(`## ${label}\n\n<Cards>\n${list.map(card).join('\n')}\n</Cards>`);
     }
+    const overview = graphCard('', graphs?.overview());
+    if (overview) parts.push(`## Dependencies\n\n${overview}`);
     const files = ir.files.filter((f) => !f.skipped);
     const lines = files.reduce((n, f) => n + (f.lines ?? 0), 0);
     const intro = opts.description ?? `Generated by fumadocs-fortran from ${files.length} source file${files.length === 1 ? '' : 's'} (${lines.toLocaleString('en-GB')} lines).`;
@@ -252,6 +545,10 @@ export function buildPages(ir, opts = {}) {
     if (uses) out.push(uses);
     if (u.calls?.length) out.push(callsLine(u));
     out.push(source(u));
+    if (graphs) {
+      out.push(graphCard('Dependencies', graphs.dependencies(u)));
+      if (u.kind === 'program') out.push(graphCard('Call graph', graphs.calls(u), true));
+    }
     const types = kids.filter((c) => c.kind === 'type' && shown(c));
     const ifaces = kids.filter((c) => c.kind === 'interface');
     const procs = kids.filter((c) => c.kind === 'procedure' && c.scope !== 'internal' && shown(c));
@@ -308,46 +605,107 @@ export function buildPages(ir, opts = {}) {
       const d = docOf(a, a.name).body;
       if (d) inherited[a.name.toLowerCase()] = d;
     }
-    out.push(argsList(args, { ...(idoc?.params ?? {}), ...inherited, ...doc.params }, 'Arguments', undefined, { ...(idoc?.paramIntents ?? {}), ...doc.paramIntents }));
+    // arguments taken from the interface are declared in the interface's scope
+    out.push(argsList(args, e.args ? e : iface ?? e, {
+      params: { ...(idoc?.params ?? {}), ...inherited, ...doc.params },
+      intents: { ...(idoc?.paramIntents ?? {}), ...doc.paramIntents },
+      called: new Set((e.calls ?? []).map((c) => lc(c.name))),
+    }));
     const result = e.result ?? iface?.result;
-    if (result && e.proc !== 'subroutine') out.push(argsList([result], {}, 'Result', doc.returns));
-    else if (doc.returns) out.push(labelled('**Returns:**', doc.returns));
+    if (result && e.proc !== 'subroutine') {
+      out.push(argsList([result], e.result ? e : iface ?? e, { title: 'Result', returns: doc.returns, result: true }));
+    } else if (doc.returns) out.push(labelled('**Returns:**', doc.returns));
     if (e.calls?.length) out.push(callsLine(e));
     const uses = usesLine(e);
     if (uses) out.push(uses);
+    if (graphs) out.push(graphCard('Call graph', graphs.calls(e), true));
     out.push(source(e));
     return out.filter(Boolean).join('\n\n');
   }
 
   function findInterface(e) {
-    const sub = E[e.parent];
-    const ancestor = sub?.ancestor?.toLowerCase();
-    return all.find((x) => x.kind === 'procedure' && x.scope === 'interface' && x.separate && x.name.toLowerCase() === e.name.toLowerCase()
-      && (!ancestor || x.id.startsWith(`module:${ancestor}/`)));
+    if (!separateBodies) {
+      separateBodies = new Map();
+      for (const x of all) {
+        if (x.kind !== 'procedure' || x.scope !== 'interface' || !x.separate) continue;
+        const k = x.name.toLowerCase();
+        if (!separateBodies.has(k)) separateBodies.set(k, []);
+        separateBodies.get(k).push(x);
+      }
+    }
+    const ancestor = E[e.parent]?.ancestor?.toLowerCase();
+    return (separateBodies.get(String(e.name ?? '').toLowerCase()) ?? [])
+      .find((x) => !ancestor || x.id.startsWith(`module:${ancestor}/`));
   }
 
-  function argsList(args, params = {}, title, returns, intents = {}) {
+  /**
+   * A FortranArgs table: `columns` names the optional columns some row fills (type, shape, intent, attrs, in that
+   * order), then the rows. It is written even when empty, since no `columns` means all four.
+   */
+  function argsTable(title, rows) {
+    if (!rows.length) return '';
+    const columns = [
+      rows.some((r) => r.type) && 'type',
+      rows.some((r) => r.dims || r.codims) && 'shape',
+      rows.some((r) => r.intent || r.result) && 'intent',
+      rows.some((r) => r.optional || r.value || r.attrs || r.cond) && 'attrs',
+    ].filter(Boolean).join(' ');
+    const head = `<FortranArgs${title === 'Arguments' ? '' : attr('title', title)} columns="${columns}">`;
+    return `${head}\n${rows.map(argRow).join('\n')}\n</FortranArgs>`;
+  }
+
+  /** A row for a variable (argument, result, component or type parameter) declared in `scope`. */
+  function varRow(a, scope, extra = {}) {
+    return {
+      name: a.name,
+      type: prettyType(a.type),
+      dims: a.dims ? `(${a.dims.join(',')})` : '',
+      codims: a.codims ? `[${a.codims.join(',')}]` : '',
+      intent: a.intent,
+      optional: a.optional,
+      value: a.value,
+      attrs: attrsText(a),
+      cond: a.cond ? prettyCond(a.cond) : '',
+      decl: declOf(a),
+      refs: refsFor(a.type, scope),
+      ...extra,
+    };
+  }
+
+  /** `called`: the lower-case names the procedure CALLs, which name dummy subroutines among its arguments. */
+  function argsList(args, scope, opts = {}) {
+    const { params = {}, title = 'Arguments', returns, intents = {}, result = false, called } = opts;
     if (!args?.length) return '';
-    const rows = args.map((a) => {
-      const own = docOf(a, a.name);
+    return argsTable(title, args.map((a) => {
       const key = a.name.toLowerCase();
-      let doc = own.body || (Object.hasOwn(params, key) ? params[key] : '') || '';
+      let doc = docOf(a, a.name).body || (Object.hasOwn(params, key) ? params[key] : '') || '';
       if (returns && !doc) doc = returns;
-      // F77 code declares no INTENT: Doxygen's \param[in] says it
+      // F77 code declares no INTENT: Doxygen's \param[in] says it (the declaration stays as written)
       const intent = a.intent ?? (Object.hasOwn(intents, key) ? intents[key] : undefined);
-      const props = attr('name', a.name) + attr('type', prettyType(a.type)) + attr('dims', a.dims ? `(${a.dims.join(',')})` : '')
-        + attr('codims', a.codims ? `[${a.codims.join(',')}]` : '') + attr('intent', intent) + attr('optional', !!a.optional)
-        + attr('value', !!a.value) + attr('attrs', attrsText(a)) + attr('cond', a.cond ? prettyCond(a.cond) : '');
-      return doc ? `<FortranArg${props}>\n\n${doc}\n\n</FortranArg>` : `<FortranArg${props} />`;
-    });
-    return `<FortranArgs${title === 'Arguments' ? '' : attr('title', title)}>\n${rows.join('\n')}\n</FortranArgs>`;
+      // a dummy argument the procedure CALLs is a subroutine, which has no type: not the one the implicit rules give
+      const sub = !!a.type?.implicit && !!called?.has(key);
+      return varRow(sub ? { ...a, type: null } : a, scope, { intent, result, doc });
+    }));
+  }
+
+  /** A type-bound procedure's row: its target as the type, its flags as attributes, its statement as the decl. */
+  function bindingRow(x, doc = '') {
+    const flags = [
+      x.deferred && 'deferred', x.nopass && 'nopass', typeof x.pass === 'string' && `pass(${x.pass})`,
+      x.pass === true && 'pass', x.nonOverridable && 'non_overridable', x.access === 'private' && 'private',
+    ].filter(Boolean);
+    const generic = x.binding === 'generic';
+    const head = generic ? 'generic' : x.iface ? `procedure(${x.iface})` : 'procedure';
+    const target = generic ? ` => ${x.procedures.join(', ')}` : x.impl ? ` => ${x.impl}` : '';
+    const type = generic ? `generic${target}` : x.iface ? head : x.impl ? `=> ${x.impl}` : 'procedure';
+    const decl = `${[head, ...flags].join(', ')} :: ${x.name}${target}`;
+    return { name: x.name, type, attrs: flags.join(', '), decl, doc };
   }
 
   function typeSection(t) {
     const out = [heading(t)];
-    const attrs = [t.abstract && 'abstract', t.extends && `extends(${t.extends})`, t.bind !== undefined && `bind(${t.bind || 'c'})`].filter(Boolean);
     const params = t.params ?? [];
-    out.push(fence(`type${attrs.length ? `, ${attrs.join(', ')}` : ''} :: ${t.name}${params.length ? `(${params.map((p) => p.name).join(', ')})` : ''}`));
+    out.push(fence(typeDecl(t)));
     const b = [{ kind: 'type' }];
     if (t.abstract) b.push({ kind: 'abstract' });
     if (t.bind !== undefined) b.push({ kind: 'bindc', label: 'bind(C)' });
@@ -356,58 +714,56 @@ export function buildPages(ir, opts = {}) {
     out.push(badges(b));
     const doc = docOf(t, t.name);
     if (doc.body) out.push(doc.body);
-    if (t.extends) out.push(`Extends ${link(t.extends)}.`);
-    if (params.length) out.push(argsList(params.map((p) => ({ ...p, attrs: [[p.attr, p.init !== undefined && `default ${p.init}`].filter(Boolean).join(', ')], init: undefined })), {}, 'Type parameters'));
+    if (t.extends) {
+      // the name as the type statement writes it, linked to the heading of the type it names
+      const parent = parentOf(t);
+      const url = parent && where.get(parent.id);
+      out.push(`Extends ${url ? `[${inlineCode(t.extends)}](${url})` : inlineCode(t.extends)}.`);
+    }
+    if (params.length) {
+      // the row shows "kind, default dp"; the declaration says it as Fortran
+      out.push(argsTable('Type parameters', params.map((p) => {
+        const attrs = [[p.attr, p.init !== undefined && `default ${p.init}`].filter(Boolean).join(', ')];
+        const decl = declOf({ ...p, attrs: p.attr ? [p.attr] : [] });
+        return varRow({ ...p, attrs, init: undefined }, t, { decl, doc: docOf(p, p.name).body });
+      })));
+    }
     const comps = children(t).filter((c) => c.kind === 'component' && shown(c));
-    if (comps.length) out.push(argsList(comps, {}, 'Components'));
+    const component = (c) => varRow(c, t, { decl: componentDecl(c), doc: docOf(c, c.name).body });
+    if (comps.length) out.push(argsTable('Components', comps.map(component)));
     const binds = children(t).filter((c) => c.kind === 'binding' && shown(c));
     if (binds.length) {
-      const rows = binds.map((x) => {
-        const target = x.binding === 'generic' ? `generic => ${x.procedures.join(', ')}` : x.iface ? `procedure(${x.iface})` : x.impl ? `=> ${x.impl}` : 'procedure';
-        const flags = [x.deferred && 'deferred', x.nopass && 'nopass', typeof x.pass === 'string' && `pass(${x.pass})`, x.pass === true && 'pass', x.nonOverridable && 'non_overridable', x.access === 'private' && 'private'].filter(Boolean).join(', ');
+      out.push(argsTable('Type-bound procedures', binds.map((x) => {
         const d = docOf(x, x.name).body;
         const impl = x.binding === 'generic' ? x.procedures : [x.impl ?? (x.iface ? x.iface : x.name)];
         const links = impl.map((n) => resolve(n) ? `[${inlineCode(n)}](${resolve(n)})` : null).filter(Boolean);
-        const text = [d, links.length ? `${x.deferred ? 'Interface' : 'Implemented by'} ${links.join(', ')}.` : ''].filter(Boolean).join('\n\n');
-        const props = attr('name', x.name) + attr('type', target) + attr('attrs', flags);
-        return text ? `<FortranArg${props}>\n\n${text}\n\n</FortranArg>` : `<FortranArg${props} />`;
-      });
-      out.push(`<FortranArgs title="Type-bound procedures">\n${rows.join('\n')}\n</FortranArgs>`);
+        const by = links.length ? `${x.deferred ? 'Interface' : 'Implemented by'} ${links.join(', ')}.` : '';
+        return bindingRow(x, [d, by].filter(Boolean).join('\n\n'));
+      })));
     }
     out.push(...inherited(t));
     if (t.finals?.length) out.push(`**Final:** ${t.finals.map(link).join(', ')}`);
+    if (graphs) out.push(graphCard('Inheritance', graphs.inheritance(t), true));
     out.push(source(t));
     return out.filter(Boolean).join('\n\n');
   }
 
   /**
-   * What a type inherits: for each ancestor up the extends chain, its components and type-bound procedures that no
-   * nearer type declares again (an overriding binding, such as matvec, hides its parent's).
+   * What a type inherits: for each ancestor up the extends chain (each parent found in the scope of the type that
+   * extends it), its components and type-bound procedures that no nearer type declares again (an overriding binding,
+   * such as matvec, hides its parent's).
    */
   function inherited(t) {
     const out = [];
     const declared = new Set(children(t).map((c) => c.name.toLowerCase()));
     const seen = new Set([t.id]);
-    let name = t.extends;
-    while (name) {
-      const hit = (index.get(name.toLowerCase()) ?? []).find((h) => h.kind === 'type');
-      const parent = hit ? E[hit.id] : all.find((x) => x.kind === 'type' && x.name.toLowerCase() === name.toLowerCase());
-      if (!parent || seen.has(parent.id)) break;
+    for (let parent = parentOf(t); parent && !seen.has(parent.id); parent = parentOf(parent)) {
       seen.add(parent.id);
       const members = children(parent).filter((c) => (c.kind === 'component' || c.kind === 'binding') && shown(c) && !declared.has(c.name.toLowerCase()));
-      if (members.length) {
-        const rows = members.map((c) => {
-          if (c.kind === 'component') {
-            return `<FortranArg${attr('name', c.name)}${attr('type', prettyType(c.type))}${attr('dims', c.dims ? `(${c.dims.join(',')})` : '')}${attr('codims', c.codims ? `[${c.codims.join(',')}]` : '')}${attr('attrs', attrsText(c))}${attr('cond', c.cond ? prettyCond(c.cond) : '')} />`;
-          }
-          const target = c.binding === 'generic' ? `generic => ${c.procedures.join(', ')}` : c.iface ? `procedure(${c.iface})` : c.impl ? `=> ${c.impl}` : 'procedure';
-          const flags = [c.deferred && 'deferred', c.nopass && 'nopass', typeof c.pass === 'string' && `pass(${c.pass})`, c.access === 'private' && 'private'].filter(Boolean).join(', ');
-          return `<FortranArg${attr('name', c.name)}${attr('type', target)}${attr('attrs', flags)} />`;
-        });
-        out.push(`<FortranArgs${attr('title', `Inherited from ${parent.name}`)}>\n${rows.join('\n')}\n</FortranArgs>`);
-      }
+      // a member's names are read in the scope of the type that declares it
+      const row = (c) => (c.kind === 'component' ? varRow(c, parent, { decl: componentDecl(c) }) : bindingRow(c));
+      if (members.length) out.push(argsTable(`Inherited from ${parent.name}`, members.map(row)));
       for (const c of members) declared.add(c.name.toLowerCase());
-      name = parent.extends;
     }
     return out;
   }
@@ -436,17 +792,19 @@ export function buildPages(ir, opts = {}) {
       const d = docOf(body, body.name);
       const sig = procSignature(body, {}).split('\n')[0].replace(/^module /, '');
       out.push(labelled(`**${escapeText(body.name)}**`, d.body, ':'));
-      out.push(argsList(body.args, d.params, `Arguments of ${sig.replace(/\s+/g, ' ')}`));
-      if (body.result && body.proc === 'function') out.push(argsList([body.result], {}, `Result of ${body.name}`, d.returns));
+      out.push(argsList(body.args, body, { params: d.params, title: `Arguments of ${sig.replace(/\s+/g, ' ')}` }));
+      if (body.result && body.proc === 'function') {
+        out.push(argsList([body.result], body, { title: `Result of ${body.name}`, returns: d.returns, result: true }));
+      }
     }
+    if (graphs) out.push(graphCard('Call graph', graphs.calls(i), true));
     out.push(source(i));
     return [out.filter(Boolean).join('\n\n')];
   }
 
   function varSection(v) {
     const out = [heading(v)];
-    const attrs = attrsText(v, true);
-    out.push(fence(`${prettyType(v.type) ?? 'real'}${v.parameter ? ', parameter' : ''}${attrs ? `, ${attrs}` : ''} :: ${v.name}${v.dims ? `(${v.dims.join(',')})` : ''}${v.codims ? `[${v.codims.join(',')}]` : ''}${v.init !== undefined ? ` ${v.pointerInit ? '=>' : '='} ${v.init}` : ''}`));
+    out.push(fence(varDecl(v)));
     const b = [];
     if (v.parameter) b.push({ kind: 'parameter', label: 'parameter' });
     if (v.access === 'private') b.push({ kind: 'private' });
@@ -465,12 +823,13 @@ export function buildPages(ir, opts = {}) {
     out.push(fence(en.enumeration ? `enumeration type :: ${en.name}\n  enumerator :: ${names}\nend enumeration type` : `enum${en.bind ? `, bind(${en.bind})` : ''}${en.name ? ` :: ${en.name}` : ''}\n  enumerator :: ${names}\nend enum`));
     const doc = docOf(en, en.name);
     if (doc.body) out.push(doc.body);
-    const rows = en.enumerators.filter((x) => !x.access || display.has(x.access)).map((x) => {
-      const d = docOf(x, x.name).body;
-      const props = attr('name', x.name) + attr('attrs', [x.init !== undefined && `= ${x.init}`, x.access === 'private' && 'private'].filter(Boolean).join(', '));
-      return d ? `<FortranArg${props}>\n\n${d}\n\n</FortranArg>` : `<FortranArg${props} />`;
-    });
-    if (rows.length) out.push(`<FortranArgs title="Enumerators">\n${rows.join('\n')}\n</FortranArgs>`);
+    const rows = en.enumerators.filter((x) => !x.access || display.has(x.access)).map((x) => ({
+      name: x.name,
+      attrs: [x.init !== undefined && `= ${x.init}`, x.access === 'private' && 'private'].filter(Boolean).join(', '),
+      decl: `enumerator :: ${x.name}${x.init !== undefined ? ` = ${x.init}` : ''}`,
+      doc: docOf(x, x.name).body,
+    }));
+    if (rows.length) out.push(argsTable('Enumerators', rows));
     out.push(source(en));
     return out.filter(Boolean).join('\n\n');
   }
@@ -493,7 +852,7 @@ export function buildPages(ir, opts = {}) {
   }
 
   function procBadges(e, opt = {}) {
-    const b = [{ kind: e.proc === 'function' ? 'function' : 'subroutine' }];
+    const b = [{ kind: procKind(e) }];
     if (e.scope === 'interface') b.push({ kind: 'interface', label: opt.interface === 'abstract' ? 'abstract interface' : e.separate ? 'module interface' : 'interface' });
     if (e.scope === 'separate') b.push({ kind: 'submodule', label: 'separate module procedure' });
     for (const p of e.prefix ?? []) if (ATTR_PREFIX.has(p)) b.push({ kind: p.replace('_', '-') });
@@ -582,6 +941,17 @@ function clip(s, n = 300) {
 }
 
 /**
+ * The front matter: the title, the description, and `fortran` for the site: the page's kind and what each heading's
+ * anchor is (`toc`, for the kind letters in the table of contents). Every string is a double-quoted YAML scalar.
+ */
+function frontMatter(title, desc, kind, toc) {
+  const entries = toc.length ? `\n${toc.map(([a, k]) => `    ${yamlString(a)}: ${yamlString(k)}`).join('\n')}` : ' {}';
+  const description = desc ? `description: ${yamlString(clip(desc))}\n` : '';
+  const fortran = `fortran:\n  kind: ${yamlString(kind)}\n  toc:${entries}\n`;
+  return `---\ntitle: ${yamlString(title)}\n${description}${fortran}---\n`;
+}
+
+/**
  * A bold label and a doc body: on one line only when the body starts as a paragraph. A Callout, a fence, a $$ block,
  * a list, a quote, a table or other block after a label would be read as text, its closing line opening a block
  * that runs to the end of the page.
@@ -609,6 +979,55 @@ function attrsText(a, forDecl = false) {
   const list = [...(a.attrs ?? [])];
   if (!forDecl && a.init !== undefined) list.push(`${a.pointerInit ? '=>' : '='} ${a.init}`);
   return list.join(', ');
+}
+
+/**
+ * A variable's declaration as Fortran: the type, intent, optional, value and the other attributes, then the name with
+ * its dimensions, codimensions and initial value: `real(dp), intent(in), optional :: x(:)`. A type the implicit rules
+ * give is written out, with a comment that says so. Empty when nothing is declared.
+ */
+function declOf(a, extra = []) {
+  const implicit = !!a.type?.implicit;
+  const parts = [
+    prettyType(implicit ? { ...a.type, implicit: false } : a.type), a.intent && `intent(${a.intent})`,
+    a.optional && 'optional', a.value && 'value', ...(a.attrs ?? []), ...extra,
+  ].filter(Boolean);
+  if (!parts.length) return '';
+  return `${parts.join(', ')} :: ${entityText(a)}${implicit ? ' ! implicitly typed' : ''}`;
+}
+
+/** A declared name with its dimensions, codimensions and initial value: `x(:,:)[*] = 0`. */
+function entityText(v) {
+  const init = v.init !== undefined ? ` ${v.pointerInit ? '=>' : '='} ${v.init}` : '';
+  return `${v.name}${v.dims ? `(${v.dims.join(',')})` : ''}${v.codims ? `[${v.codims.join(',')}]` : ''}${init}`;
+}
+
+/** A component's declaration: a private one says so. */
+function componentDecl(c) {
+  return declOf(c, [c.access === 'private' && 'private']);
+}
+
+/** A derived type's statement: `type, extends(abstract_matrix) :: dense_matrix`. */
+function typeDecl(t) {
+  const bind = t.bind !== undefined && `bind(${t.bind || 'c'})`;
+  const attrs = ['type', t.abstract && 'abstract', t.extends && `extends(${t.extends})`, bind].filter(Boolean);
+  const params = t.params?.length ? `(${t.params.map((p) => p.name).join(', ')})` : '';
+  return `${attrs.join(', ')} :: ${t.name}${params}`;
+}
+
+/** A module variable's declaration: `integer, parameter :: max_order = 64`. */
+function varDecl(v) {
+  const attrs = [prettyType(v.type) ?? 'real', v.parameter && 'parameter', attrsText(v, true)].filter(Boolean);
+  return `${attrs.join(', ')} :: ${entityText(v)}`;
+}
+
+/** One FortranArg: the props as today, then result, decl and refs (an object, as a JS expression). */
+function argRow(r) {
+  const props = attr('name', r.name) + attr('type', r.type) + attr('dims', r.dims) + attr('codims', r.codims)
+    + attr('intent', r.intent) + attr('optional', !!r.optional) + attr('value', !!r.value) + attr('attrs', r.attrs)
+    + attr('cond', r.cond) + attr('result', !!r.result) + attr('decl', r.decl)
+    + (r.refs ? ` refs={${JSON.stringify(r.refs)}}` : '');
+  return r.doc ? `<FortranArg${props}>\n\n${r.doc}\n\n</FortranArg>` : `<FortranArg${props} />`;
 }
 
 function fence(code) {

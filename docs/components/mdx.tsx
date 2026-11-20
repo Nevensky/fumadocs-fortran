@@ -5,7 +5,8 @@ import { Step, Steps } from 'fumadocs-ui/components/steps';
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import type { MDXComponents } from 'mdx/types';
-import { fortranComponents } from 'fumadocs-fortran/react';
+import { fortranMdxComponents } from '@/components/mdx/fortran';
+import { Mermaid } from '@/components/mdx/mermaid';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
@@ -20,8 +21,11 @@ export function getMDXComponents(components?: MDXComponents) {
     Tab,
     Tabs,
     TypeTable,
-    // FortranBadges, FortranBadge, FortranArgs, FortranArg and FortranSource, which the generated pages use
-    ...fortranComponents,
+    // ```mermaid blocks, which remarkMdxMermaid turns into <Mermaid chart="…" /> (the API reference's graphs)
+    Mermaid,
+    // FortranBadges, FortranBadge, FortranArgs, FortranArg, FortranRef, FortranSource and FortranGraph, which the
+    // generated pages use, with their links to the site as next/link writes them (base path, the export's slash)
+    ...fortranMdxComponents,
     ...components,
   } satisfies MDXComponents;
 }

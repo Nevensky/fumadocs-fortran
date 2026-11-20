@@ -16,6 +16,8 @@
 # alone and saves the few per cent of a core that polling costs. That suits Linux, but through OrbStack, at least,
 # Turbopack then misses pages added on the host, though it still sees edits.
 # build passes NEXT_PUBLIC_BASE_PATH and NEXT_PUBLIC_SITE_URL through, for a site served from a sub-path.
+# FDF_DOCS_NAME and FDF_DOCS_VOLUME name the container and the node_modules volume (default fdf-docs and
+# fdf-docs-node-modules), so that a second checkout, such as a git worktree, can run its own site beside the first.
 set -eu
 
 # an app's minimal PATH (an editor's preview pane, say) may lack the folders Docker's CLI is installed in
@@ -25,8 +27,8 @@ command -v docker >/dev/null 2>&1 ||
 IMAGE="${FDF_NODE_IMAGE:-node:24-bookworm}"
 PORT="${FDF_DOCS_PORT:-3000}"
 POLL="${FDF_DOCS_POLL:-1000}"
-NAME=fdf-docs
-VOLUME=fdf-docs-node-modules
+NAME="${FDF_DOCS_NAME:-fdf-docs}"
+VOLUME="${FDF_DOCS_VOLUME:-fdf-docs-node-modules}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # npm install, when package.json or the lock file differs from the last install (their hash is kept in node_modules)

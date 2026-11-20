@@ -6,6 +6,32 @@ html {
   scrollbar-gutter: stable;
 }
 
+/* Mermaid diagrams written in pages, drawn by Pele, take fumadocs' fonts and colours, so that they follow the light and
+   dark themes. The generated graphs (those in a FortranGraph) take them from fumadocs-fortran/style.css, which this
+   leaves alone, so that the site shows what that stylesheet gives any site. */
+.pele:not(.fdf-graph .pele) {
+  --pele-font: var(--font-sans);
+  --pele-font-mono: var(--font-mono);
+  --pele-bg: var(--color-fd-background);
+  --pele-fg: var(--color-fd-foreground);
+  --pele-muted: var(--color-fd-muted-foreground);
+  --pele-line: var(--color-fd-muted-foreground);
+  --pele-surface: var(--color-fd-card);
+  --pele-surface-alt: var(--color-fd-secondary);
+  --pele-border: var(--color-fd-border);
+  --pele-accent: var(--color-fd-primary);
+}
+
+/* a diagram written in a page scrolls when it is wider than the column (a generated one sits in a FortranGraph card,
+   which scrolls already) */
+.docs-mermaid {
+  overflow-x: auto;
+}
+
+.fdf-graph-body .docs-mermaid {
+  overflow-x: visible;
+}
+
 html > body[data-scroll-locked] {
   margin-right: 0px !important;
   --removed-body-scroll-bar-size: 0px !important;

@@ -30,8 +30,15 @@ Options for generate (and -D, -I, --all-branches, --form, --exclude as for dump)
   --rev REV            the branch, tag or commit for those links (default main)
   --math MODE          katex (default): $…$ maths for remark-math and rehype-katex; code: maths shown as code,
                        for a site without them
+  --source MODE        embed (default): each procedure, type, interface, variable and enum shows its source lines in
+                       a collapsible block (up to 400 lines), read from the files parsed (those given and the files
+                       they include) wherever they lie; link: only a link to them
+  --graphs MODE        mermaid (default): dependency, inheritance and call graphs as Mermaid blocks, for a site
+                       with remarkMdxMermaid; none: no graphs
   -h, --help           show this help
   -v, --version        print the version
+
+FORD's {!file!} includes in doc comments are read relative to the current folder, and only from under it.
 `;
 
 function parse(argv) {
@@ -64,6 +71,14 @@ function parse(argv) {
     else if (a === '--math') {
       o.math = val();
       if (!['katex', 'code'].includes(o.math)) fail('--math takes katex or code');
+    }
+    else if (a === '--source') {
+      o.source = val();
+      if (!['embed', 'link'].includes(o.source)) fail('--source takes embed or link');
+    }
+    else if (a === '--graphs') {
+      o.graphs = val();
+      if (!['mermaid', 'none'].includes(o.graphs)) fail('--graphs takes mermaid or none');
     }
     else if (a.startsWith('-')) fail(`unknown option ${a}`);
     else if (!o.cmd) o.cmd = a;
@@ -120,6 +135,8 @@ if (opts.cmd === 'dump') {
     display: opts.display,
     repo: opts.repo ? { url: opts.repo, rev: opts.rev } : undefined,
     math: opts.math,
+    source: opts.source,
+    graphs: opts.graphs !== 'none',
   });
   const warn = r.ir.diagnostics.length;
   process.stdout.write(`${r.written.length} files (${r.changed.length} changed, ${r.removed.length} removed) from ${r.ir.files.length} sources in ${(performance.now() - t0).toFixed(0)} ms${warn ? `; ${warn} diagnostics` : ''}\n`);

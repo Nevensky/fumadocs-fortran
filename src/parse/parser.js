@@ -267,6 +267,8 @@ class Parser {
         const m = /^block ?data(?: ?([a-z_]\w*))?$/.exec(s);
         if (m) return this.unitStart('blockdata', m[1] ? o.slice(o.length - m[1].length) : '', ev);
         if (s === 'block') {
+          const sc = this.execScope();
+          if (sc) sc.body = true;
           this.push({ kind: 'block', entity: null, decls: new Map() });
           return EXEC;
         }
@@ -379,7 +381,10 @@ class Parser {
     }
     if (COARRAY_STMT.test(s)) {
       const sc = this.execScope();
-      if (sc) (sc.entity.hpc ??= {}).coarray = true;
+      if (sc) {
+        (sc.entity.hpc ??= {}).coarray = true;
+        sc.body = true;
+      }
       return EXEC;
     }
     return this.exec(s, o, ev);
@@ -625,6 +630,9 @@ class Parser {
       sc = this.top;
     }
     const { type, attrs, entities } = d;
+    // what a local name's declaration tells the scan for function references
+    const character = type.base === 'character';
+    const local = (en) => ({ dims: en.dims ?? attrs.dims, character, external: attrs.external });
     const targets = [];
     switch (sc.kind) {
       case 'procedure': {
@@ -638,7 +646,7 @@ class Parser {
             fillVar(v, type, attrs, en);
             if (ev.c && ev.c !== sc.entity.cond) v.cond = ev.c;
             targets.push(v);
-          } else sc.decls.set(key, { dims: en.dims ?? attrs.dims, character: type.base === 'character' });
+          } else noteLocal(sc.decls, key, local(en));
         }
         return targets.length ? { targets } : SINK;
       }
@@ -674,7 +682,7 @@ class Parser {
         return { targets };
       }
       case 'program': case 'block': case 'blockdata':
-        for (const en of entities) sc.decls?.set(en.name.toLowerCase(), { dims: en.dims ?? attrs.dims, character: type.base === 'character' });
+        if (sc.decls) for (const en of entities) noteLocal(sc.decls, en.name.toLowerCase(), local(en));
         return SINK;
       default:
         return SINK;
@@ -713,11 +721,11 @@ class Parser {
     const targets = [];
     for (const en of list) {
       const key = en.name.toLowerCase();
-      if (sc.kind === 'procedure') {
-        const v = sc.args.get(key) ?? (key === sc.resultName ? sc.entity.result : null);
+      if (sc.kind === 'procedure' || sc.kind === 'program' || sc.kind === 'block') {
+        const v = sc.args?.get(key) ?? (key === sc.resultName ? sc.entity.result : null);
         if (v) { apply(v, en); targets.push(v); }
-        else if (word === 'dimension') sc.decls.set(key, { dims: en.dims });
-        else if (word === 'external' && !sc.decls.has(key)) sc.decls.set(key, { external: true });
+        // `dimension a(n)`, `allocatable :: w(:)` and the like give a local array; `external f`, a procedure
+        else noteLocal(sc.decls, key, { dims: en.dims, external: word === 'external' });
       } else if (sc.kind === 'module' || sc.kind === 'submodule') {
         const v = sc.decls.get(key);
         if (v) apply(v, en);
@@ -777,6 +785,12 @@ class Parser {
       }
       const members = listItems(o.slice(i, j), s.slice(i, j)).map((x) => x.replace(/\(.*$/, '').trim()).filter(Boolean);
       if (members.length || name) (sc.entity.commons ??= []).push({ name, members, line: ev.n });
+      // `common /blk/ b(10)` dimensions b: an array, whose subscripts are no function reference
+      if (sc.kind === 'procedure' || sc.kind === 'program') {
+        for (const en of parseEntities(s.slice(i, j), o.slice(i, j))) {
+          if (en.dims) noteLocal(sc.decls, en.name.toLowerCase(), { dims: en.dims });
+        }
+      }
       i = j;
     }
     return SPEC;
@@ -922,16 +936,21 @@ class Parser {
   // ---------------------------------------------------------------- executable statements
 
   callStmt(s, o, ev, at) {
-    const m = /^call ?([a-z_][\w%]*)/.exec(s.slice(at));
+    const head = /^call ?(?=[a-z_])/.exec(s.slice(at));
     const sc = this.execScope();
-    if (m && sc) {
-      const name = o.slice(at + m[0].length - m[1].length, at + m[0].length);
-      const call = { name, line: ev.n };
+    // the procedure: a name, or a path through components to a binding whose parts may be subscripted and coindexed
+    // (`call locals(1)%go()` and `call x[2]%go()` call locals%go and x%go); a subscript after the last part is the
+    // argument list
+    const { parts, image } = head ? pathAt(s, at + head[0].length) : { parts: [], image: false };
+    if (parts.length && sc) {
+      const call = { name: parts.map(([a, b]) => o.slice(a, b)).join('%'), line: ev.n };
       if (ev.c) call.cond = ev.c;
       (sc.entity.calls ??= []).push(call);
-      if (/^co_(sum|min|max|reduce|broadcast)$/.test(m[1])) (sc.entity.hpc ??= {}).coarray = true;
+      const [a, b] = parts[0];
+      if (image || /^co_(sum|min|max|reduce|broadcast)$/.test(s.slice(a, b))) (sc.entity.hpc ??= {}).coarray = true;
     }
-    return this.exec(s.slice(at + (m ? m[0].length : 0)), o, ev);
+    // what follows the first name, subscripts included, may hold function references
+    return this.exec(s.slice(parts.length ? parts[0][1] : at), o, ev);
   }
 
   exec(s, o, ev) {
@@ -945,22 +964,87 @@ class Parser {
     }
     const t = blankStrings(s);
     if (t.indexOf('[') >= 0 && /[\w)]\[/.test(t)) (sc.entity.hpc ??= {}).coarray = true;
-    if (t.indexOf('(') >= 0) {
-      const re = /(^|[^%\w])([a-z_]\w*) ?\(/g;
-      let m;
-      while ((m = re.exec(t))) {
-        const name = m[2];
-        if (NOT_REF.has(name) || sc.args?.has(name)) continue;
-        const d = sc.decls.get(name);
-        if (d && !d.external && (d.dims || d.character)) continue;
-        sc.refs.add(name);
+    if (!sc.body) {
+      // before the first executable statement, `f(x, y) = …` defines a statement function, unless f is an array
+      const m = /^([a-z_]\w*)\(((?:[a-z_]\w*,)*[a-z_]\w*)?\)=(?![=>])/.exec(t);
+      const f = m && this.top === sc ? m[1] : null;
+      if (f && !sc.args?.has(f) && f !== sc.resultName && !sc.decls.get(f)?.dims) (sc.stmtFns ??= new Set()).add(f);
+      else sc.body = true;
+    }
+    if (t.indexOf('(') < 0) return EXEC;
+    // A name after neither `%` nor a word character (a lookbehind, so that the `(` of `f(g(x))` or `if (f(x))` is
+    // left for the next name), followed by `(`: a function reference. Through `%`, a path to a binding (`obj%area()`),
+    // named as calls are: `x(1)[2]%c%f(3)` is x%c%f. Parentheses holding a top-level `:` are a section or a substring,
+    // `x(1)[2]` is an element of a coarray, `s(k)(1:1)` a substring of an element, and parentheses followed by `::` a
+    // type (`allocate(character(len=n) :: s)`, `[integer(int8) :: …]`, `do concurrent (integer(int64) :: i = …)`):
+    // none is a reference.
+    const re = /(?<![%\w])[a-z_]\w*(?=[(%[])/g;
+    let m;
+    while ((m = re.exec(t))) {
+      const { parts } = pathAt(t, m.index);
+      const last = parts[parts.length - 1][1];
+      if (t[last] !== '(') continue;
+      const k = matchClose(t, last);
+      if (k >= 0 && (t[k + 1] === '[' || t[k + 1] === '(' || t.startsWith('::', k + 1)
+        || indexTop(t.slice(last + 1, k), ':') >= 0)) continue;
+      if (parts.length > 1) {
+        sc.refs.add(parts.map(([a, b]) => t.slice(a, b)).join('%'));
+        continue;
       }
+      const name = m[0];
+      if (NOT_REF.has(name) || sc.args?.has(name) || sc.stmtFns?.has(name)) continue;
+      const d = this.localDecl(sc, name);
+      if (d && !d.external && (d.dims || d.character)) continue;
+      sc.refs.add(name);
     }
     return EXEC;
+  }
+
+  /** What the innermost declaration of a local name says: a BLOCK construct's, else the procedure's or program's. */
+  localDecl(sc, name) {
+    for (let i = this.stack.length - 1; i > 0; i--) {
+      const x = this.stack[i];
+      const d = x.decls?.get(name);
+      if (d || x === sc) return d;
+    }
+    return undefined;
   }
 }
 
 // ---------------------------------------------------------------- helpers
+
+const PART = /[a-z_]\w*/y;
+
+/**
+ * The path of names that starts at s[i] (lower case): `f`, or `x%c%f` through components, where a part may carry a
+ * subscript and an image selector before its `%` (`x(1)[2]%c%f`). Returns each name's [start, end) and whether an
+ * image selector was crossed. What follows the last name (its arguments, say) is left to the caller.
+ */
+function pathAt(s, i) {
+  const parts = [];
+  let image = false;
+  for (;;) {
+    PART.lastIndex = i;
+    const m = PART.exec(s);
+    if (!m) break;
+    const end = i + m[0].length;
+    parts.push([i, end]);
+    let j = end, k;
+    if (s[j] === '(') {
+      if ((k = matchClose(s, j)) < 0) break;
+      j = k + 1;
+    }
+    const coindexed = s[j] === '[';
+    if (coindexed) {
+      if ((k = matchClose(s, j)) < 0) break;
+      j = k + 1;
+    }
+    if (s[j] !== '%') break;
+    if (coindexed) image = true;
+    i = j + 1;
+  }
+  return { parts, image };
+}
 
 /** True when the statement assigns to a variable: `x = 1`, `a(i)%b = 2`, `p => q`, even when `x` is a keyword. */
 export function isAssignment(s) {
@@ -1070,6 +1154,18 @@ function fillVar(v, type, attrs, en) {
   if (attrs.access) v.accessAttr = attrs.access;
   const rest = attrs.list.filter((a) => !/^(intent|optional|value|dimension|codimension|public|private|parameter)\b/i.test(a));
   if (rest.length) v.attrs = rest;
+}
+
+/**
+ * Notes what a procedure or program learns of one of its local names, in whatever order the statements say it: its
+ * dims (from a type declaration, DIMENSION, COMMON, …), that it is character, that it is EXTERNAL.
+ */
+function noteLocal(decls, key, { dims, character, external }) {
+  let d = decls.get(key);
+  if (!d) decls.set(key, (d = {}));
+  if (dims) d.dims = dims;
+  if (character) d.character = true;
+  if (external) d.external = true;
 }
 
 function addDoc(t, b) {

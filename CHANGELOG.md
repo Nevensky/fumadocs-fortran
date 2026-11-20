@@ -22,6 +22,24 @@ Milestone M0, the parser and its gate, and the first parts of v0.1.
   variables, `!$omp`, `$Id$`) stay text. TeX that MathJax accepts and KaTeX does not is rewritten (`eqnarray`,
   `multline`, `_` in `\text{…}`), and `katexMacros` (from `fumadocs-fortran/math`) defines the physics-package and
   other commands KaTeX lacks. `generate --math code` shows maths as code, for a site without remark-math.
+- **Tables, cards and source.** Arguments, results, components, type parameters, type-bound procedures and
+  enumerators are tables in the manner of fumadocs' `TypeTable`, with only the columns some row fills (name, type,
+  shape, intent, attributes); a row opens to its documentation, its declaration as Fortran, its shape in words and
+  the cpp condition it exists under, and prints open. Kind names and derived types link to their definitions with a
+  hover card (`FortranRef`): a project's own from its pages, and those of `iso_fortran_env` and `iso_c_binding` with
+  their meaning and the `use` statement that renames them (`dp ⇒ real64`). A card sits inside its name, a link or,
+  with nowhere to link, a button; it shows on hover and keyboard focus, describes the name to screen readers, and is
+  placed against the screen where the browser has CSS anchor positioning. Each procedure's, type's, interface's,
+  variable's and enum's source is a block that opens, numbered from its first line and read from the files parsed
+  wherever they lie (`--source link` only links). The Fortran in tables and cards reads left to right on
+  right-to-left pages. Each page's front matter lists its headings' kinds, for the letters `fortranToc()` puts in
+  fumadocs' table of contents.
+- **Graphs.** Units, types and procedures get dependency, inheritance and call graphs as Mermaid blocks
+  (`--graphs none` leaves them out; `buildGraphs` exports them), with calls and function references resolved through
+  `use`, renames, host association, generics, type-bound procedures and submodules. Routines of MPI, OpenMP,
+  OpenACC, CUDA, the coarray collectives and BLAS are coloured by library, and those of LAPACK and ScaLAPACK through
+  the `graphs.classify` option until the registry of library symbols arrives. `style.css` gives graphs drawn by Pele
+  the theme's colours, their lines and labels included.
 - **MDX safety.** Doc comments written for FORD or Doxygen cannot break a fumadocs build or its hydration: HTML tags
   pair or become text, block elements stand as blocks, unknown code-block languages become `text`, `import`/`export`
   at a line start, braces in links, quotes in attributes and Object.prototype names (`constructor`) are handled,

@@ -1,10 +1,12 @@
 import { llms, loader } from 'fumadocs-core/source';
 import type * as PageTree from 'fumadocs-core/page-tree';
 import { lucideIconsPlugin } from 'fumadocs-core/source/lucide-icons';
-import { basePath, docsRoute } from './shared';
+import { docsRoute, siteHref, siteLinks } from './shared';
 import { defineDocs } from 'fumadocs-mdx/macro';
 import { applyMdxPreset } from 'fumadocs-mdx/config';
 import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
+import { remarkMdxMermaid } from 'fumadocs-core/mdx-plugins';
+import { z } from 'zod';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { katexMacros } from 'fumadocs-fortran/math';
@@ -16,13 +18,17 @@ const katex: [typeof rehypeKatex, { macros: Record<string, string> }] = [rehypeK
 const docs = defineDocs({
   dir: 'content/docs',
   docs: {
-    // keep the fumadocs defaults and add $…$ and $$…$$ maths (a collection-level mdxOptions replaces the defaults);
-    // KaTeX runs before the syntax highlighter, so that maths blocks are not highlighted as code
+    // keep the fumadocs defaults and add $…$ and $$…$$ maths (a collection-level mdxOptions replaces the defaults)
+    // and ```mermaid diagrams; KaTeX runs before the syntax highlighter, so that maths blocks are not highlighted as
+    // code
     mdxOptions: applyMdxPreset({
-      remarkPlugins: [remarkMath],
+      remarkPlugins: [remarkMath, remarkMdxMermaid],
       rehypePlugins: (defaults) => [katex, ...defaults],
     }),
-    schema: pageSchema,
+    // generated API pages say what each heading is (fortran.toc), for the kind letters in the table of contents
+    schema: pageSchema.extend({
+      fortran: z.object({ kind: z.string().optional(), toc: z.record(z.string(), z.string()).optional() }).optional(),
+    }),
     postprocess: {
       includeProcessedMarkdown: true,
     },
@@ -54,13 +60,13 @@ export function getShowcaseUrl(): string | undefined {
   return firstPage(source.getPageTree().children, `${docsRoute}/showcase/`);
 }
 
-// The llms files and the Markdown copies of the pages hold plain links, which nothing else prefixes with the base path
-// the site is served under (GitHub Pages), so they get it here: in the index, in each page's heading and in its links.
-const withBasePath = (markdown: string) => markdown.replace(/\]\(\/(?!\/)/g, `](${basePath}/`);
-
+// The llms files and the Markdown copies of the pages hold plain links, which next/link never sees, so they get here
+// what it would give them: the base path the site is served under (GitHub Pages) and, in the static export, a page's
+// trailing slash. In the index, in each page's heading, and in its links (siteLinks): Markdown links, href attributes,
+// the click lines of graph nodes and the hover cards of argument rows, but not those of code samples.
 export const docsLlms = llms(source, {
-  renderUrl: (item) => basePath + item.url,
-  renderPage: async (page) => `# ${page.data.title} (${basePath}${page.url})
+  renderUrl: (item) => siteHref(item.url),
+  renderPage: async (page) => `# ${page.data.title} (${siteHref(page.url)})
 
-${withBasePath(await page.data.getText('processed'))}`,
+${siteLinks(await page.data.getText('processed'))}`,
 });

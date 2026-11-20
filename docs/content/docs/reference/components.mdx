@@ -3,9 +3,11 @@ title: Components
 description: The React components the generated pages are drawn with, each shown live with its props.
 ---
 
-The generated pages use five components from `fumadocs-fortran/react`, and fumadocs' own `Callout`. The components
-are plain `createElement` code with no hooks and no `'use client'`, so the same set renders on the server and in
-client-side MDX. Every prop is a string, a number or a boolean.
+The generated pages use seven components from `fumadocs-fortran/react`, fumadocs' own `Callout` and `Cards`, and, for
+the graphs, a `Mermaid` component that the site provides. The components are plain `createElement` code with no
+state, effects or context and no `'use client'`, so the same set renders on the server and in client-side MDX;
+`FortranRef` uses `useId`, which server components have too, to tie a hover card to its name. Rows that open, source
+blocks and hover cards are HTML and CSS only. Every prop is a string, a number or a boolean, except a row's `refs`.
 
 ## Set up
 
@@ -32,6 +34,106 @@ import './global.css';
 The pages also hold `$…$` and `$$…$$` maths, which need remark-math, rehype-katex and KaTeX's stylesheet. This
 site adds them in [`lib/source.ts`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/lib/source.ts) and
 [`app/layout.tsx`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/app/layout.tsx).
+
+### Graphs
+
+The dependency, inheritance and call graphs are ` ```mermaid ` blocks. fumadocs' `remarkMdxMermaid` turns each into
+`<Mermaid chart="…" />`, and the site draws it. This site draws them as SVG at build time with
+[Pele](https://github.com/obsidianmd/pele), so no script reaches the browser; see
+[`components/mdx/mermaid.tsx`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/components/mdx/mermaid.tsx).
+The client-side Mermaid component of fumadocs' own docs works as well. A site that draws no graphs generates without
+them: `graphs: false`, or `--graphs none`.
+
+```ts title="lib/source.ts"
+import { remarkMdxMermaid } from 'fumadocs-core/mdx-plugins';
+
+// in defineDocs({ docs: { mdxOptions: applyMdxPreset({ … }) } })
+remarkPlugins: [remarkMdxMermaid],
+```
+
+Pele throws on a diagram it cannot parse, and a ` ```mermaid ` block in a doc comment reaches the pages as it was
+written, so the component shows such a diagram as its code rather than failing the page's build:
+
+```tsx title="components/mdx/mermaid.tsx"
+import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
+import { render } from 'pele';
+
+export function Mermaid({ chart }: { chart: string }) {
+  let svg: string;
+  try {
+    svg = render(chart).svg;
+  } catch {
+    return (
+      <CodeBlock title="Mermaid">
+        <Pre>{chart}</Pre>
+      </CodeBlock>
+    );
+  }
+  return <div className="not-prose" dangerouslySetInnerHTML={{ __html: svg }} />;
+}
+```
+
+Register `Mermaid` with the other components. Pele draws with CSS variables (`--pele-fg`, `--pele-line`, `--pele-bg`
+and others), and without them for a light page: near-black arrows, which a dark theme hides, and labels in white
+boxes. `fumadocs-fortran/style.css` maps them to fumadocs' colours for the graphs in a `FortranGraph`, so that their
+lines, arrows and labels follow the light and dark themes, and colours their nodes by kind (see
+[What the graphs show](#what-the-graphs-show)). A diagram that a site writes in a page itself, a ` ```mermaid ` block
+outside a `FortranGraph`, needs the same mapping in the site's CSS. This site's:
+
+```css title="app/global.css"
+.pele:not(.fdf-graph .pele) {
+  --pele-font: var(--font-sans);
+  --pele-font-mono: var(--font-mono);
+  --pele-bg: var(--color-fd-background);
+  --pele-fg: var(--color-fd-foreground);
+  --pele-muted: var(--color-fd-muted-foreground);
+  --pele-line: var(--color-fd-muted-foreground);
+  --pele-surface: var(--color-fd-card);
+  --pele-surface-alt: var(--color-fd-secondary);
+  --pele-border: var(--color-fd-border);
+  --pele-accent: var(--color-fd-primary);
+}
+```
+
+A plain `.pele` rule would apply to the generated graphs as well, as the stylesheet's mapping has no specificity: it
+is how a site changes their lines and labels.
+
+### Letters in the table of contents
+
+A generated page says what each heading is, in its front matter, and `fortranToc()` puts a letter for it in the
+table of contents: `t` for a type, `s` a subroutine, `f` a function and so on. The page schema has to keep the
+`fortran` field, which fumadocs' default schema drops. The schema is written with zod 4, which fumadocs-core lists
+only as an optional peer dependency, so a site without it installs it (`npm install zod@4`):
+
+```ts title="lib/source.ts"
+import { pageSchema } from 'fumadocs-core/source/schema';
+import { z } from 'zod';
+
+// in defineDocs({ docs: { … } })
+schema: pageSchema.extend({
+  fortran: z.object({ kind: z.string().optional(), toc: z.record(z.string(), z.string()).optional() }).optional(),
+}),
+```
+
+```tsx title="app/docs/[[...slug]]/page.tsx"
+import { fortranToc } from 'fumadocs-fortran/react';
+
+<DocsPage toc={fortranToc(page.data.toc, page.data.fortran?.toc)} full={page.data.full}>
+```
+
+### A site served under a base path
+
+Markdown links go through the site's link component, which writes them as Next.js writes its own: with the
+`basePath`, and, in a static export with `trailingSlash`, with the slash a page's address ends in
+(`…/solver_kernels/#dense_matrix`). A hover card's link, a source header's and a graph node's are plain links that it
+never sees. On a site served from a sub-path, such as a GitHub Pages project site, or exported with `trailingSlash`,
+give the links among them that start with `/` the same: without the base path they lead off the site, and without
+the slash a link to an anchor of the page being read loads the page again, through a redirect, instead of scrolling
+to it. This site does it with `siteHref` in
+[`lib/shared.ts`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/lib/shared.ts): for the components in
+[`components/mdx/fortran.tsx`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/components/mdx/fortran.tsx),
+which the site registers in their place, for the graphs in its `Mermaid`, and for the llms files and the pages'
+Markdown copies in `lib/source.ts`.
 
 ## FortranBadges and FortranBadge
 
@@ -144,20 +246,23 @@ A label of its own, a condition, a tooltip, and a kind the package does not know
 
 ## FortranArgs and FortranArg
 
-`FortranArgs` is a titled list of `FortranArg` rows: the arguments of a procedure, the result of a function or the
-components of a type. Each row shows the name, the type with its dimensions, an intent marker, the flags and the
-condition, and the documentation under them, as full Markdown.
+`FortranArgs` is a table in the manner of fumadocs' `TypeTable`: a title, a header row, and a `FortranArg` row for
+each argument, result, component, type parameter, type-bound procedure or enumerator. A row shows the name, the type,
+the shape (dimensions and codimensions), the intent and the attributes, and opens to its documentation, as full
+Markdown, with the whole declaration, the shape in words and the cpp condition it exists under. A name in the type
+that `refs` lists links to its definition and shows a card on hover or keyboard focus. In a column narrower than
+34rem, a row keeps its name and intent, and the rest moves into what it opens to.
 
 <Tabs items={['Preview', 'MDX']}>
 <Tab value="Preview">
 
 <FortranArgs>
-<FortranArg name="n" type="integer" intent="in">
+<FortranArg name="n" type="integer" intent="in" decl="integer, intent(in) :: n">
 
 The order of the matrix $A$, $n \ge 0$.
 
 </FortranArg>
-<FortranArg name="a" type="real(dp)" dims="(lda,*)" intent="inout">
+<FortranArg name="a" type="real(dp)" dims="(lda,*)" intent="inout" decl="real(dp), intent(inout) :: a(lda,*)" refs={{ dp: { href: 'https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fFORTRAN_005fENV.html', title: 'dp ⇒ real64', detail: 'Real kind with a storage size of 64 bits: double precision', note: 'Renamed in the use statement at src/kinds.f90:3' } }}>
 
 On entry, the $n \times n$ matrix $A$. On exit, the factors $L$ and $U$ of the factorisation
 
@@ -168,22 +273,27 @@ $$
 where the unit diagonal of $L$ is not stored.
 
 </FortranArg>
-<FortranArg name="ipiv" type="integer" dims="(n)" intent="out">
+<FortranArg name="ipiv" type="integer" dims="(n)" intent="out" decl="integer, intent(out) :: ipiv(n)">
 
 The pivot indices: row $i$ was interchanged with row `ipiv(i)`.
 
 </FortranArg>
-<FortranArg name="tol" type="real(dp)" intent="in" optional>
+<FortranArg name="m" type="class(dense_matrix)" intent="in" decl="class(dense_matrix), intent(in) :: m" refs={{ dense_matrix: { href: '/docs/showcase/modern/solver_kernels#dense_matrix', title: 'type, extends(abstract_matrix) :: dense_matrix', detail: 'Dense, column-major matrix.' } }}>
+
+A matrix of the [Showcase](/docs/showcase/modern/solver_kernels#dense_matrix): its name links to its type.
+
+</FortranArg>
+<FortranArg name="tol" type="real(dp)" intent="in" optional decl="real(dp), intent(in), optional :: tol">
 
 The tolerance. Without it, `epsilon(1.0_dp)`.
 
 </FortranArg>
-<FortranArg name="alpha" type="real(c_double)" value>
+<FortranArg name="alpha" type="real(c_double)" value decl="real(c_double), value :: alpha" refs={{ c_double: { href: 'https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fC_005fBINDING.html', title: 'c_double', detail: 'Real kind interoperable with C double', note: 'From the use statement at src/kinds.f90:4' } }}>
 
 Passed by value, as C passes it.
 
 </FortranArg>
-<FortranArg name="work" type="real(dp)" dims="(:)" attrs="allocatable, target" intent="inout">
+<FortranArg name="work" type="real(dp)" dims="(:)" attrs="allocatable, target" intent="inout" decl="real(dp), intent(inout), allocatable, target :: work(:)">
 
 Workspace, grown when needed:
 
@@ -191,12 +301,12 @@ Workspace, grown when needed:
 - kept between calls.
 
 </FortranArg>
-<FortranArg name="halo" type="real(dp)" dims="(:,:)" codims="[*]">
+<FortranArg name="halo" type="real(dp)" dims="(:,:)" codims="[*]" decl="real(dp) :: halo(:,:)[*]">
 
 A coarray: one block on every image.
 
 </FortranArg>
-<FortranArg name="comm" type="type(MPI_Comm)" intent="in" cond="USE_MPI">
+<FortranArg name="comm" type="type(MPI_Comm)" intent="in" cond="USE_MPI" decl="type(MPI_Comm), intent(in) :: comm">
 
 The communicator. The argument exists only when the code is built with `-DUSE_MPI`.
 
@@ -204,8 +314,8 @@ The communicator. The argument exists only when the code is built with `-DUSE_MP
 <FortranArg name="info" type="integer" intent="out" />
 </FortranArgs>
 
-<FortranArgs title="Result">
-<FortranArg name="nrm" type="real(dp)">
+<FortranArgs title="Result" columns="type intent">
+<FortranArg name="nrm" type="real(dp)" result decl="real(dp) :: nrm">
 
 The global 2-norm, $\|x\|_2$.
 
@@ -217,7 +327,10 @@ The global 2-norm, $\|x\|_2$.
 
 ```mdx
 <FortranArgs>
-<FortranArg name="a" type="real(dp)" dims="(lda,*)" intent="inout">
+<FortranArg name="a" type="real(dp)" dims="(lda,*)" intent="inout"
+  decl="real(dp), intent(inout) :: a(lda,*)"
+  refs={{ dp: { href: 'https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fFORTRAN_005fENV.html',
+    title: 'dp ⇒ real64', detail: 'Real kind with a storage size of 64 bits: double precision' } }}>
 
 On entry, the $n \times n$ matrix $A$. On exit, the factors $L$ and $U$.
 
@@ -240,8 +353,8 @@ The communicator.
 <FortranArg name="info" type="integer" intent="out" />
 </FortranArgs>
 
-<FortranArgs title="Result">
-<FortranArg name="nrm" type="real(dp)">
+<FortranArgs title="Result" columns="type intent">
+<FortranArg name="nrm" type="real(dp)" result>
 
 The global 2-norm, $\|x\|_2$.
 
@@ -250,7 +363,7 @@ The global 2-norm, $\|x\|_2$.
 ```
 
 Leave a blank line after an opening `<FortranArg>` and before its closing tag, so that what is between them is read
-as Markdown.
+as Markdown. A row with nothing to open to (no doc, declaration, shape or condition) does not open.
 
 </Tab>
 </Tabs>
@@ -262,7 +375,13 @@ as Markdown.
     title: {
       type: 'string',
       default: 'Arguments',
-      description: 'The heading of the list, such as Result or Components. An empty string leaves it out.',
+      description: 'The title of the table, such as Result or Components. An empty string leaves it out.',
+    },
+    columns: {
+      type: 'string',
+      default: 'type shape intent attrs',
+      description:
+        'The columns to show besides the name, space-separated, drawn in that order. The generator lists only those some row fills, and an empty string shows the names alone.',
     },
     children: {
       type: 'ReactNode',
@@ -278,7 +397,7 @@ as Markdown.
     name: {
       type: 'string',
       required: true,
-      description: 'The name of the argument, result or component.',
+      description: 'The name of the argument, result, component, binding or enumerator.',
     },
     type: {
       type: 'string',
@@ -286,7 +405,7 @@ as Markdown.
     },
     dims: {
       type: 'string',
-      description: 'The dimensions, shown after the type, such as (:,:) or (lda,*). Parentheses are added when missing.',
+      description: 'The dimensions, in the shape column, such as (:,:) or (lda,*). Parentheses are added when missing.',
     },
     codims: {
       type: 'string',
@@ -295,7 +414,12 @@ as Markdown.
     intent: {
       type: "'in' | 'out' | 'inout'",
       description:
-        'The intent. in, out and inout have markers that look different; in out reads as inout, and any other value is shown as written.',
+        'The intent: → in, ← out and ↔ inout, each in a colour of its own; in out reads as inout, and any other value is shown as written.',
+    },
+    result: {
+      type: 'boolean',
+      default: 'false',
+      description: "A function's result: the intent column says result.",
     },
     optional: {
       type: 'boolean',
@@ -309,12 +433,21 @@ as Markdown.
     },
     attrs: {
       type: 'string',
-      description: 'Other attributes, as comma-separated text, such as allocatable, target.',
+      description: 'Other attributes, as comma-separated text, such as allocatable, target. Each is a pill.',
     },
     cond: {
       type: 'string',
       description:
-        'A cpp condition, such as USE_MPI: the argument exists only in builds where it holds, and the row says so ("when USE_MPI"), dashed.',
+        'A cpp condition, such as USE_MPI: the row exists only in builds where it holds, and says so ("when USE_MPI"), dashed.',
+    },
+    decl: {
+      type: 'string',
+      description: 'The whole declaration as Fortran, shown when the row opens: real(dp), intent(in), optional :: x(:).',
+    },
+    refs: {
+      type: 'Record<string, { href?: string; title: string; detail?: string; note?: string }>',
+      description:
+        'Names in the type that link and have a hover card, by name: each whole-word occurrence, in any case, becomes a FortranRef. An object, or the same as JSON text. The generator gives one for each kind name and derived type it can place.',
     },
     children: {
       type: 'ReactNode',
@@ -323,39 +456,118 @@ as Markdown.
   }}
 />
 
+## FortranRef
+
+A name that links to its definition and shows a card while it is hovered or has the keyboard's focus: a first line
+in code, a line of text, and a muted note. The rows use it for kind names and derived types; in text it stands on its
+own. Hover over these names, or reach them with Tab:
+
+{/* the examples are expressions, so that search, which keeps a paragraph's elements as tags, leaves them out */}
+<p>
+  {<><FortranRef href="/docs/showcase/modern/solver_kernels#abstract_matrix" title="type, abstract :: abstract_matrix" detail="An abstract matrix type.">abstract_matrix</FortranRef> is the type the matrices of the Showcase extend.</>}
+</p>
+
+<p>
+  {<><FortranRef href="https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fFORTRAN_005fENV.html" title="dp ⇒ real64" detail="Real kind with a storage size of 64 bits: double precision" note="Renamed in the use statement at examples/modern/src/modern_ford.F90:21">dp</FortranRef> is their kind.</>}
+</p>
+
+```mdx
+<FortranRef href="/docs/showcase/modern/solver_kernels#abstract_matrix" title="type, abstract :: abstract_matrix"
+  detail="An abstract matrix type.">abstract_matrix</FortranRef> is the type the matrices of the Showcase extend.
+```
+
+The card sits inside the name, so that a click on it follows the link and, in a row, does not open or close the row.
+Without `href` the name is a button that does nothing, which the keyboard reaches and which shows the card while it
+has the focus. For screen readers the card describes its name (`aria-describedby`) and has no text of its own
+(`aria-hidden`), so that a row is read without it. The card is CSS only: it hides when the pointer or the focus
+leaves the name, and Escape cannot dismiss it. Where the browser has CSS anchor positioning, the card is placed
+against its name and the screen, on the side where it fits; elsewhere it opens below the name. Cards are not printed.
+
+### Props of FortranRef
+
+<TypeTable
+  type={{
+    href: {
+      type: 'string',
+      description:
+        'Where the name links: a heading of the reference, or a page about the name. Without it the name is a button that only shows the card.',
+    },
+    title: {
+      type: 'string',
+      required: true,
+      description: "The card's first line, in code, such as the name's declaration.",
+    },
+    detail: {
+      type: 'string',
+      description: 'A line of text under it, such as the summary of its doc.',
+    },
+    note: {
+      type: 'string',
+      description: 'A muted line last, such as where the name was renamed.',
+    },
+    children: {
+      type: 'ReactNode',
+      description: 'The name.',
+    },
+  }}
+/>
+
 ## FortranSource
 
-A quiet line that says where an entity is defined, linked to its lines when `href` is given.
+An entity's source: "Source code in" its file, its lines and a link to them. With a code block inside, it is a block
+that opens to the code, numbered from the entity's first line; without one, the line alone, which links when `href`
+is given. The generator puts in the code of each procedure, type, interface, variable and enum of up to 400 lines,
+and links modules, submodules and programs; `source: 'link'`, or `--source link`, only links. It reads the code from
+the files it parsed, those it was given and the files they include, wherever they lie, so that
+`fumadocs-fortran generate ../src` run in a site's folder embeds it too.
 
 <Tabs items={['Preview', 'MDX']}>
 <Tab value="Preview">
 
+<FortranSource file="examples/modern/src/modern_ford.F90" line={166} lineEnd={171} href="https://github.com/Nevensky/fumadocs-fortran/blob/main/examples/modern/src/modern_ford.F90#L166-L171">
+
+```f90 lineNumbers=166
+  subroutine check_length(n, m, what)
+    integer, intent(in) :: n !! the matrix's order
+    integer, intent(in) :: m !! the vector's length
+    character(*), intent(in) :: what !! the vector's name, for the message
+    if (m /= n) error stop 'solver_kernels: ' // what // ' does not fit the matrix'
+  end subroutine check_length
+```
+
+</FortranSource>
+
 <FortranSource
   file="examples/modern/src/modern_ford.F90"
-  line={171}
-  lineEnd={193}
-  href="https://github.com/Nevensky/fumadocs-fortran/blob/main/examples/modern/src/modern_ford.F90#L171-L193"
+  line={3}
+  lineEnd={256}
+  href="https://github.com/Nevensky/fumadocs-fortran/blob/main/examples/modern/src/modern_ford.F90#L3-L256"
 />
-
-<FortranSource file="examples/modern/src/tridiag.f" line={93} lineEnd={164} />
 
 <FortranSource file="examples/modern/src/modern_doxygen.f90" line={25} />
 
 </Tab>
 <Tab value="MDX">
 
-```mdx
+````mdx
+<FortranSource file="examples/modern/src/modern_ford.F90" line={166} lineEnd={171}
+  href="https://github.com/Nevensky/fumadocs-fortran/blob/main/examples/modern/src/modern_ford.F90#L166-L171">
+
+```f90 lineNumbers=166
+  subroutine check_length(n, m, what)
+  …
+  end subroutine check_length
+```
+
+</FortranSource>
+
 <FortranSource
   file="examples/modern/src/modern_ford.F90"
-  line={171}
-  lineEnd={193}
-  href="https://github.com/Nevensky/fumadocs-fortran/blob/main/examples/modern/src/modern_ford.F90#L171-L193"
+  line={3}
+  lineEnd={256}
+  href="https://github.com/Nevensky/fumadocs-fortran/blob/main/examples/modern/src/modern_ford.F90#L3-L256"
 />
-
-<FortranSource file="examples/modern/src/tridiag.f" line={93} lineEnd={164} />
-
-<FortranSource file="examples/modern/src/modern_doxygen.f90" line={25} />
-```
+````
 
 </Tab>
 </Tabs>
@@ -380,10 +592,156 @@ A quiet line that says where an entity is defined, linked to its lines when `hre
     },
     href: {
       type: 'string',
-      description: 'Where the lines can be read, such as the file on GitHub with #L171-L193.',
+      description: 'Where the lines can be read, such as the file on GitHub with #L166-L171. Its host names the link.',
+    },
+    children: {
+      type: 'ReactNode',
+      description: 'The code, as a code block. Without it, the line alone.',
     },
   }}
 />
+
+## FortranGraph
+
+A graph, with an optional title: an open card, or, with `collapsed`, a block that opens to it. The generator draws a
+unit's dependencies and the overview's units open, the overview's with no title, under a heading of its own, and a
+type's inheritance and the calls of a procedure, a program or a generic collapsed.
+
+<Tabs items={['Preview', 'MDX']}>
+<Tab value="Preview">
+
+<FortranGraph title="Call graph">
+
+```mermaid
+flowchart LR
+  classDef fdfProcedure fill:#98b6c8,stroke:#386a86,color:#111111
+  classDef fdfFocus stroke-width:3px
+  n1("check_length")
+  n2("dense_matvec")
+  n3("banded_matvec")
+  n4("solve_dense_real")
+  n2 --> n1
+  n3 --> n1
+  n4 --> n1
+  class n1 fdfProcedure
+  class n1 fdfFocus
+  class n2 fdfProcedure
+  class n3 fdfProcedure
+  class n4 fdfProcedure
+  click n1 href "/docs/showcase/modern/solver_kernels#check_length"
+  click n2 href "/docs/showcase/modern/solver_kernels#dense_matvec"
+  click n3 href "/docs/showcase/modern/solver_kernels#banded_matvec"
+  click n4 href "/docs/showcase/modern/solver_kernels_lapack#solve_dense_real"
+```
+
+</FortranGraph>
+
+</Tab>
+<Tab value="MDX">
+
+````mdx
+<FortranGraph title="Call graph" collapsed>
+
+```mermaid
+flowchart LR
+  n1("check_length")
+  n2("dense_matvec")
+  n2 --> n1
+  class n1 fdfProcedure
+  class n1 fdfFocus
+  class n2 fdfProcedure
+  click n2 href "/docs/showcase/modern/solver_kernels#dense_matvec"
+```
+
+</FortranGraph>
+````
+
+</Tab>
+</Tabs>
+
+### What the graphs show
+
+- **Graphs.** A unit's dependencies are the modules that it and everything in it use, followed two steps deep
+  through the project's modules, then what uses it, and its submodules or, for a submodule, its parents. A type's
+  inheritance is the types it extends, up to the root, and every type that extends it. A procedure's calls are what
+  it calls, two steps deep through the project's procedures, and what calls it. The overview has every module,
+  submodule and program, with one node for each HPC library they use. A graph draws at most 40 nodes, the last of
+  them standing for the rest ("… 12 more"), and a project of more than 80 units has no overview graph. From
+  JavaScript, `graphs: { depth, maxNodes }` changes the two steps and the 40 nodes, and `maxNodes` the 80 units as
+  well.
+- **Calls.** A call is a `CALL` statement or a function reference, resolved as Fortran resolves it: through `use`,
+  renames, host association, generic interfaces and submodules. A type-bound one (`call m%solve(b)`,
+  `n = m%order()`) is drawn when `m` is a dummy argument, a function result or a module variable, whose type the
+  model knows, and not through a local variable, as the model keeps no local declarations. Intrinsic procedures are
+  left out, and a function reference to a name the project does not declare is drawn only when the name is a known
+  library's, as it might as well be an array.
+- **Shapes.** A module and a type are boxes, a submodule a box with double sides, a program a stadium, a procedure a
+  rounded box and a generic interface or binding a hexagon. A module or routine from outside the project is a rounded
+  box. The graph's subject has a heavier border.
+- **Colours.** Each kind of the project's entities has a colour: modules, submodules, programs, procedures (functions
+  and subroutines alike), generics and types; an abstract type has a dashed border in the type's colour. A routine or
+  module from outside the project takes its library's colour when its name says which library it is:
+  - MPI: `mpi_*` routines, and the modules `mpi`, `mpi_f08` and `mpif`;
+  - OpenMP: `omp_*`, `omp_lib` and `omp_lib_kinds`; OpenACC: `acc_*` and `openacc`;
+  - CUDA: routines whose names start with `cuda`, `cublas`, `cufft`, `curand`, `cusparse` or `cusolver`, in any case,
+    and the modules `cudafor`, `cublas`, `cufft`, `curand`, `cusparse` and `cusolverDn`;
+  - the coarray collectives (`co_sum`, `co_min`, `co_max`, `co_reduce`, `co_broadcast`) and the BLAS routines.
+
+  LAPACK and ScaLAPACK routines are not known by name until the registry of library symbols arrives. Until then they
+  take their colour only from `graphs.classify`, a JavaScript option of `generate()` and `buildPages()` that names a
+  routine's library from its lower-case name, such as `(name) => (LAPACK.has(name) ? 'lapack' : null)` with a set of
+  LAPACK's names; the CLI has no such option. The other routines and modules from outside the project are grey and
+  dashed, and the intrinsic modules (`iso_fortran_env`, `iso_c_binding`, the IEEE modules) grey.
+- **Edges.** An arrow is a use, an extension (from a type to its parent) or a call. A label on it is the cpp condition
+  it holds under, which a `use` statement or a `CALL` statement gives; a function reference is never labelled, as the
+  parser keeps no condition for it. A dotted arrow goes from a generic to its specific procedures, and one labelled
+  "submodule of" from a submodule to its parent.
+- **Links.** A node links to the heading that documents it; a routine from outside the project links to the interface
+  body that documents it, if there is one.
+
+The Mermaid holds fixed mid tones for each kind of node, which read on light and dark backgrounds whatever draws them.
+With Pele, `fumadocs-fortran/style.css` draws the nodes in the theme's colours instead, from the variables under
+[Styling](#styling), and the lines, arrows and labels in fumadocs' (see [Graphs](#graphs)).
+
+### Props of FortranGraph
+
+<TypeTable
+  type={{
+    title: {
+      type: 'string',
+      description:
+        "The card's caption, or what a collapsed block shows until it opens. Without it an open card has no caption, as the generated overview has none, and a collapsed block says Graph.",
+    },
+    collapsed: {
+      type: 'boolean',
+      default: 'false',
+      description: 'A block that starts closed, rather than an open card.',
+    },
+    children: {
+      type: 'ReactNode',
+      description: 'The diagram: a ```mermaid block, which the site draws.',
+    },
+  }}
+/>
+
+## fortranToc
+
+`fortranToc(toc, kinds)` returns fumadocs' table of contents with a letter before each entry whose anchor `kinds`
+names: a generated page's front matter `fortran.toc`. Wire it in as in
+[Letters in the table of contents](#letters-in-the-table-of-contents); entries it has no kind for stay as they are.
+
+<div className="not-prose flex flex-wrap gap-x-5 gap-y-2 text-sm">
+  <span className="fdf-toc"><span className="fdf-toc-kind fdf-toc-module">mod</span><span className="fdf-toc-name">module</span></span>
+  <span className="fdf-toc"><span className="fdf-toc-kind fdf-toc-submodule">smod</span><span className="fdf-toc-name">submodule</span></span>
+  <span className="fdf-toc"><span className="fdf-toc-kind fdf-toc-program">prog</span><span className="fdf-toc-name">program</span></span>
+  <span className="fdf-toc"><span className="fdf-toc-kind fdf-toc-type">t</span><span className="fdf-toc-name">type</span></span>
+  <span className="fdf-toc"><span className="fdf-toc-kind fdf-toc-interface">i</span><span className="fdf-toc-name">interface</span></span>
+  <span className="fdf-toc"><span className="fdf-toc-kind fdf-toc-subroutine">s</span><span className="fdf-toc-name">subroutine</span></span>
+  <span className="fdf-toc"><span className="fdf-toc-kind fdf-toc-function">f</span><span className="fdf-toc-name">function</span></span>
+  <span className="fdf-toc"><span className="fdf-toc-kind fdf-toc-variable">v</span><span className="fdf-toc-name">variable</span></span>
+  <span className="fdf-toc"><span className="fdf-toc-kind fdf-toc-parameter">p</span><span className="fdf-toc-name">parameter</span></span>
+  <span className="fdf-toc"><span className="fdf-toc-kind fdf-toc-enum">e</span><span className="fdf-toc-name">enum</span></span>
+</div>
 
 ## Notes and warnings
 
@@ -404,12 +762,20 @@ every fumadocs site already registers:
 
 ## fortranComponents
 
-`fortranComponents` holds all five, `{ FortranBadges, FortranBadge, FortranArgs, FortranArg, FortranSource }`, to
-spread into `getMDXComponents()` as in [Set up](#set-up). Each is also a named export, for use in TSX: this site's
-home page draws a procedure with them.
+`fortranComponents` holds all seven, `{ FortranBadges, FortranBadge, FortranArgs, FortranArg, FortranRef,
+FortranSource, FortranGraph }`, to spread into `getMDXComponents()` as in [Set up](#set-up). Each is also a named
+export, for use in TSX, with its props' types: this site's home page draws a procedure with them.
 
 ```tsx
-import { FortranArg, FortranArgs, FortranBadge, FortranBadges, FortranSource } from 'fumadocs-fortran/react';
+import {
+  FortranArg,
+  FortranArgs,
+  FortranBadge,
+  FortranBadges,
+  FortranGraph,
+  FortranSource,
+  type FortranRefTarget,
+} from 'fumadocs-fortran/react';
 ```
 
 ## Styling
@@ -419,19 +785,28 @@ the site's theme in light and dark mode. It needs no Tailwind `@source` line. Si
 
 | Variable | Colours |
 | --- | --- |
-| `--fdf-omp`, `--fdf-acc`, `--fdf-offload` | OpenMP, OpenACC and offload badges |
-| `--fdf-mpi`, `--fdf-coarray` | MPI and coarray badges |
-| `--fdf-cuda` | CUDA Fortran badges |
-| `--fdf-blas`, `--fdf-lapack`, `--fdf-scalapack` | badges for calls into the libraries |
+| `--fdf-omp`, `--fdf-acc`, `--fdf-offload` | OpenMP, OpenACC and offload badges, and the OpenMP and OpenACC nodes of the graphs |
+| `--fdf-mpi`, `--fdf-coarray` | MPI and coarray badges, and their graph nodes |
+| `--fdf-cuda` | CUDA Fortran badges, and the CUDA nodes of the graphs |
+| `--fdf-blas`, `--fdf-lapack`, `--fdf-scalapack` | the libraries' badges, and the graph nodes of their routines |
 | `--fdf-cpp` | cpp badges |
 | `--fdf-in`, `--fdf-out`, `--fdf-inout` | the intent markers of arguments |
+| `--fdf-k-module`, `--fdf-k-submodule`, `--fdf-k-program`, `--fdf-k-type` | the letters in the table of contents, and the graph nodes of each kind (block data with the programs) |
+| `--fdf-k-interface` | the letter `i`, and the generics of the graphs |
+| `--fdf-k-subroutine` | the letter `s`, and every procedure of the graphs, functions included |
+| `--fdf-k-function`, `--fdf-k-variable`, `--fdf-k-parameter`, `--fdf-k-enum` | the letters `f`, `v`, `p` and `e` in the table of contents |
 
 Each is one mid tone for both themes: the text mixes it with black in light mode and with white in dark mode, and
-the tint and the border are made from it. Set them on `:root` in CSS that comes after the stylesheet, such as the
-site's own `app/global.css` imported after it, as in [Set up](#set-up):
+the tint and the border are made from it. The grey of what lies outside the project is fumadocs' muted foreground.
+Set them on `:root` in CSS that comes after the stylesheet, such as the site's own `app/global.css` imported after
+it, as in [Set up](#set-up):
 
 ```css title="app/global.css"
 :root {
   --fdf-mpi: oklch(0.6 0.12 190);
 }
 ```
+
+On paper, every row is printed open, with its documentation and declaration; source blocks and graphs are printed as
+they are on the screen, open or closed, and hover cards not at all. On a right-to-left page, the Fortran in the
+tables and cards (names, types, shapes, declarations and conditions) still reads left to right.

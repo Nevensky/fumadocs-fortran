@@ -106,6 +106,19 @@ const parse = (text, opts = {}) => parseSource(text, { root: OUT, ...opts });
   const io = byName(ir, 'io');
   ok(io && io.lineEnd === 9, '`end file` and labelled `end do` do not close a unit');
   eq(io.calls?.map((c) => c.name), ['helper'], 'a call inside a logical IF');
+  const paths = parse([
+    'subroutine drive(x, locals)',
+    '  call x%c%go(1)',
+    '  call locals(1)%go()',
+    '  call locals(f(2))%stack(3)%push(4)',
+    '  call co_sum(t)',
+    'end subroutine',
+  ].join('\n'));
+  const drive = byName(paths, 'drive');
+  eq(drive.calls.map((c) => c.name), ['x%c%go', 'locals%go', 'locals%stack%push', 'co_sum'],
+    'a call through components, subscripted or not, names the whole path');
+  eq(drive.refs, ['f'], 'a function reference in a subscript of the path');
+  ok(drive.hpc?.coarray, 'a coarray collective');
   ok(byName(ir, 'init', 'blockdata')?.lineEnd === 12, 'end block data');
   eq(byName(ir, 'init', 'blockdata').commons, [{ name: 'blk', members: ['x', 'y'], line: 11 }], 'common blocks');
   eq(byName(ir, 'colour', 'enum')?.enumerators.map((x) => x.name), ['red', 'green'], 'F2023 enumeration type');
@@ -132,6 +145,103 @@ const parse = (text, opts = {}) => parseSource(text, { root: OUT, ...opts });
 
   const impl = parse('subroutine f77(i, x)\n  implicit double precision (a-h, o-z)\nend\n');
   eq(byName(impl, 'f77').args.map((a) => `${a.name}:${a.type.base}${a.type.implicit ? '*' : ''}`), ['i:integer*', 'x:double precision*'], 'implicit typing');
+}
+
+// ---------------------------------------------------------------- function references and calls through paths
+{
+  const refs = (name, lines, opts) => byName(parse(lines.join('\n'), opts), name).refs;
+  eq(refs('nest', [
+    'subroutine nest(y)',
+    '  real :: y',
+    '  y = f(g(y))',
+    '  if (is_ok(y)) y = 0',
+    '  do while (more(y))',
+    '    y = sqrt(h(y))',
+    '  end do',
+    '  y = max(p(y), q(y))',
+    'end subroutine',
+  ]), ['f', 'g', 'h', 'is_ok', 'max', 'more', 'p', 'q', 'sqrt'],
+  'a reference inside another\'s parentheses, and right after `if (` and `while (`');
+  eq(refs('bound', [
+    'subroutine bound(c, json, x, h)',
+    '  type(circle) :: c',
+    '  a = 2.0 * c%area()',
+    '  if (json%failed()) return',
+    '  b = x(1)[2]%shape%perimeter(3) + x%r(1)%count(g(1))',
+    '  w = h%f(2.0)',
+    'end subroutine',
+  ]), ['c%area', 'g', 'h%f', 'json%failed', 'x%r%count', 'x%shape%perimeter'],
+  'a path through components to a function is kept as calls name it, without subscripts or image selectors');
+  eq(refs('sections', [
+    'subroutine sections(c, k)',
+    '  y = arr(1:k) + c%name(2:3) // c%tags(k)(1:1)',
+    '  z = q(1)[2] + c%v(1)[3] + m(1)%w',
+    'end subroutine',
+  ]), undefined, 'sections, substrings, coarray elements and components are no function references');
+  eq(refs('types', [
+    'subroutine types(n, obj)',
+    '  integer :: n',
+    '  character(:), allocatable :: c',
+    '  integer(int64), allocatable :: k(:)',
+    '  class(base(:)), allocatable :: obj',
+    '  allocate(character(len=n) :: c)',
+    '  allocate(integer(int64) :: k(f(n)))',
+    '  allocate(shape_t(n) :: obj)',
+    '  c = [character(len=3) :: "a", g(1)]',
+    '  x = [real(dp) :: 1, 2]',
+    '  do concurrent (integer(int8) :: i = 1:n)',
+    '  end do',
+    'end subroutine',
+  ]), ['f', 'g'], 'a type before `::` in ALLOCATE, an array constructor or DO CONCURRENT is no function reference');
+  eq(refs('blocks', [
+    'subroutine blocks(n)',
+    '  integer :: n',
+    '  block',
+    '    real, allocatable :: w(:)',
+    '    real :: v',
+    '    dimension v(n)',
+    '    allocate(w(n))',
+    '    v(1) = w(1) + f(n)',
+    '  end block',
+    '  y = g(1)',
+    'end subroutine',
+  ]), ['f', 'g'], 'arrays a BLOCK construct declares, by a type declaration or by DIMENSION, are no references');
+  const img = (call) => byName(parse(`subroutine img(x)\n  ${call}\nend subroutine\n`), 'img');
+  const co = img('call x[2]%go()');
+  eq([co.calls.map((c) => c.name), !!co.hpc?.coarray], [['x%go'], true],
+    'a call through an image selector names the path, and is coarray code');
+  eq(img('call x(1)[3]%y%stop()').calls.map((c) => c.name), ['x%y%stop'],
+    'so does one through a subscript and a selector');
+  eq(refs('stmt', [
+    'subroutine stmt(y)',
+    '  real :: y, sq, x, cube',
+    '  sq(x) = x * x',
+    '  cube(x) = sq(x) * x + ext(x)',
+    '  y = sq(2.0) + cube(y)',
+    '  buf(1) = 0',
+    '  late(x) = 1',
+    'end subroutine',
+  ]), ['buf', 'ext', 'late'],
+  'statement functions are no function references, though what they reference is; the executable part ends them');
+  eq(refs('work', [
+    '      SUBROUTINE WORK(N)',
+    '      INTEGER N',
+    '      COMMON /BLK/ B(10), C',
+    '      DOUBLE PRECISION A, B',
+    '      DIMENSION A(10)',
+    '      ALLOCATABLE :: W(:)',
+    '      B(2) = A(1) + W(1) + F(N)',
+    '      END',
+  ], { path: 'work.f' }), ['f'], 'arrays dimensioned by COMMON, DIMENSION or ALLOCATABLE, before or after their type');
+  eq(refs('names', [
+    'subroutine names(k)',
+    '  integer :: k',
+    '  character(len=8) :: label, title',
+    '  character(len=8), external :: tag',
+    '  external :: title',
+    '  print *, label(k:k), title(k), tag(k)',
+    'end subroutine',
+  ]), ['tag', 'title'], 'a character function declared EXTERNAL, in a statement or an attribute, is a reference');
 }
 
 // ---------------------------------------------------------------- the reader
@@ -230,7 +340,10 @@ const parse = (text, opts = {}) => parseSource(text, { root: OUT, ...opts });
 
 // ---------------------------------------------------------------- the other test files
 // Each test/*.test.mjs exports a default function that receives { ok, eq, here, out } and may be async.
-for (const f of fs.readdirSync(HERE).filter((x) => x.endsWith('.test.mjs')).sort()) {
+// `node test/run.mjs react graphs` runs only the test files whose names contain one of the words given.
+const only = process.argv.slice(2);
+const chosen = (x) => x.endsWith('.test.mjs') && (!only.length || only.some((w) => x.includes(w)));
+for (const f of fs.readdirSync(HERE).filter(chosen).sort()) {
   const mod = await import(new URL(f, import.meta.url));
   await mod.default({ ok, eq, here: HERE, out: OUT });
 }

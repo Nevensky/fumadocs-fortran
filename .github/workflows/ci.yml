@@ -24,8 +24,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
-      # the package has no dependencies; React is installed only so that the components' rendering checks run
-      - run: npm install --no-save --no-package-lock react@19 react-dom@19
+      # the package has no dependencies; React and MDX are installed only so that the rendering and MDX checks run
+      - run: npm install --no-save --no-package-lock react@19 react-dom@19 @mdx-js/mdx@3
       - run: npm test
 
   gate:

@@ -56,6 +56,18 @@ applyMdxPreset({
 
 A site without them can show the maths as code instead: `generate --math code`.
 
+Arguments, results and components are tables whose rows open to their documentation and declaration, and kind
+names and derived types in them link to their definitions, with a card on hover or keyboard focus. Each entry's
+source code is in a block that opens, with line numbers, read from the files parsed wherever they lie
+(`--source link` only links to the lines). Modules, types and procedures have dependency, inheritance and call
+graphs, written as ` ```mermaid ` blocks: add fumadocs' `remarkMdxMermaid` and a `Mermaid` component to the site, or
+leave them out with `--graphs none`. Calls into MPI, OpenMP, OpenACC, CUDA, the coarray collectives and BLAS are drawn
+in their library's colour; LAPACK and ScaLAPACK routines take theirs from the JavaScript option `graphs.classify`
+until the registry of library symbols arrives. Graphs drawn by [Pele](https://github.com/obsidianmd/pele) take the
+theme's colours from `fumadocs-fortran/style.css`. A page's front matter says what each heading is, for the letters
+(`t` type, `s` subroutine, `f` function, …) that `fortranToc()` puts in the table of contents.
+[Components](https://nevensky.github.io/fumadocs-fortran/docs/reference/components) shows how to set these up.
+
 From JavaScript:
 
 ```js

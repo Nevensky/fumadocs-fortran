@@ -28,8 +28,16 @@ section under its own anchor, with:
 - badges for its kind and for the HPC features it uses, dashed when a cpp condition decides whether it exists;
 - its signature, highlighted as Fortran;
 - its documentation, as Markdown with maths, such as $\|x\|_2 = \sqrt{\sum_i x_i^2}$;
-- its arguments, each with its type, dimensions, intent and attributes, and full Markdown under it;
-- a link to its lines on GitHub.
+- its arguments, result, components or bindings as a table: a row each, with the type, shape, intent and attributes,
+  which opens to the documentation in full Markdown, the declaration and the shape in words;
+- hover cards on the kind names and derived types in those tables, which link to their definitions;
+- graphs: a type's parents and extensions, a procedure's callers and callees, and, on a unit's page, what it uses
+  and what uses it, with every unit and the HPC libraries it uses on the overview;
+- its own code, in a block that opens, numbered as in its file and linked to its lines on GitHub (past 400 lines,
+  the link alone).
+
+The page's table of contents marks each entry with a letter for its kind: `t` a type, `s` a subroutine, `f` a
+function and so on.
 
 <Cards>
   <Card title="Showcase" href="/docs/showcase/modern">
