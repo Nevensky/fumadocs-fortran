@@ -271,10 +271,13 @@
   overflow-wrap: anywhere;
 }
 
-.fdf-arg-type > code, .fdf-arg-shape, .fdf-arg-decl, .fdf-arg-field code {
+.fdf-arg-type > code, .fdf-len > code, .fdf-arg-shape, .fdf-arg-decl, .fdf-arg-field code {
   font-family: var(--fdf-mono);
   font-size: 0.8125rem;
 }
+
+/* the shape's cell is as wide as the shape, which its card explains, and no wider */
+.fdf-arg-row > .fdf-col-shape { justify-self: start; }
 
 .fdf-arg-shape {
   color: var(--color-fd-foreground, currentColor);
@@ -550,6 +553,352 @@
 @position-try --fdf-ref-across {
   position-area: block-end span-all;
   justify-self: center;
+}
+
+/* ---- meanings: what a pill, a badge, a shape or the * of character(*) means, in a card on hover ---- */
+
+/* The components name the term (data-term, and data-arg for what goes with it: self in pass(self)), and the meanings
+   at the end of this section say it, once for the whole page. A card is the ::after of what it explains, drawn only
+   while that is hovered, in the look of the hover cards above. It is out of the way: the pointer passes through it,
+   and screen readers leave it out of a row's name, as an opened row lists the same text beside each pill. A term
+   without a meaning (a site's own badge, an attribute the list lacks) shows no card. */
+.fdf-badge, .fdf-intent, .fdf-flag, .fdf-cond, .fdf-col-shape, .fdf-len { position: relative; }
+
+.fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after, .fdf-intent[data-term]:hover::after,
+.fdf-flag[data-term]:hover::after, .fdf-cond[data-term]:hover::after, .fdf-col-shape[data-term]:hover::after,
+.fdf-len[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  inset-inline-start: 0;
+  z-index: 40;
+  display: block;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(18rem, calc(100vw - 2rem));
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--fdf-line);
+  border-radius: 0.5rem;
+  background-color: var(--color-fd-popover, var(--color-fd-background, Canvas));
+  color: var(--color-fd-popover-foreground, var(--color-fd-foreground, CanvasText));
+  box-shadow: var(--fdf-shadow-md);
+  font-size: 0.8125rem;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: start;
+  text-decoration: none;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  unicode-bidi: plaintext;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+/* the meaning, and after a badge's meaning its condition, on a line of its own; hidden from screen readers where
+   browsers allow, which an older one does not */
+.fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after, .fdf-intent[data-term]:hover::after,
+.fdf-flag[data-term]:hover::after, .fdf-cond[data-term]:hover::after, .fdf-col-shape[data-term]:hover::after,
+.fdf-len[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note::before {
+  content: var(--fdf-mean) var(--fdf-also, '');
+}
+
+@supports (content: '' / '') {
+  .fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after, .fdf-intent[data-term]:hover::after,
+  .fdf-flag[data-term]:hover::after, .fdf-cond[data-term]:hover::after, .fdf-col-shape[data-term]:hover::after,
+  .fdf-len[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note::before {
+    content: var(--fdf-mean) var(--fdf-also, '') / '';
+  }
+}
+
+@starting-style {
+  .fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after, .fdf-intent[data-term]:hover::after,
+  .fdf-flag[data-term]:hover::after, .fdf-cond[data-term]:hover::after, .fdf-col-shape[data-term]:hover::after,
+  .fdf-len[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note { opacity: 0; }
+}
+
+/* A badge's note (its title: the routines or constructs it stands for) is text in the badge, which screen readers read
+   with it, hidden from the eye until the badge is hovered: then it is the card, muted, under the meaning. */
+.fdf-badge-note {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.fdf-badge:hover > .fdf-badge-note {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip-path: none;
+  color: var(--fdf-quiet);
+  font-size: 0.75rem;
+}
+
+.fdf-badge:hover > .fdf-badge-note::before {
+  color: var(--color-fd-popover-foreground, var(--color-fd-foreground, CanvasText));
+  font-size: 0.8125rem;
+}
+
+/* With anchor positioning a card is placed as a hover card is: against what it explains and the screen. Only what is
+   hovered is an anchor, so that one name serves every card on the page. */
+@supports (anchor-scope: all) and (position-try-fallbacks: flip-inline) {
+  .fdf-badge:hover, .fdf-intent[data-term]:hover, .fdf-flag[data-term]:hover, .fdf-cond[data-term]:hover,
+  .fdf-col-shape[data-term]:hover, .fdf-len[data-term]:hover { anchor-name: --fdf-tip; }
+
+  .fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after, .fdf-intent[data-term]:hover::after,
+  .fdf-flag[data-term]:hover::after, .fdf-cond[data-term]:hover::after, .fdf-col-shape[data-term]:hover::after,
+  .fdf-len[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note {
+    position: fixed;
+    position-anchor: --fdf-tip;
+    inset: auto;
+    position-area: block-end span-inline-end;
+    margin-block-start: 0.25rem;
+    position-try-fallbacks: flip-inline, flip-block, flip-block flip-inline, --fdf-ref-across,
+      --fdf-ref-across flip-block;
+  }
+}
+
+/* Without it, a card in the table's last columns opens towards the table, ending where its pill ends, rather than past
+   the table's edge; in a panel's field and in a plain row's line it starts at their edge, as a hover card does. */
+@supports not ((anchor-scope: all) and (position-try-fallbacks: flip-inline)) {
+  .fdf-arg-row > :is(.fdf-col-intent, .fdf-col-attrs) > [data-term]:hover::after {
+    inset-inline-start: auto;
+    inset-inline-end: 0;
+  }
+
+  .fdf-arg-field .fdf-len, .fdf-arg-alt :is(.fdf-flag, .fdf-len) { position: static; }
+
+  .fdf-arg-field .fdf-len[data-term]:hover::after,
+  .fdf-arg-alt :is(.fdf-flag, .fdf-len)[data-term]:hover::after { max-width: min(18rem, 100%); }
+}
+
+/* the * or : of character(*): a dotted line, as under a name with a hover card, says there is more to it */
+.fdf-len {
+  text-decoration: underline dotted;
+  text-decoration-color: color-mix(in oklab, currentColor 50%, transparent);
+  text-underline-offset: 0.2em;
+  cursor: help;
+}
+
+/* An opened row's intent, in words, and its attributes, each beside its meaning: the text of their cards, for the
+   keyboard and for screen readers, which read it here */
+.fdf-arg-field > dd[data-term]::after, .fdf-arg-terms > dd::after { content: var(--fdf-mean); }
+
+.fdf-arg-terms {
+  display: grid;
+  grid-template-columns: fit-content(50%) minmax(0, 1fr);
+  gap: 0.375rem 0.75rem;
+  align-items: baseline;
+  margin: 0;
+}
+
+.fdf-arg-terms > dt, .fdf-arg-terms > dd {
+  min-width: 0;
+  margin: 0;
+}
+
+/* in a narrow table each meaning goes under its pill, where beside it it would be a narrow column */
+@container fdf-args (max-width: 34rem) {
+  .fdf-arg-terms {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0.125rem;
+  }
+
+  .fdf-arg-terms > dd:not(:last-child) { margin-bottom: 0.375rem; }
+}
+
+/* The meanings, by term. In :where(), which has no specificity, so that a site's own rule for a term, in its own
+   words or language, wins whichever stylesheet comes first, and a site's own badge can have one. */
+:where([data-term='module']) {
+  --fdf-mean: "A module: types, data and procedures that other program units take in with use";
+}
+:where([data-term='submodule']) {
+  --fdf-mean: "A submodule: it holds the bodies of procedures its ancestor module declares";
+}
+:where([data-term='program']) { --fdf-mean: "The main program, where the run starts"; }
+:where([data-term='blockdata']) {
+  --fdf-mean: "A block data unit: initial values for variables in named common blocks";
+}
+:where([data-term='subroutine']) { --fdf-mean: "A subroutine: a procedure invoked by a call statement"; }
+:where([data-term='function']) { --fdf-mean: "A function: a procedure that returns a value, invoked in an expression"; }
+:where([data-term='type']) {
+  --fdf-mean: "A derived type: a type of its own, made of components, which may have type-bound procedures";
+}
+:where([data-term='interface']) {
+  --fdf-mean: "An interface: how to call a procedure that is defined elsewhere, its arguments and result";
+}
+:where([data-term='generic-interface']) {
+  --fdf-mean: "A generic name: a call goes to the specific procedure whose arguments match";
+}
+:where([data-term='operator-interface']) {
+  --fdf-mean: "A defined operator: an expression with it, such as a + b, calls the procedure that matches the operands";
+}
+:where([data-term='assignment-interface']) {
+  --fdf-mean: "Defined assignment: a = b calls the subroutine that matches the two sides";
+}
+:where([data-term='dtio-interface']) {
+  --fdf-mean: "Defined input/output: read and write statements call these procedures for the type";
+}
+:where([data-term='abstract-interface']) {
+  --fdf-mean: "An abstract interface: the form a procedure must have, for procedure pointers, dummy procedures and"
+    " deferred bindings";
+}
+:where([data-term='module-interface']) {
+  --fdf-mean: "A separate module procedure's interface: its body is written apart, usually in a submodule";
+}
+:where([data-term='separate-procedure']) {
+  --fdf-mean: "The body of a separate module procedure: the module declares its interface";
+}
+:where([data-term='pure']) {
+  --fdf-mean: "No side effects: it changes only its result and its arguments, and does no external I/O";
+}
+:where([data-term='impure']) {
+  --fdf-mean: "Not pure: it may have side effects. If elemental, it takes the elements in array element order";
+}
+:where([data-term='elemental']) {
+  --fdf-mean: "Written for scalars, it applies element by element to arrays of the same shape. Pure unless also impure";
+}
+:where([data-term='recursive']) {
+  --fdf-mean: "May call itself, directly or indirectly (the default since Fortran 2018)";
+}
+:where([data-term='non-recursive']) {
+  --fdf-mean: "Must not be called again while it runs: no recursion, direct or indirect";
+}
+:where([data-term='simple']) {
+  --fdf-mean: "Simple (Fortran 2023): pure, and it uses no variables from outside but its arguments";
+}
+:where([data-term='abstract']) {
+  --fdf-mean: "Abstract: no object can be of exactly this type. Types that extend it implement its deferred bindings";
+}
+:where([data-term='deferred']) {
+  --fdf-mean: "A deferred binding: no procedure here. Each type that extends it, and is not abstract, must give one";
+}
+:where([data-term='private']) { --fdf-mean: "Private: accessible only within its module"; }
+:where([data-term='public']) { --fdf-mean: "Public: accessible wherever its module is used"; }
+:where([data-term='deprecated']) {
+  --fdf-mean: "Deprecated: kept for old code, and may be removed. Avoid it in new code";
+}
+:where([data-term='bindc'], [data-term='bind']) {
+  --fdf-mean: "Interoperable with C: it matches a C function, struct or variable";
+}
+:where([data-term='parameter']) { --fdf-mean: "A named constant: its value is fixed when the program is compiled"; }
+:where([data-term='conditional'], [data-term='when']) {
+  --fdf-mean: "Exists only when the preprocessor condition " attr(data-arg) " holds";
+}
+:where([data-term='cpp']) { --fdf-mean: "Uses the C preprocessor: #if, #define and #include lines"; }
+:where([data-term='omp']) { --fdf-mean: "Uses OpenMP: !$omp directives, which share work among threads"; }
+:where([data-term='omp-parallel']) {
+  --fdf-mean: "Starts an OpenMP parallel region: the code inside runs on a team of threads";
+}
+:where([data-term='offload']) {
+  --fdf-mean: "Offloads work to an accelerator such as a GPU, with OpenMP target directives";
+}
+:where([data-term='acc']) {
+  --fdf-mean: "Uses OpenACC: !$acc directives, which run code on an accelerator such as a GPU";
+}
+:where([data-term='acc-routine']) {
+  --fdf-mean: "An OpenACC routine: compiled for the accelerator too, so that code running there can call it";
+}
+:where([data-term='cuda']) { --fdf-mean: "CUDA Fortran: kernels and data on NVIDIA GPUs"; }
+:where([data-term='mpi']) {
+  --fdf-mean: "MPI, the Message Passing Interface: parallel processes that exchange messages";
+}
+:where([data-term='coarray']) {
+  --fdf-mean: "Coarrays: Fortran's own parallelism, in which images read and write each other's data";
+}
+:where([data-term='blas']) {
+  --fdf-mean: "BLAS, the Basic Linear Algebra Subprograms: vector and matrix operations";
+}
+:where([data-term='lapack']) {
+  --fdf-mean: "LAPACK: linear systems, least squares, eigenvalues and singular values";
+}
+:where([data-term='scalapack']) {
+  --fdf-mean: "ScaLAPACK: LAPACK's linear algebra on matrices distributed over MPI processes";
+}
+:where([data-term='intent-in']) {
+  --fdf-mean: "intent(in): the procedure reads it and must not change it (for a pointer, where it points)";
+}
+:where([data-term='intent-out']) {
+  --fdf-mean: "intent(out): the caller's value is lost on entry (an allocatable is deallocated), and the procedure"
+    " sets it";
+}
+:where([data-term='intent-inout']) {
+  --fdf-mean: "intent(inout): the procedure may read and change it. The caller must pass a variable";
+}
+:where([data-term='result']) { --fdf-mean: "The function's result: the value it returns"; }
+:where([data-term='allocatable']) {
+  --fdf-mean: "Allocated at run time, by allocate or on assignment, and freed automatically";
+}
+:where([data-term='pointer']) {
+  --fdf-mean: "Points at a target (p => t) or at memory allocated through it, or at nothing (null)";
+}
+:where([data-term='target']) { --fdf-mean: "A pointer may point at it (p => this)"; }
+:where([data-term='contiguous']) {
+  --fdf-mean: "Its elements are next to each other in memory, with no strides. A strided actual argument may be"
+    " copied";
+}
+:where([data-term='optional']) { --fdf-mean: "The caller may leave it out: test it with present() before use"; }
+:where([data-term='value']) {
+  --fdf-mean: "Gets a copy of the actual argument: changes to it do not reach the caller";
+}
+:where([data-term='save']) { --fdf-mean: "Keeps its value from one call to the next"; }
+:where([data-term='volatile']) {
+  --fdf-mean: "May change outside the program's control (another thread, a device), so it is read afresh at each use";
+}
+:where([data-term='asynchronous']) {
+  --fdf-mean: "Used by asynchronous input/output or communication, such as MPI_Irecv, that may still be pending";
+}
+:where([data-term='protected']) {
+  --fdf-mean: "Read-only outside its module: only the module may change it (for a pointer, where it points)";
+}
+:where([data-term='external']) { --fdf-mean: "An external or dummy procedure, not a variable"; }
+:where([data-term='intrinsic']) {
+  --fdf-mean: "An intrinsic procedure, such as sin, which may then be passed as an argument";
+}
+:where([data-term='nopass']) { --fdf-mean: "The object it is invoked through is not passed to it"; }
+:where([data-term='pass']) {
+  --fdf-mean: "The object it is invoked through is passed as its first argument";
+}
+:where([data-term='pass'][data-arg]) {
+  --fdf-mean: "The object it is invoked through is passed as its argument " attr(data-arg);
+}
+:where([data-term='non_overridable']) { --fdf-mean: "Types that extend this one cannot override this binding"; }
+:where([data-term='kind']) {
+  --fdf-mean: "A kind type parameter: a constant, known when compiling, such as the kind of a real component";
+}
+:where([data-term='len']) {
+  --fdf-mean: "A length type parameter: it may vary at run time, as a string's length or an array's size does";
+}
+:where([data-term='default'][data-arg]) {
+  --fdf-mean: "Takes the value " attr(data-arg) " when a declaration of the type does not give one";
+}
+:where([data-term='init'][data-arg]) { --fdf-mean: "Initialized to " attr(data-arg) " where it is declared"; }
+:where([data-term='pointer-init'][data-arg]) {
+  --fdf-mean: "Pointer initialization: it starts as " attr(data-arg);
+}
+:where([data-term='device']) { --fdf-mean: "CUDA Fortran: in the GPU's memory"; }
+:where([data-term='managed']) {
+  --fdf-mean: "CUDA Fortran: managed memory, which moves between the host and the GPU as needed";
+}
+:where([data-term='pinned']) {
+  --fdf-mean: "CUDA Fortran: page-locked host memory, for faster copies to and from the GPU";
+}
+:where([data-term='shape'][data-arg]) { --fdf-mean: attr(data-arg); }
+:where([data-term='assumed-length']) { --fdf-mean: "len=*: assumed length, taken from the actual argument"; }
+:where([data-term='deferred-length']) {
+  --fdf-mean: "len=:: deferred length, set when the variable is allocated or assigned";
+}
+
+/* a badge with a condition says it after what the badge means: the condition's own badge says nothing else */
+.fdf-badge-conditional[data-arg]:not([data-term='when'], [data-term='conditional']) {
+  --fdf-also: '\A Only when the preprocessor condition ' attr(data-arg) ' holds';
 }
 
 /* ---- the source block: "Source code in <file>", its lines and a link, opening to the code ---- */
@@ -846,7 +1195,8 @@
 /* A type is set apart in the direction of its first letter, left to right as a Fortran keyword is, and not by
    direction: ltr, which its hover cards would take too: they keep the page's direction, so that a card opens from its
    name's start edge and stays over its table. A card's lines of text take the direction of their own words, so that a
-   doc in a right-to-left script reads and aligns as one on any page. */
+   doc in a right-to-left script reads and aligns as one on any page; so does the card of a pill, a shape or a length
+   (above, with its look), whose meaning a site may give in its own language. */
 .fdf-arg-type, .fdf-ref-detail, .fdf-ref-note { unicode-bidi: plaintext; }
 
 /* ---- print: paper does not open ---- */
@@ -879,6 +1229,11 @@
   /* A hover card is for the screen. One whose name had the focus as the page was printed would print, and, fixed to
      the screen where anchor positioning places it, on every page. */
   .fdf-ref-card, .fdf-ref-name:is(:hover, :focus) > .fdf-ref-card { display: none; }
+
+  /* so is the card of what the pointer was on; an opened row prints the meanings beside its pills */
+  .fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after, .fdf-intent[data-term]:hover::after,
+  .fdf-flag[data-term]:hover::after, .fdf-cond[data-term]:hover::after, .fdf-col-shape[data-term]:hover::after,
+  .fdf-len[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note { display: none; }
 }
 
 /* ---- motion: none for those who ask for less ---- */
@@ -886,6 +1241,10 @@
 @media (prefers-reduced-motion: reduce) {
   .fdf-chevron, .fdf-ref-name[href], .fdf-arg > summary, .fdf-source-head, .fdf-source-link,
   .fdf-graph > summary, .fdf-ref-name:hover > .fdf-ref-card, .fdf-ref-name:focus > .fdf-ref-card { transition: none; }
+
+  .fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after, .fdf-intent[data-term]:hover::after,
+  .fdf-flag[data-term]:hover::after, .fdf-cond[data-term]:hover::after, .fdf-col-shape[data-term]:hover::after,
+  .fdf-len[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note { transition: none; }
 
   /* no fade; the card still waits a moment before it goes, so that the pointer can reach it */
   .fdf-ref-card { transition: visibility 0s 0.15s; }

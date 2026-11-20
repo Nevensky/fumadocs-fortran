@@ -5,6 +5,10 @@
 // that ties a hover card to its name. Props are plain strings, numbers, booleans and objects, as generated MDX writes
 // them. The look is in style.css (.fdf-* classes, on fumadocs' colour variables); the parts outside Markdown carry
 // fumadocs' not-prose class.
+//
+// What a pill, a badge, a shape or the * of character(*) means is written once, in style.css: the components name the
+// term (data-term, and data-arg for what goes with it, as self in pass(self)), and a card that CSS draws on hover
+// says it. A page of thousands of pills holds no meaning twice.
 
 import { Children, createElement as h, useId } from 'react';
 
@@ -22,22 +26,30 @@ const LABELS = {
 const ENTITY = new Set(['module', 'submodule', 'program', 'subroutine', 'function', 'type', 'interface']);
 const HPC = new Set(['omp', 'acc', 'offload', 'mpi', 'coarray', 'cuda', 'blas', 'lapack', 'scalapack', 'cpp']);
 
-// Hover text for the labels that are abbreviations or terse
-const TITLES = {
-  offload: 'Offloads to an accelerator (OpenMP target or OpenACC)',
-  mpi: 'Message Passing Interface',
-  blas: 'Basic Linear Algebra Subprograms',
-  lapack: 'Linear Algebra Package',
-  scalapack: 'Scalable Linear Algebra Package, for distributed memory',
-  cpp: 'C preprocessor',
-  bindc: 'Interoperable with C',
+// The labels that make a kind of badge a term of its own: the kinds of interface, a separate module procedure, an
+// OpenMP parallel region, an OpenACC routine, and a cpp condition. Any other badge's term is its kind.
+const VARIANTS = {
+  interface: {
+    'generic interface': 'generic-interface', operator: 'operator-interface', assignment: 'assignment-interface',
+    'defined i/o': 'dtio-interface', 'abstract interface': 'abstract-interface', 'module interface': 'module-interface',
+  },
+  submodule: { 'separate module procedure': 'separate-procedure' },
+  omp: { 'openmp parallel region': 'omp-parallel' },
+  acc: { 'openacc routine': 'acc-routine' },
+  cpp: { conditional: 'conditional' },
 };
 
 // Intent markers differ in text and arrow, not in colour alone. U+FE0E keeps ↔ a text glyph, never an emoji.
 const INTENTS = {
-  in: { arrow: '→', title: 'intent(in): read, not changed' },
-  out: { arrow: '←', title: 'intent(out): undefined on entry, set by the procedure' },
-  inout: { arrow: '↔\uFE0E', title: 'intent(inout): read, and may be changed' },
+  in: { arrow: '→' },
+  out: { arrow: '←' },
+  inout: { arrow: '↔\uFE0E' },
+};
+
+// The * and the : of a character length, and what an opened row says of each
+const LENGTHS = {
+  '*': { term: 'assumed-length', words: 'assumed, taken from the actual argument' },
+  ':': { term: 'deferred-length', words: 'deferred, set when the variable is allocated or assigned' },
 };
 
 // The optional columns of an argument table, in the order they are drawn, with their headings. The name column and
@@ -88,26 +100,96 @@ function spaced(items) {
   return out;
 }
 
-// Splits `allocatable, target, bind(c, name="f")` at the top-level commas
-function splitAttrs(s) {
+// Where `allocatable, target, bind(c, name="f")` splits at the top-level commas, from `from` up to `to`: [start, end]
+// of each item, its blanks included
+function itemsOf(s, from = 0, to = s.length) {
   const out = [];
-  let depth = 0, quote = '', cur = '';
-  for (const c of s) {
+  let depth = 0, quote = '', start = from;
+  for (let i = from; i < to; i++) {
+    const c = s[i];
     if (quote) {
       if (c === quote) quote = '';
     } else if (c === '"' || c === "'") quote = c;
     else if (c === '(' || c === '[') depth++;
     else if (c === ')' || c === ']') depth = Math.max(0, depth - 1);
     else if (c === ',' && depth === 0) {
-      out.push(cur.trim());
-      cur = '';
-      continue;
+      out.push([start, i]);
+      start = i + 1;
     }
-    cur += c;
   }
-  out.push(cur.trim());
-  return out.filter(Boolean);
+  out.push([start, to]);
+  return out;
 }
+
+// Splits `allocatable, target, bind(c, name="f")` at the top-level commas
+const splitAttrs = (s) => itemsOf(s).map(([a, b]) => s.slice(a, b).trim()).filter(Boolean);
+
+// Where the bracket that opens at s[at] closes, or -1
+function closing(s, at) {
+  let depth = 0, quote = '';
+  for (let i = at; i < s.length; i++) {
+    const c = s[i];
+    if (quote) {
+      if (c === quote) quote = '';
+    } else if (c === '"' || c === "'") quote = c;
+    else if (c === '(' || c === '[') depth++;
+    else if ((c === ')' || c === ']') && !--depth) return i;
+  }
+  return -1;
+}
+
+/**
+ * The length of a character type, as written, and where it stands in the type: '*', ':', an expression such as 'n',
+ * or '' when none is given (at -1). It is len= in the selector, or its first item without a keyword (the second is the
+ * kind), or what follows character*. Null for any other type.
+ */
+function lengthOf(t) {
+  const m = /^\s*character\b\s*/i.exec(t);
+  if (!m) return null;
+  let i = m[0].length;
+  const spec = (a, b) => {
+    while (a < b && /\s/.test(t[a])) a++;
+    while (b > a && /\s/.test(t[b - 1])) b--;
+    return { spec: t.slice(a, b), at: a };
+  };
+  const none = { spec: '', at: -1 };
+  // character*(*), character*10
+  if (t[i] === '*') {
+    i++;
+    while (t[i] === ' ') i++;
+    const k = t[i] === '(' ? closing(t, i) : -1;
+    if (k > 0) return spec(i + 1, k);
+    const n = /^\d+/.exec(t.slice(i));
+    return n ? spec(i, i + n[0].length) : none;
+  }
+  const k = t[i] === '(' ? closing(t, i) : -1;
+  if (k < 0) return none;
+  let n = 0;
+  for (const [a, b] of itemsOf(t, i + 1, k)) {
+    const kw = /^\s*(len|kind)\s*=\s*/i.exec(t.slice(a, b));
+    if (kw) {
+      if (kw[1].toLowerCase() === 'len') return spec(a + kw[0].length, b);
+    } else if (n++ === 0) return spec(a, b);
+  }
+  return none;
+}
+
+/**
+ * What an attribute pill stands for, for its card (the meanings are in style.css, by term): [term, what goes with it].
+ * The keyword in lower case and what its brackets hold, as pass and self for pass(self); `default dp` is default and
+ * dp, `= 0` init and 0, `=> null()` pointer-init and null(). Nothing for text that is none of these.
+ */
+function termOf(flag) {
+  let m = /^(=>?)\s*(\S[\s\S]*)$/.exec(flag);
+  if (m) return [m[1] === '=' ? 'init' : 'pointer-init', m[2]];
+  m = /^default\s+(\S[\s\S]*)$/i.exec(flag);
+  if (m) return ['default', m[1]];
+  m = /^([a-z]\w*)\s*(?:\(([\s\S]*)\))?$/i.exec(flag);
+  return m ? [m[1].toLowerCase(), m[2]?.trim() || undefined] : [];
+}
+
+// The data attributes that name a term for style.css: no attribute for no term or no argument
+const termed = (term, arg) => ({ 'data-term': term || undefined, 'data-arg': term && arg ? arg : undefined });
 
 // lucide's chevron-down, as fumadocs' TypeTable draws it; CSS turns it when its row or block is open. The size
 // attributes keep it small on a page without the stylesheet.
@@ -130,13 +212,17 @@ export function FortranBadges({ children }) {
 /**
  * A small pill. `kind` picks the default label and the colour: a kind of entity is filled, an HPC model or library
  * has a colour of its own, anything else is neutral. `conditional` (a cpp condition) dashes the border and adds
- * "when <condition>". `title` replaces the hover text, which by default expands an abbreviated label.
+ * "when <condition>". On hover a card says what the badge means (style.css has the meanings, by the term in
+ * data-term: the kind, or the kind that some labels make, such as omp-parallel), then `title`, such as the routines
+ * or constructs the badge stands for. The title is text in the badge, hidden from the eye until the card shows, so
+ * that screen readers read it with the badge.
  */
 export function FortranBadge({ kind, label, conditional, title }) {
   const raw = text(kind);
   const key = raw.toLowerCase();
   const cond = text(conditional);
-  const shown = text(label) || LABELS[key] || raw;
+  const given = text(label);
+  const shown = given || (Object.hasOwn(LABELS, key) && LABELS[key]) || raw;
   // nothing to say: no pill, rather than an empty one
   if (!shown && !cond) return null;
   const name = slug(raw);
@@ -148,8 +234,18 @@ export function FortranBadge({ kind, label, conditional, title }) {
     cond && 'fdf-badge-conditional',
     'not-prose',
   );
-  return h('span', { className, title: text(title) || TITLES[key] || undefined },
-    ...spaced([shown, cond ? h('span', { className: 'fdf-when' }, 'when ', h('code', null, cond)) : null]));
+  // a condition alone is the condition's term; the badge's argument is its condition
+  const variants = Object.hasOwn(VARIANTS, key) ? VARIANTS[key] : {};
+  const variant = given.toLowerCase();
+  const term = (Object.hasOwn(variants, variant) && variants[variant]) || name || (cond && 'when');
+  const note = text(title);
+  // The note is the card when there is one, the meaning before its text. It has the condition too: a browser that
+  // reads data-arg where the meaning is drawn, rather than on the badge that names the term, finds it there.
+  return h('span', { className, ...termed(term, cond) }, ...spaced([
+    shown,
+    note ? h('span', { className: 'fdf-badge-note', 'data-arg': (term && cond) || undefined }, note) : null,
+    cond ? h('span', { className: 'fdf-when' }, 'when ', h('code', null, cond)) : null,
+  ]));
 }
 
 // The optional columns to show: those `columns` names (space- or comma-separated) in table order; all when absent
@@ -198,24 +294,36 @@ function refsOf(refs) {
   return out.size ? out : null;
 }
 
-// The type as code, with each whole-word name that `refs` knows as a FortranRef. The code is cut around the names
-// rather than wrapping them, so that a hover card, which sits inside its name, takes the page's font and not the
-// code's. A long type breaks where it must (overflow-wrap in style.css): break opportunities written into it would
-// split the names that screen readers read.
+// The type as code, with each whole-word name that `refs` knows as a FortranRef, and the * or : of a character length
+// in a span of its own, which has a card that says what it means. The code is cut around these rather than wrapping
+// them, so that a card, which sits inside its name or its glyph, takes the page's font and not the code's. A long type
+// breaks where it must (overflow-wrap in style.css): break opportunities written into it would split the names that
+// screen readers read.
 function typeRuns(t, refs) {
-  const out = [];
   const code = (s) => h('code', null, s);
-  let from = 0;
+  // what is cut out of the code: [where, how long, the element]
+  const cuts = [];
+  const len = lengthOf(t);
+  if (len && Object.hasOwn(LENGTHS, len.spec)) {
+    const term = LENGTHS[len.spec].term;
+    cuts.push([len.at, 1, () => h('span', { className: 'fdf-len', 'data-term': term }, code(len.spec))]);
+  }
   if (refs) {
     for (const m of t.matchAll(/[A-Za-z_][\w$]*/g)) {
       // the tail of a longer word (the dp of 2dp) is not a name
       if (m.index > 0 && /[\w$]/.test(t[m.index - 1])) continue;
       const ref = refs.get(m[0].toLowerCase());
       if (!ref) continue;
-      if (m.index > from) out.push(code(t.slice(from, m.index)));
-      out.push(h(FortranRef, { href: ref.href, title: ref.title, detail: ref.detail, note: ref.note }, m[0]));
-      from = m.index + m[0].length;
+      cuts.push([m.index, m[0].length,
+        () => h(FortranRef, { href: ref.href, title: ref.title, detail: ref.detail, note: ref.note }, m[0])]);
     }
+  }
+  const out = [];
+  let from = 0;
+  for (const [at, n, el] of cuts.sort((a, b) => a[0] - b[0])) {
+    if (at > from) out.push(code(t.slice(from, at)));
+    out.push(el());
+    from = at + n;
   }
   if (from < t.length) out.push(code(t.slice(from)));
   return out;
@@ -249,10 +357,13 @@ function shapeWords(dims, codims, attrs) {
 /**
  * One row of a FortranArgs table: the name, the type (names in `refs` link and carry a hover card), the shape
  * (dimensions and codimensions), the intent marker (or "result"), and the attributes with the cpp condition the row
- * exists under. The row opens, as fumadocs' TypeTable rows do, to a panel with the doc (the children, Markdown), the
- * declaration, the shape in words and the condition; a row with none of these is a plain row. In a narrow table the
- * row keeps the name and the intent, and the panel shows the type, the shape and the attributes: both are drawn, and
- * the stylesheet shows the one that fits.
+ * exists under. Each pill, the shape and the * or : of a character length have a card that says what they mean (the
+ * meanings are in style.css). The row opens, as fumadocs' TypeTable rows do, to a panel with the doc (the children,
+ * Markdown), the declaration, the intent in words and the attributes each beside its meaning (the text of their
+ * cards, for the keyboard and screen readers), the shape in words, a character type's length and the condition. A row
+ * with no doc, declaration, shape, condition or length to say in words is a plain row, which does not open. In a
+ * narrow table the row keeps the name and the intent, and the panel shows the type and the shape too: both are drawn,
+ * and the stylesheet shows the one that fits.
  */
 export function FortranArg({
   name, type, dims, codims, intent, optional, value, attrs, cond, result, decl, refs, children,
@@ -263,36 +374,43 @@ export function FortranArg({
   if (d && !d.startsWith('(')) d = `(${d})`;
   if (cd && !cd.startsWith('[')) cd = `[${cd}]`;
   // The type is drawn twice, in its cell and in the copy for a narrow table: a new element each time, as a server
-  // renders an element it meets twice only once, and the hover cards of both copies would then share one id
+  // renders an element it meets twice only once, and the hover cards of both copies would then share one id. The
+  // shape and the pills are new elements for each place too.
   const r = refsOf(refs);
   const typeEl = () => (t ? h('span', { className: 'fdf-arg-type' }, ...typeRuns(t, r)) : null);
-  const shapeEl = d || cd
+  const shapeEl = () => (d || cd
     ? h('code', { className: 'fdf-arg-shape' },
       d ? h('span', { className: 'fdf-arg-dims' }, d) : null,
       cd ? h('span', { className: 'fdf-arg-codims' }, cd) : null)
-    : null;
+    : null);
 
+  // The pills name their term, which gives them a card. A flag in the panel has the term on the meaning beside it.
   const i = text(intent);
   const key = i.toLowerCase().replace(/[\s_]+/g, '');
-  const known = INTENTS[key];
+  const known = Object.hasOwn(INTENTS, key) ? INTENTS[key] : null;
   const intentEl = on(result)
-    ? h('span', { className: 'fdf-intent fdf-intent-result', title: 'The function result' }, 'result')
+    ? h('span', { className: 'fdf-intent fdf-intent-result', 'data-term': 'result' }, 'result')
     : !i ? null : known
-      ? h('span', { className: `fdf-intent fdf-intent-${key}`, title: known.title },
+      ? h('span', { className: `fdf-intent fdf-intent-${key}`, 'data-term': `intent-${key}` },
         h('span', { className: 'fdf-intent-arrow', 'aria-hidden': 'true' }, known.arrow), ' ', key)
-      : h('span', { className: 'fdf-intent', title: `intent(${i})` }, i);
+      : h('span', { className: 'fdf-intent' }, i);
 
   const flags = [];
   const seen = new Set();
   for (const f of [on(optional) && 'optional', on(value) && 'value', ...splitAttrs(text(attrs))]) {
     if (!f || seen.has(f.toLowerCase())) continue;
     seen.add(f.toLowerCase());
-    flags.push(h('span', { className: 'fdf-flag' }, f));
+    const [term, arg] = termOf(f);
+    flags.push({ f, term, arg });
   }
+  const flag = ({ f, term, arg }, card) => h('span', { className: 'fdf-flag', ...termed(card && term, arg) }, f);
 
   const c = text(cond);
-  const condEl = c ? h('span', { className: 'fdf-cond' }, 'when ', h('code', null, c)) : null;
+  const condEl = c ? h('span', { className: 'fdf-cond', ...termed('when', c) }, 'when ', h('code', null, c)) : null;
   const words = shapeWords(d, cd, seen);
+  // a character type's length: assumed (*) and deferred (:) in words, any other as written, none the default of 1
+  const len = lengthOf(t);
+  const lenWords = len && Object.hasOwn(LENGTHS, len.spec) ? LENGTHS[len.spec].words : '';
   const dc = text(decl);
   const doc = filled(children) ? children : null;
 
@@ -301,27 +419,36 @@ export function FortranArg({
   const cells = spaced([
     h('span', { className: 'fdf-col-name' }, h('code', { className: 'fdf-arg-name' }, text(name))),
     h('span', { className: 'fdf-col-type' }, typeEl()),
-    h('span', { className: 'fdf-col-shape' }, shapeEl ?? none),
+    h('span', { className: 'fdf-col-shape', ...termed(words && 'shape', words) }, shapeEl() ?? none),
     h('span', { className: 'fdf-col-intent' }, intentEl),
-    h('span', { className: 'fdf-col-attrs' }, ...spaced([...flags, condEl])),
+    h('span', { className: 'fdf-col-attrs' }, ...spaced([...flags.map((x) => flag(x, true)), condEl])),
   ]);
 
-  if (!doc && !dc && !words && !c) {
+  if (!doc && !dc && !words && !c && !lenWords) {
     // nothing to open to: a plain row, and for a narrow table a line with what its hidden cells hold
-    const alt = spaced([typeEl(), shapeEl, ...flags]);
+    const alt = spaced([typeEl(), shapeEl(), ...flags.map((x) => flag(x, true))]);
     return h('div', { className: 'fdf-arg fdf-arg-plain' },
       h('div', { className: 'fdf-arg-row not-prose' }, ...cells),
       alt.length ? h('div', { className: 'fdf-arg-alt not-prose' }, ...alt) : null);
   }
 
-  const field = (label, content, narrow) => h('div', { className: cx('fdf-arg-field', narrow && 'fdf-arg-narrow') },
-    h('dt', null, label), h('dd', null, ...content));
+  const field = (label, content, narrow, props = null) => h('div', {
+    className: cx('fdf-arg-field', narrow && 'fdf-arg-narrow'),
+  }, h('dt', null, label), h('dd', props, ...content));
+  const length = !len ? null : lenWords || (len.spec
+    ? h('span', { className: 'fdf-arg-type' }, ...typeRuns(len.spec, r))
+    : '1, the default');
+  // What the intent and the attributes mean, which style.css writes in by the term: the intent's meaning names it, an
+  // attribute's stands beside its pill
   const fields = [
-    // the cells a narrow table hides
+    // the type, which a narrow table hides
     t && field('Type', [typeEl()], true),
-    flags.length && field('Attributes', spaced(flags), true),
     dc && field('Declaration', [h('code', { className: 'fdf-arg-decl' }, dc)]),
-    shapeEl && field('Shape', spaced([h('span', { className: 'fdf-arg-narrow' }, shapeEl), words]), !words),
+    known && !on(result) && field('Intent', [], false, { 'data-term': `intent-${key}` }),
+    flags.length && field('Attributes', [h('dl', { className: 'fdf-arg-terms' },
+      ...flags.flatMap((x) => [h('dt', null, flag(x, false)), h('dd', termed(x.term, x.arg))]))]),
+    (d || cd) && field('Shape', spaced([h('span', { className: 'fdf-arg-narrow' }, shapeEl()), words]), !words),
+    length && field('Length', [length]),
     c && field('Exists when', [h('code', null, c)]),
   ].filter(Boolean);
 

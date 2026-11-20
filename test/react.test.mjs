@@ -63,7 +63,6 @@ const textOf = (html) => html
   .replace(/\s+/g, ' ')
   .trim();
 const classesOf = (html) => (/^<\w+ class="([^"]*)"/.exec(html)?.[1] ?? '').split(' ').filter(Boolean);
-const titleOf = (html) => /^<\w+[^>]*? title="([^"]*)"/.exec(html)?.[1];
 // What is inside the first element whose opening tag starts with `open` (its tags balanced), or null. React escapes
 // '>' in attribute values, so the first '>' ends the tag.
 const inner = (html, open) => {
@@ -98,10 +97,29 @@ const unid = (html) => html.replace(/ (id|aria-describedby)="[^"]*"/g, ' $1="ID"
 const described = (html) => [...html.matchAll(/<(?:a|button) class="fdf-ref-name"[^>]*? aria-describedby="([^"]*)"><span class="fdf-ref-text">(?:(?!<\/?span)[\s\S])*<\/span><span class="fdf-ref-card not-prose" role="tooltip" aria-hidden="true" id="([^"]*)">/g)]
   .map((m) => [m[1], m[2]]);
 const rowOf = (html) => inner(html, '<summary class="fdf-arg-row not-prose">') ?? inner(html, '<div class="fdf-arg-row not-prose">');
-const cellOf = (html, col) => inner(rowOf(html) ?? '', `<span class="fdf-col-${col}">`);
-// The panel's fields: [label, value, narrow only]
-const fieldsOf = (html) => [...(inner(html, '<div class="fdf-arg-panel">') ?? '').matchAll(/<div class="fdf-arg-field( fdf-arg-narrow)?"><dt>([^<]*)<\/dt><dd>([\s\S]*?)<\/dd><\/div>/g)]
-  .map((m) => [m[2], m[3], !!m[1]]);
+const cellOf = (html, col) => inner(rowOf(html) ?? '', `<span class="fdf-col-${col}"`);
+// The panel's fields: [label, value, narrow only, the value's attributes]
+const fieldsOf = (html) => [...(inner(html, '<div class="fdf-arg-panel">') ?? '').matchAll(/<div class="fdf-arg-field( fdf-arg-narrow)?"><dt>([^<]*)<\/dt><dd([^>]*)>([\s\S]*?)<\/dd><\/div>/g)]
+  .map((m) => [m[2], m[4], !!m[1], m[3].trim()]);
+// The data-term and data-arg of each element that has them, in order: [tag and class, term, argument]
+const termsOf = (html) => [...html.matchAll(/<(\w+)(?: class="([^"]*)")? data-term="([^"]*)"(?: data-arg="([^"]*)")?/g)]
+  .map((m) => [m[2] ? `${m[1]}.${m[2].split(' ')[0]}` : m[1], m[3], m[4]]);
+// The terms of an opened row's Attributes list: [the pill's text, term, argument]
+const listOf = (html) => [...(inner(html, '<dl class="fdf-arg-terms">') ?? '').matchAll(/<dt><span class="fdf-flag">([^<]*)<\/span><\/dt><dd(?: data-term="([^"]*)")?(?: data-arg="([^"]*)")?><\/dd>/g)]
+  .map((m) => [m[1], m[2], m[3]]);
+// What the meanings in style.css say: their strings run together, with {arg} for data-arg
+const said = (value) => [...value.matchAll(/"([^"]*)"|'([^']*)'|attr\(data-arg\)/g)].map((m) => m[1] ?? m[2] ?? '{arg}').join('');
+// The terms the components write, and so the meanings style.css has: the kinds of badge with a label of their own and
+// those the generator adds, the kinds its labels make, the intents, the attributes, the shape and the lengths
+const BADGE_TERMS = ['module', 'submodule', 'program', 'subroutine', 'function', 'type', 'interface', 'omp', 'acc', 'offload',
+  'mpi', 'coarray', 'cuda', 'blas', 'lapack', 'scalapack', 'cpp', 'bindc', 'pure', 'elemental', 'recursive', 'abstract',
+  'deferred', 'private', 'public', 'deprecated', 'blockdata', 'impure', 'non-recursive', 'simple', 'parameter',
+  'generic-interface', 'operator-interface', 'assignment-interface', 'dtio-interface', 'abstract-interface',
+  'module-interface', 'separate-procedure', 'omp-parallel', 'acc-routine', 'conditional', 'when'];
+const PILL_TERMS = ['intent-in', 'intent-out', 'intent-inout', 'result', 'allocatable', 'pointer', 'target', 'contiguous',
+  'optional', 'value', 'save', 'volatile', 'asynchronous', 'protected', 'external', 'intrinsic', 'bind', 'nopass', 'pass',
+  'pass+arg', 'non_overridable', 'kind', 'len', 'default+arg', 'init+arg', 'pointer-init+arg', 'device', 'managed', 'pinned',
+  'shape+arg', 'assumed-length', 'deferred-length'];
 
 export default async function ({ ok, eq }) {
   // ---------------------------------------------------------------- source rules: one set for server and client
@@ -136,8 +154,12 @@ export default async function ({ ok, eq }) {
   // Pele's own variables, on the diagrams inside a FortranGraph, and with no specificity, as the tokens
   const PELE = ':where(.fdf-graph .pele)';
   const peleVars = (sel, decls) => sel === PELE && decls.every((d) => d.startsWith('--pele-'));
-  eq(rules.flatMap(([sels, decls]) => sels.filter((s) => !s.startsWith('.fdf-') && !pele(s) && !tokens(s, decls) && !peleVars(s, decls))), [],
-    'style.css styles only .fdf-* classes and the fdf classes of graph nodes, sets only --fdf-* variables on :where(:root) and :where(.dark), and only --pele-* variables on the graphs\' diagrams');
+  // the meanings of the terms the components write (data-term), with no specificity either, so that a site's own
+  // words win: --fdf-mean and nothing else
+  const MEANING = /^:where\((\[data-term='[\w-]+'\](?:\[data-arg\])?(?:, \[data-term='[\w-]+'\](?:\[data-arg\])?)*)\)$/;
+  const meaningRule = (sel, decls) => MEANING.test(sel) && decls.length === 1 && decls[0].startsWith('--fdf-mean:');
+  eq(rules.flatMap(([sels, decls]) => sels.filter((s) => !s.startsWith('.fdf-') && !pele(s) && !tokens(s, decls) && !peleVars(s, decls) && !meaningRule(s, decls))), [],
+    'style.css styles only .fdf-* classes and the fdf classes of graph nodes, sets only --fdf-* variables on :where(:root) and :where(.dark), only --pele-* variables on the graphs\' diagrams, and only --fdf-mean on the terms');
   // Without these Pele draws its edges, arrowheads and edge labels for a light page whatever the theme: on a dark card
   // its #1f1f1f arrows were at 1.1:1, and its labels sat in white boxes. They are fumadocs' variables, as the docs site's
   // own mapping (docs/app/global.css) has them, through the shared values for the mono font and the border.
@@ -279,10 +301,78 @@ export default async function ({ ok, eq }) {
   ok(anchored(CARD_SEL, 'transition')[0]?.includes('display 0.15s allow-discrete'), 'and fades before it goes, so that the pointer can still cross into it');
   eq([decl('.fdf-ref-card', 'position')[0], decl('.fdf-ref-card', 'top')[0], decl('.fdf-ref-card', 'inset-inline-start')[0]], ['absolute', 'calc(100% + 0.25rem)', '0'],
     'without anchor positioning the card is placed as before');
-  const upward = ['fdf-args', 'fdf-arg', 'fdf-arg-row', 'fdf-col-type', 'fdf-arg-type', 'fdf-arg-panel', 'fdf-arg-fields', 'fdf-arg-field', 'fdf-arg-alt', 'fdf-ref', 'fdf-ref-name'];
+  const upward = ['fdf-args', 'fdf-arg', 'fdf-arg-row', 'fdf-col-type', 'fdf-arg-type', 'fdf-arg-panel', 'fdf-arg-fields', 'fdf-arg-field', 'fdf-arg-alt', 'fdf-ref', 'fdf-ref-name',
+    'fdf-col-shape', 'fdf-col-intent', 'fdf-col-attrs', 'fdf-badges', 'fdf-badge', 'fdf-intent', 'fdf-flag', 'fdf-cond', 'fdf-len'];
   eq(rules.flatMap(([sels, decls]) => sels.filter((s) => upward.some((c) => new RegExp(`\\.${c}(?![\\w-])[^ >+~]*$`).test(s)))
     .flatMap((s) => decls.filter((d) => /^(?:overflow(?:-x|-y)?|contain|content-visibility)\s*:/.test(d) && !/:\s*visible$/.test(d)).map((d) => `${s} { ${d} }`))), [],
-  'nothing on the way up from a hover card clips it');
+  'nothing on the way up from a hover card or the card of a pill clips it');
+
+  // ---- what pills, badges, shapes and lengths mean: written once, in style.css, and shown in a card on hover
+  const meanings = new Map();
+  for (const [sels, decls] of rules) {
+    for (const s of sels) {
+      const m = MEANING.exec(s);
+      if (m) for (const t of m[1].matchAll(/\[data-term='([\w-]+)'\](\[data-arg\])?/g)) meanings.set(t[1] + (t[2] ? '+arg' : ''), said(decls[0]));
+    }
+  }
+  eq([...BADGE_TERMS, ...PILL_TERMS].filter((t) => !meanings.has(t)), [], 'every term the components write has a meaning');
+  eq([...meanings.keys()].filter((t) => !BADGE_TERMS.includes(t) && !PILL_TERMS.includes(t)), [], 'and only those');
+  eq([...meanings].filter(([, m]) => !m || m.length > 120 || /[\n;{}]/.test(m.replace(/\{arg\}/g, ''))).map(([t]) => t), [], 'each meaning is one line of at most 120 characters');
+  const mean = (t) => meanings.get(t) ?? '';
+  // the subtle ones
+  ok(/lost on entry/.test(mean('intent-out')) && /deallocated/.test(mean('intent-out')), "intent(out): the caller's value is lost on entry, and an allocatable is deallocated");
+  ok(/binding/.test(mean('deferred')) && /not abstract/.test(mean('deferred')) && !/shape/.test(mean('deferred')), 'deferred: a binding that each extension that is not abstract implements, not a deferred shape');
+  eq([mean('assumed-length'), mean('deferred-length')], ['len=*: assumed length, taken from the actual argument', 'len=:: deferred length, set when the variable is allocated or assigned'],
+    'the * and the : of a character length');
+  eq([mean('pass+arg'), mean('default+arg'), mean('shape+arg')], ['The object it is invoked through is passed as its argument {arg}',
+    'Takes the value {arg} when a declaration of the type does not give one', '{arg}'], 'pass(self) names self, default dp says dp, and a shape says its words');
+  ok(mean('when').includes('{arg}') && mean('conditional') === mean('when'), 'a condition says itself');
+  ok(/copy/.test(mean('value')) && /not reach the caller/.test(mean('value')), 'value: a copy, whose changes do not reach the caller');
+  ok(/outside its module/.test(mean('protected')) && /where it points/.test(mean('protected')), 'protected: read-only outside its module, a pointer\'s association too');
+  ok(/element order/.test(mean('impure')) && /scalars/.test(mean('elemental')) && /pure/i.test(mean('elemental')), 'elemental: written for scalars, pure unless impure, which goes in element order');
+  ok(/cannot override/.test(mean('non_overridable')) && /strides/.test(mean('contiguous')) && /pending/.test(mean('asynchronous')) && /C/.test(mean('bindc')),
+    'non_overridable, contiguous, asynchronous and bind(C)');
+  eq(['in', 'out', 'inout'].map((i) => mean(`intent-${i}`).split(':')[0]), ['intent(in)', 'intent(out)', 'intent(inout)'], 'an intent\'s meaning names it, so that an opened row can say it alone');
+
+  // the cards: the ::after of what they explain, drawn while it is hovered, in the look of a hover card
+  const CARD_ON = ['.fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after', '.fdf-intent[data-term]:hover::after', '.fdf-flag[data-term]:hover::after',
+    '.fdf-cond[data-term]:hover::after', '.fdf-col-shape[data-term]:hover::after', '.fdf-len[data-term]:hover::after'];
+  const NOTE = '.fdf-badge:hover > .fdf-badge-note';
+  const CARDS = [...CARD_ON, NOTE];
+  const LOOK = ['position', 'top', 'inset-inline-start', 'z-index', 'box-sizing', 'max-width', 'padding', 'border', 'border-radius', 'background-color', 'color', 'box-shadow',
+    'font-size', 'font-weight', 'line-height', 'text-align'];
+  eq(CARDS.map((s) => LOOK.map((p) => decl(s, p)[0])), CARDS.map(() => LOOK.map((p) => decl('.fdf-ref-card', p)[0])), 'a card looks as a hover card does');
+  ok(CARDS.every((s) => decl(s, 'pointer-events')[0] === 'none'), 'the pointer passes through a card: it covers nothing it could click');
+  // a card keeps the page's direction, from which it opens, and its text takes the direction of its own words, as a
+  // hover card's lines do: a meaning a site gives in a right-to-left script reads as one on any page
+  eq([CARDS.map((s) => decl(s, 'unicode-bidi')[0]), CARDS.map((s) => decl(s, 'direction')[0])], [CARDS.map(() => 'plaintext'), CARDS.map(() => undefined)],
+    'a card is not set left to right, and its text reads in the direction of its words');
+  const contentAt = (at) => rules.filter(([sels, , a]) => a === at && CARD_ON.every((s) => sels.includes(s)) && sels.includes(`${NOTE}::before`))
+    .flatMap(([, decls]) => decls).filter((d) => d.startsWith('content:'));
+  eq(contentAt(''), ["content: var(--fdf-mean) var(--fdf-also, '')"], "a card says the meaning, then a badge's condition");
+  // screen readers would read a card into the name of its row: an opened row says the same
+  eq(contentAt("@supports (content: '' / '')"), ["content: var(--fdf-mean) var(--fdf-also, '') / ''"], 'and has no text for screen readers, where browsers allow');
+  const shows = rules.filter(([, decls]) => decls.some((d) => d.startsWith('content:') && d.includes('var(--fdf-mean)'))).flatMap(([sels]) => sels);
+  eq([...new Set(shows.filter((s) => !s.includes(':hover')))], ['.fdf-arg-field > dd[data-term]::after', '.fdf-arg-terms > dd::after'],
+    'a card shows only on hover; an opened row says the meanings of its intent and its attributes always');
+  eq(decl('.fdf-arg-terms > dd::after', 'content'), ['var(--fdf-mean)'], 'and there screen readers read them');
+  eq(decl('.fdf-badge-conditional[data-arg]:not([data-term=\'when\'], [data-term=\'conditional\'])', '--fdf-also').map(said), ['\\A Only when the preprocessor condition {arg} holds'],
+    "a badge with a condition says it on a line of its own, unless the condition is the badge's own term");
+  eq([decl('.fdf-badge-note', 'clip-path'), decl('.fdf-badge-note', 'display'), decl('.fdf-badge-note', 'visibility')], [['inset(50%)'], [], []],
+    "a badge's note is hidden from the eye, not from screen readers, until its card shows");
+  eq([anchored('.fdf-flag[data-term]:hover', 'anchor-name'), anchored('.fdf-flag[data-term]', 'anchor-name')], [['--fdf-tip'], []],
+    'with anchor positioning only what is hovered is an anchor, one name for every card on the page');
+  eq(['position', 'position-anchor', 'position-area'].map((p) => CARDS.map((s) => anchored(s, p)[0])),
+    [CARDS.map(() => 'fixed'), CARDS.map(() => '--fdf-tip'), CARDS.map(() => 'block-end span-inline-end')], 'and a card is placed as a hover card is');
+  ok(CARDS.every((s) => anchored(s, 'position-try-fallbacks')[0] === anchored(CARD_SEL, 'position-try-fallbacks')[0]), 'and flips as a hover card does');
+  const FALLBACK = '@supports not ((anchor-scope: all) and (position-try-fallbacks: flip-inline))';
+  ok(rules.some(([sels, decls, at]) => at === FALLBACK && sels.includes('.fdf-arg-row > :is(.fdf-col-intent, .fdf-col-attrs) > [data-term]:hover::after')
+    && decls.includes('inset-inline-start: auto') && decls.includes('inset-inline-end: 0')), 'without it, a card in the last columns opens towards the table');
+  ok(print.some(([sels, decls]) => CARDS.every((s) => sels.includes(s)) && decls.includes('display: none')), 'paper has no cards');
+  ok(rules.some(([sels, decls, at]) => at === '@media (prefers-reduced-motion: reduce)' && CARDS.every((s) => sels.includes(s)) && decls.includes('transition: none')),
+    'and a card does not fade in for those who ask for less motion');
+  eq([decl('.fdf-arg-row > .fdf-col-shape', 'justify-self'), decl('.fdf-len > code', 'font-family')], [['start'], ['var(--fdf-mono)']],
+    "the shape's cell is as wide as the shape, and the * of character(*) is code, apart from its card");
 
   // ---------------------------------------------------------------- rendering
   let React, server;
@@ -325,12 +415,33 @@ export default async function ({ ok, eq }) {
       ok(out.startsWith('<span ') && textOf(out) === label, `${kind}: a span labelled ${label}`);
       eq(cls, ['fdf-badge', group, `fdf-kind-${kind}`, 'not-prose'].filter(Boolean), `${kind}: classes`);
     }
-    eq(['mpi', 'blas', 'lapack', 'scalapack', 'cpp', 'bindc'].map((kind) => titleOf(badge({ kind }))),
-      ['Message Passing Interface', 'Basic Linear Algebra Subprograms', 'Linear Algebra Package',
-        'Scalable Linear Algebra Package, for distributed memory', 'C preprocessor', 'Interoperable with C'],
-      'abbreviated labels carry their expansion as a title');
-    eq(['module', 'omp', 'acc', 'pure'].map((kind) => titleOf(badge({ kind }))), [undefined, undefined, undefined, undefined], 'labels that are not abbreviated have no title');
-    eq(titleOf(badge({ kind: 'mpi', title: 'MPI collective: every rank calls it' })), 'MPI collective: every rank calls it', 'title replaces the default');
+    // what a badge means is in style.css, by its term: its kind, or the kind that some labels make
+    eq(Object.keys(LABELS).map((kind) => termsOf(badge({ kind })).map(([, term, a]) => [term, a])), Object.keys(LABELS).map((kind) => [[kind, undefined]]),
+      'a badge names its kind as its term');
+    eq([['interface', 'generic interface'], ['interface', 'operator'], ['interface', 'assignment'], ['interface', 'defined I/O'], ['interface', 'abstract interface'],
+      ['interface', 'module interface'], ['interface', 'interface'], ['submodule', 'separate module procedure'], ['omp', 'OpenMP parallel region'], ['omp', 'OpenMP'],
+      ['acc', 'OpenACC routine'], ['cpp', 'conditional'], ['non-recursive'], ['Pure', 'PURE'], ['omp', 'OpenMP tasks'], ['interface', 'constructor']]
+      .map(([kind, label]) => termsOf(badge({ kind, label }))[0]?.[1]),
+    ['generic-interface', 'operator-interface', 'assignment-interface', 'dtio-interface', 'abstract-interface', 'module-interface', 'interface',
+      'separate-procedure', 'omp-parallel', 'omp', 'acc-routine', 'conditional', 'non-recursive', 'pure', 'omp', 'interface'],
+    "the labels the generator gives some kinds make terms of their own; any other label keeps the kind's");
+    eq([badge({ kind: 'mpi', conditional: 'USE_MPI' }), badge({ conditional: 'HAVE_X' }), badge({ kind: 'cpp', label: 'conditional', conditional: 'A' })].map((b) => termsOf(b)),
+      [[['span.fdf-badge', 'mpi', 'USE_MPI']], [['span.fdf-badge', 'when', 'HAVE_X']], [['span.fdf-badge', 'conditional', 'A']]],
+      "a badge's argument is its condition, and a condition alone is the condition's term");
+    eq(termsOf(badge({ kind: 'Block Data!' })), [['span.fdf-badge', 'block-data', undefined]], 'another kind is a term too, which shows no card unless a site gives it a meaning');
+    eq(['constructor', 'toString'].map((kind) => [textOf(badge({ kind })), termsOf(badge({ kind }))[0]?.[1]]), [['constructor', 'constructor'], ['toString', 'tostring']],
+      'a kind named like a property of every object is another kind');
+    ok([...Object.keys(LABELS).map((kind) => badge({ kind })), badge({ kind: 'mpi', title: 'x' }), badge({ kind: 'mpi', conditional: 'X' })].every((b) => !/ title=/.test(b)),
+      'no badge has a native tooltip, which would cover its card');
+    // the title: text in the badge, after the label, hidden from the eye until the card shows, and read with the badge
+    const noted = badge({ kind: 'mpi', conditional: 'USE_MPI', title: 'MPI_Allreduce, MPI_Bcast' });
+    eq(noted, '<span class="fdf-badge fdf-badge-hpc fdf-kind-mpi fdf-badge-conditional not-prose" data-term="mpi" data-arg="USE_MPI">MPI '
+      + '<span class="fdf-badge-note" data-arg="USE_MPI">MPI_Allreduce, MPI_Bcast</span> <span class="fdf-when">when <code>USE_MPI</code></span></span>',
+    "a title is the note in the badge's card, with the condition for a browser that reads data-arg there");
+    eq(textOf(noted), 'MPI MPI_Allreduce, MPI_Bcast when USE_MPI', 'screen readers read the note with the badge, once');
+    eq(badge({ kind: 'omp', label: 'OpenMP parallel region', title: 'parallel do' }),
+      '<span class="fdf-badge fdf-badge-hpc fdf-kind-omp not-prose" data-term="omp-parallel">OpenMP parallel region <span class="fdf-badge-note">parallel do</span></span>',
+      'a note without a condition');
 
     const mpi = badge({ kind: 'mpi', conditional: 'USE_MPI' });
     eq(textOf(mpi), 'MPI when USE_MPI', 'a conditional badge says "when <condition>"');
@@ -345,7 +456,8 @@ export default async function ({ ok, eq }) {
     eq(textOf(badge({ kind: 'cpp', conditional: 'defined(A) && B > 1' })), 'cpp when defined(A) && B > 1', 'a condition with operators is escaped, not markup');
     ok(badge({ kind: 'cpp', conditional: 'A < B' }).includes('A &lt; B'), 'markup in a condition is escaped');
     const quoted = badge({ kind: 'x', label: '<b>"q" & {y}</b>', title: '"t" <&>' });
-    ok(quoted.includes('>&lt;b&gt;&quot;q&quot; &amp; {y}&lt;/b&gt;</span>') && titleOf(quoted) === '&quot;t&quot; &lt;&amp;&gt;', 'quotes, angle brackets, ampersands and braces in a label and a title are text');
+    ok(quoted.includes('>&lt;b&gt;&quot;q&quot; &amp; {y}&lt;/b&gt; <span class="fdf-badge-note">&quot;t&quot; &lt;&amp;&gt;</span></span>'),
+      'quotes, angle brackets, ampersands and braces in a label and a title are text');
     eq([badge({}), badge({ kind: ' ', label: '' })], ['', ''], 'no kind, label or condition: no pill at all');
     eq(textOf(badge({ conditional: 'HAVE_X' })), 'when HAVE_X', 'a condition alone still shows');
 
@@ -380,49 +492,66 @@ export default async function ({ ok, eq }) {
     eq(x, '<details class="fdf-arg"><summary class="fdf-arg-row not-prose">'
       + '<span class="fdf-col-name"><code class="fdf-arg-name">x</code></span> '
       + '<span class="fdf-col-type"><span class="fdf-arg-type"><code>real(dp)</code></span></span> '
-      + '<span class="fdf-col-shape"><code class="fdf-arg-shape"><span class="fdf-arg-dims">(:)</span></code></span> '
-      + '<span class="fdf-col-intent"><span class="fdf-intent fdf-intent-in" title="intent(in): read, not changed"><span class="fdf-intent-arrow" aria-hidden="true">→</span> in</span></span> '
+      + '<span class="fdf-col-shape" data-term="shape" data-arg="rank 1, assumed shape"><code class="fdf-arg-shape"><span class="fdf-arg-dims">(:)</span></code></span> '
+      + '<span class="fdf-col-intent"><span class="fdf-intent fdf-intent-in" data-term="intent-in"><span class="fdf-intent-arrow" aria-hidden="true">→</span> in</span></span> '
       + `<span class="fdf-col-attrs"></span>${CHEVRON}</summary>`
       + '<div class="fdf-arg-panel"><div class="fdf-arg-doc"><p>local slice of the vector</p></div><dl class="fdf-arg-fields not-prose">'
       + '<div class="fdf-arg-field fdf-arg-narrow"><dt>Type</dt><dd><span class="fdf-arg-type"><code>real(dp)</code></span></dd></div>'
       + '<div class="fdf-arg-field"><dt>Declaration</dt><dd><code class="fdf-arg-decl">real(dp), intent(in) :: x(:)</code></dd></div>'
+      + '<div class="fdf-arg-field"><dt>Intent</dt><dd data-term="intent-in"></dd></div>'
       + '<div class="fdf-arg-field"><dt>Shape</dt><dd><span class="fdf-arg-narrow"><code class="fdf-arg-shape"><span class="fdf-arg-dims">(:)</span></code></span> rank 1, assumed shape</dd></div>'
       + '</dl></div></details>',
-    'FortranArg: a details row of cells and a chevron, opening to the doc, the declaration and the shape in words');
-    eq(textOf(wide(x)), 'x real(dp) (:) → in local slice of the vector Declaration real(dp), intent(in) :: x(:) Shape rank 1, assumed shape', 'the row reads name, type, shape, intent, then its panel');
+    'FortranArg: a details row of cells and a chevron, opening to the doc, the declaration, the intent in words (style.css writes them in) and the shape in words; the shape and the intent name their terms, for their cards');
+    eq(textOf(wide(x)), 'x real(dp) (:) → in local slice of the vector Declaration real(dp), intent(in) :: x(:) Intent Shape rank 1, assumed shape', 'the row reads name, type, shape, intent, then its panel');
 
     const intent = (i) => {
       const out = arg({ name: 'a', intent: i });
-      const m = /<span class="(fdf-intent[^"]*)" title="([^"]*)"><span class="fdf-intent-arrow" aria-hidden="true">([^<]*)<\/span> (\w+)<\/span>/.exec(out);
+      const m = /<span class="(fdf-intent[^"]*)" data-term="([^"]*)"><span class="fdf-intent-arrow" aria-hidden="true">([^<]*)<\/span> (\w+)<\/span>/.exec(out);
       return m ? [m[1], m[2], m[3], m[4]] : out;
     };
-    eq(intent('in'), ['fdf-intent fdf-intent-in', 'intent(in): read, not changed', '→', 'in'], 'intent(in): text, arrow and title');
-    eq(intent('out'), ['fdf-intent fdf-intent-out', 'intent(out): undefined on entry, set by the procedure', '←', 'out'], 'intent(out)');
-    eq(intent('inout'), ['fdf-intent fdf-intent-inout', 'intent(inout): read, and may be changed', '↔\uFE0E', 'inout'], 'intent(inout)');
+    eq(intent('in'), ['fdf-intent fdf-intent-in', 'intent-in', '→', 'in'], 'intent(in): text, arrow and term');
+    eq(intent('out'), ['fdf-intent fdf-intent-out', 'intent-out', '←', 'out'], 'intent(out)');
+    eq(intent('inout'), ['fdf-intent fdf-intent-inout', 'intent-inout', '↔\uFE0E', 'inout'], 'intent(inout)');
     eq(intent('In Out'), intent('inout'), "'In Out' is inout");
     const arrows = ['in', 'out', 'inout'].map((i) => intent(i)[2]);
     ok(new Set(arrows).size === 3, 'the three intents have different arrows, not only different colours');
-    eq(cellOf(arg({ name: 'a', intent: 'none' }), 'intent'), '<span class="fdf-intent" title="intent(none)">none</span>', 'another intent is shown as written, without an arrow');
+    eq(cellOf(arg({ name: 'a', intent: 'none' }), 'intent'), '<span class="fdf-intent">none</span>', 'another intent is shown as written, with no arrow and no card');
+    eq(['constructor', 'toString', '__proto__'].map((i) => cellOf(arg({ name: 'a', intent: i }), 'intent')),
+      ['constructor', 'toString', '__proto__'].map((i) => `<span class="fdf-intent">${i}</span>`), 'an intent named like a property of every object is another intent');
     ok(!arg({ name: 'a' }).includes('fdf-intent'), 'no intent, no marker');
     const res = arg({ name: 'nrm', type: 'real(dp)', result: true, intent: 'out' });
-    eq(cellOf(res, 'intent'), '<span class="fdf-intent fdf-intent-result" title="The function result">result</span>', 'a result: a neutral "result" pill, in place of any intent');
+    eq(cellOf(res, 'intent'), '<span class="fdf-intent fdf-intent-result" data-term="result">result</span>', 'a result: a neutral "result" pill, in place of any intent');
     eq(cellOf(arg({ name: 'r', result: 'true' }), 'intent'), cellOf(res, 'intent'), "MDX's 'true' makes a result");
+    ok([x, res, arg({ name: 'a', intent: 'out', attrs: 'allocatable', cond: 'X', decl: 'd' })].every((out) => !/ title=/.test(out)),
+      'no pill has a native tooltip, which would cover its card');
 
     const info = arg({ name: 'info', type: 'integer', intent: 'out', optional: true, value: true, attrs: 'target, bind(c, name="f"), Optional' });
-    eq([...cellOf(info, 'attrs').matchAll(/<span class="fdf-flag">([^<]*)<\/span>/g)].map((m) => m[1]), ['optional', 'value', 'target', 'bind(c, name=&quot;f&quot;)'],
+    eq([...cellOf(info, 'attrs').matchAll(/<span class="fdf-flag"[^>]*>([^<]*)<\/span>/g)].map((m) => m[1]), ['optional', 'value', 'target', 'bind(c, name=&quot;f&quot;)'],
       'flags: optional, value, then attrs split at top-level commas, without repeats');
+    eq(termsOf(cellOf(info, 'attrs')), [['span.fdf-flag', 'optional', undefined], ['span.fdf-flag', 'value', undefined], ['span.fdf-flag', 'target', undefined],
+      ['span.fdf-flag', 'bind', 'c, name=&quot;f&quot;']], 'each flag names its term, for its card');
+    const flagTerms = (attrs) => termsOf(cellOf(arg({ name: 'a', attrs }), 'attrs')).map(([, term, a]) => (a === undefined ? term : `${term} ${a}`));
+    eq(flagTerms("ALLOCATABLE, pass( self ), pass, nopass, non_overridable, default dp, = 0.5_dp, => null(), Contiguous, kind, len, rank(2), '&'"),
+      ['allocatable', 'pass self', 'pass', 'nopass', 'non_overridable', 'default dp', 'init 0.5_dp', 'pointer-init null()', 'contiguous', 'kind', 'len', 'rank 2'],
+      "a flag's term: its keyword in lower case and what its brackets hold, or the value of default, = and =>; other text has none");
     eq(textOf(rowOf(arg({ name: 'n', optional: 'true', value: 'false' }))), 'n — optional', "MDX's 'true' and 'false' strings read as booleans");
 
     const comm = arg({ name: 'comm', type: 'type(MPI_Comm)', intent: 'in', cond: 'USE_MPI' }, h('p', null, 'communicator'));
     ok(comm.startsWith('<details class="fdf-arg fdf-arg-conditional">'), 'a conditional row is marked');
-    eq(cellOf(comm, 'attrs'), '<span class="fdf-cond">when <code>USE_MPI</code></span>', 'the condition: "when", then the condition in code, with the attributes');
-    eq(textOf(wide(comm)), 'comm type(MPI_Comm) — → in when USE_MPI communicator Exists when USE_MPI', 'condition after intent, and in the panel');
+    eq(cellOf(comm, 'attrs'), '<span class="fdf-cond" data-term="when" data-arg="USE_MPI">when <code>USE_MPI</code></span>',
+      'the condition: "when", then the condition in code, with the attributes; its card says what it means');
+    eq(textOf(wide(comm)), 'comm type(MPI_Comm) — → in when USE_MPI communicator Intent Exists when USE_MPI', 'condition after intent, and in the panel');
 
     const total = arg({ name: 'total', type: 'real(dp)', codims: '*', intent: 'out' });
     eq(cellOf(total, 'shape'), '<code class="fdf-arg-shape"><span class="fdf-arg-codims">[*]</span></code>', 'codimensions, with brackets added, in the shape column');
     eq(cellOf(arg({ name: 'a', type: 'real', dims: ':,:' }), 'shape'), '<code class="fdf-arg-shape"><span class="fdf-arg-dims">(:,:)</span></code>', 'dimensions get their parentheses');
     eq(cellOf(arg({ name: 'a', type: 'real', dims: '(n)', codims: '[2,*]' }), 'shape'), '<code class="fdf-arg-shape"><span class="fdf-arg-dims">(n)</span><span class="fdf-arg-codims">[2,*]</span></code>', 'dimensions, then codimensions');
     eq(cellOf(arg({ name: 'p' }), 'shape'), '<span class="fdf-arg-none" aria-hidden="true">—</span>', 'no shape: a muted dash, which screen readers skip');
+    // the shape keeps its brackets, and its cell has a card with its words
+    const shapeTerm = (props) => termsOf(rowOf(arg({ name: 'a', ...props }))).filter(([el]) => el === 'span.fdf-col-shape');
+    eq([shapeTerm({ dims: '(lda,*)' }), shapeTerm({ dims: ':,:', attrs: 'allocatable' }), shapeTerm({ codims: '*' }), shapeTerm({})],
+      [[['span.fdf-col-shape', 'shape', 'rank 2, assumed size']], [['span.fdf-col-shape', 'shape', 'rank 2, deferred shape']], [['span.fdf-col-shape', 'shape', 'coarray']], []],
+      "a shape's card says it in the words of the opened row; no shape, no card");
 
     // the shape in words
     const shape = (dims, codims, attrs) => fieldsOf(arg({ name: 'a', dims, codims, attrs })).find(([label]) => label === 'Shape')?.[1].replace(/^<span class="fdf-arg-narrow">[\s\S]*?<\/code><\/span> /, '');
@@ -436,14 +565,45 @@ export default async function ({ ok, eq }) {
       'codimensions make a coarray; commas inside a bound do not count');
     eq(fieldsOf(arg({ name: 'a', dims: '(:)' })).map(([label, , narrow]) => [label, narrow]), [['Shape', false]], 'the shape opens a row: its words show in any width, the dimensions only in a narrow table');
 
-    // the fields, in order; the type and the attributes only for a narrow table
-    const all = arg({ name: 'w', type: 'real', dims: '(:)', intent: 'inout', attrs: 'target', cond: 'X', decl: 'real, intent(inout), target :: w(:)' }, 'doc');
-    eq(fieldsOf(all).map(([label, , narrow]) => [label, narrow]), [['Type', true], ['Attributes', true], ['Declaration', false], ['Shape', false], ['Exists when', false]],
-      'the panel: type and attributes (narrow tables), declaration, shape, condition');
+    // the fields, in order; the type only for a narrow table
+    const all = arg({ name: 'w', type: 'real', dims: '(:)', intent: 'inout', attrs: 'target, pass(self), default dp, foo', cond: 'X', decl: 'real, intent(inout), target :: w(:)' }, 'doc');
+    eq(fieldsOf(all).map(([label, , narrow]) => [label, narrow]), [['Type', true], ['Declaration', false], ['Intent', false], ['Attributes', false], ['Shape', false], ['Exists when', false]],
+      'the panel: the type (narrow tables), the declaration, the intent, the attributes, the shape and the condition');
     eq(fieldsOf(all).find(([label]) => label === 'Exists when')[1], '<code>X</code>', 'the condition, as code');
-    eq(fieldsOf(all).find(([label]) => label === 'Attributes')[1], '<span class="fdf-flag">target</span>', 'the attributes in the panel, without the condition (it has its own field)');
+    eq(fieldsOf(all).find(([label]) => label === 'Intent')?.slice(1), ['', false, 'data-term="intent-inout"'], 'the intent in words, which style.css writes in by its term (its meaning names it)');
+    eq(listOf(all), [['target', 'target', undefined], ['pass(self)', 'pass', 'self'], ['default dp', 'default', 'dp'], ['foo', 'foo', undefined]],
+      'the attributes, each beside its meaning (style.css writes it in by the term), without the condition, which has its own field');
+    ok(!/<dt><span class="fdf-flag" data-term/.test(all), "a flag in the panel has no card: its meaning is beside it");
+    eq(['in', 'out', 'inout', 'none'].map((i) => fieldsOf(arg({ name: 'a', intent: i, decl: 'd' })).find(([label]) => label === 'Intent')?.[3]),
+      ['data-term="intent-in"', 'data-term="intent-out"', 'data-term="intent-inout"', undefined], 'each intent in words; another intent has none');
+    ok(!fieldsOf(arg({ name: 'r', result: true, decl: 'd' })).some(([label]) => label === 'Intent'), 'a result has no intent');
     ok(inner(all, '<div class="fdf-arg-doc">') === 'doc', 'the doc first, unlabelled, as in TypeTable');
-    eq(fieldsOf(arg({ name: 'd', decl: 'integer :: d = 1 ! "q" <&>' })), [['Declaration', '<code class="fdf-arg-decl">integer :: d = 1 ! &quot;q&quot; &lt;&amp;&gt;</code>', false]], 'a declaration alone opens a row; it is text');
+    eq(fieldsOf(arg({ name: 'd', decl: 'integer :: d = 1 ! "q" <&>' })), [['Declaration', '<code class="fdf-arg-decl">integer :: d = 1 ! &quot;q&quot; &lt;&amp;&gt;</code>', false, '']], 'a declaration alone opens a row; it is text');
+
+    // ---- the length of a character type: its * or : has a card, and an opened row says it in words
+    const lengthOf = (type, refs) => fieldsOf(arg({ name: 'c', type, refs, decl: 'd' })).find(([label]) => label === 'Length')?.[1];
+    const ASSUMED = 'assumed, taken from the actual argument';
+    const DEFERRED = 'deferred, set when the variable is allocated or assigned';
+    eq(['character(*)', 'character(len=*)', 'CHARACTER*(*)', 'character * ( * )', 'character(kind=ck, len=*)', 'character(len=:, kind=ck)', 'character(:)',
+      'character(10)', 'character*8', 'character(len=n_max)', 'character', 'character(kind=c_char)', 'character(ck)', 'character(10, kind=ck)'].map((t) => lengthOf(t)),
+    [ASSUMED, ASSUMED, ASSUMED, ASSUMED, ASSUMED, DEFERRED, DEFERRED, '<span class="fdf-arg-type"><code>10</code></span>', '<span class="fdf-arg-type"><code>8</code></span>',
+      '<span class="fdf-arg-type"><code>n_max</code></span>', '1, the default', '1, the default', '<span class="fdf-arg-type"><code>ck</code></span>',
+      '<span class="fdf-arg-type"><code>10</code></span>'],
+    'the length: assumed (*) and deferred (:) in words, any other as written, none 1; len=, or the first item without a keyword, or what follows character*');
+    eq(['real(dp)', 'class(*)', 'type(character_t)', 'character_t', 'complex(kind=dp)'].map((t) => lengthOf(t)), Array(5).fill(undefined), 'only a character type has a length, and class(*) is not one');
+    ok(/<a class="fdf-ref-name" href="\/x#n_max"/.test(lengthOf('character(len=n_max)', { n_max: { href: '/x#n_max', title: 'integer, parameter :: n_max = 64' } })), 'a name in the length links, as in the type');
+    const glyph = (type) => termsOf(cellOf(arg({ name: 'c', type, decl: 'd' }), 'type'));
+    eq(['character(*)', 'character(len=:)', 'character*(*)', 'character(10)', 'class(*)', 'character(len=n)'].map(glyph),
+      [[['span.fdf-len', 'assumed-length', undefined]], [['span.fdf-len', 'deferred-length', undefined]], [['span.fdf-len', 'assumed-length', undefined]], [], [], []],
+      'the * or : of a length is a span with a card; nothing else in a type is');
+    const cut = unid(cellOf(arg({ name: 'c', type: 'character(kind=ck, len=*)', refs: { ck: DP }, decl: 'd' }), 'type'));
+    eq(cut.replace(/<span class="fdf-ref">[\s\S]*?<\/a><\/span>/, 'REF'), '<span class="fdf-arg-type"><code>character(kind=</code>REF<code>, len=</code><span class="fdf-len" data-term="assumed-length"><code>*</code></span><code>)</code></span>',
+      'the code is cut around the names that link and around the *, in order, the * code inside its span');
+    eq(textOf(wide(`<p>${cut}</p>`)), 'character(kind=ck, len=*)', 'and the type reads as written');
+    eq(fieldsOf(arg({ name: 'c', type: 'character(:)', decl: 'd' })).find(([label]) => label === 'Type')?.[1], '<span class="fdf-arg-type"><code>character(</code><span class="fdf-len" data-term="deferred-length"><code>:</code></span><code>)</code></span>',
+      "the type's copy for a narrow table has the card too");
+    eq([arg({ name: 'c', type: 'character(*)' }), arg({ name: 'c', type: 'character(:)' }), arg({ name: 'c', type: 'character(10)' })].map((out) => out.includes('fdf-arg-plain')),
+      [false, false, true], 'an assumed or a deferred length opens a row, to say it in words; a length as written does not');
 
     // ---- plain rows: nothing to open to
     const p = arg({ name: 'p', type: '', dims: ' ', intent: '', attrs: '', cond: '', decl: ' ', optional: false });
@@ -452,12 +612,14 @@ export default async function ({ ok, eq }) {
     ok(!arg({ name: 'w' }, ' \n').includes('<details'), 'a doc of whitespace alone opens nothing');
     const plain = arg({ name: 'info', type: 'integer', intent: 'out', optional: true });
     ok(!plain.includes('<details') && !plain.includes('fdf-chevron') && !plain.includes('fdf-arg-panel'), 'a type, an intent and flags alone: no panel, no chevron');
-    eq(inner(plain, '<div class="fdf-arg-alt not-prose">'), '<span class="fdf-arg-type"><code>integer</code></span> <span class="fdf-flag">optional</span>', 'and a line for a narrow table with the type and the flags');
+    eq(inner(plain, '<div class="fdf-arg-alt not-prose">'), '<span class="fdf-arg-type"><code>integer</code></span> <span class="fdf-flag" data-term="optional">optional</span>',
+      'and a line for a narrow table with the type and the flags, which have their cards');
     ok(arg({ name: 'w' }, h('em', null, 'a'), ' ', h('em', null, 'b')).includes('<div class="fdf-arg-doc"><em>a</em> <em>b</em></div>'), 'a space between words of the doc is kept');
     eq(rowOf(arg({ name: '<n>', type: 'character(len=*), "q"', attrs: "'&'", cond: 'A<B' })),
-      '<span class="fdf-col-name"><code class="fdf-arg-name">&lt;n&gt;</code></span> <span class="fdf-col-type"><span class="fdf-arg-type"><code>character(len=*), &quot;q&quot;</code></span></span> '
+      '<span class="fdf-col-name"><code class="fdf-arg-name">&lt;n&gt;</code></span> <span class="fdf-col-type"><span class="fdf-arg-type"><code>character(len=</code>'
+      + '<span class="fdf-len" data-term="assumed-length"><code>*</code></span><code>), &quot;q&quot;</code></span></span> '
       + '<span class="fdf-col-shape"><span class="fdf-arg-none" aria-hidden="true">—</span></span> <span class="fdf-col-intent"></span> '
-      + `<span class="fdf-col-attrs"><span class="fdf-flag">&#x27;&amp;&#x27;</span> <span class="fdf-cond">when <code>A&lt;B</code></span></span>${CHEVRON}`,
+      + `<span class="fdf-col-attrs"><span class="fdf-flag">&#x27;&amp;&#x27;</span> <span class="fdf-cond" data-term="when" data-arg="A&lt;B">when <code>A&lt;B</code></span></span>${CHEVRON}`,
     'a name, type, flag and condition with markup characters are text');
     // a <wbr> is a space to Chrome's accessibility tree, so screen readers would read max_ iter_ count; a long name,
     // type or path breaks where it must instead (overflow-wrap: anywhere)
@@ -597,10 +759,19 @@ export default async function ({ ok, eq }) {
 
     // ---- style.css and the markup agree: what is drawn is styled (bar the hooks), what is styled is drawn
     const gallery = render(h('div', null,
-      h(FortranBadges, null, ...Object.keys(LABELS).map((kind) => h(FortranBadge, { kind })), h(FortranBadge, { kind: 'mpi', conditional: 'X' })),
+      h(FortranBadges, null, ...Object.keys(LABELS).map((kind) => h(FortranBadge, { kind })), h(FortranBadge, { kind: 'mpi', conditional: 'X' }),
+        ...['impure', 'non-recursive', 'simple', 'blockdata'].map((kind) => h(FortranBadge, { kind })), h(FortranBadge, { kind: 'parameter', label: 'parameter' }),
+        ...['generic interface', 'operator', 'assignment', 'defined I/O', 'abstract interface', 'module interface'].map((label) => h(FortranBadge, { kind: 'interface', label })),
+        h(FortranBadge, { kind: 'submodule', label: 'separate module procedure' }), h(FortranBadge, { kind: 'omp', label: 'OpenMP parallel region', title: 'parallel do' }),
+        h(FortranBadge, { kind: 'acc', label: 'OpenACC routine' }), h(FortranBadge, { kind: 'cpp', label: 'conditional', conditional: 'Y' }), h(FortranBadge, { conditional: 'Z' })),
       h(FortranArgs, null,
         ...['in', 'out', 'inout', 'other'].map((i) => h(FortranArg, { name: 'a', type: 'real(dp)', dims: ':', codims: '*', intent: i, optional: true, cond: 'X', decl: 'd', refs: { dp: DP } }, 'doc')),
-        h(FortranArg, { name: 'r', type: 'real', result: true }), h(FortranArg, { name: 'p' })),
+        h(FortranArg, { name: 'r', type: 'real', result: true }), h(FortranArg, { name: 'p' }),
+        h(FortranArg, {
+          name: 's', type: 'character(len=*)', intent: 'in', decl: 'd',
+          attrs: 'allocatable, pointer, target, contiguous, value, save, volatile, asynchronous, protected, external, intrinsic, bind(c), nopass, pass, pass(self), non_overridable, kind, len, default dp, = 0, => null(), device, managed, pinned',
+        }),
+        h(FortranArg, { name: 't', type: 'character(:)', attrs: 'deferred, private, public, parameter' })),
       h(FortranRef, { title: 't' }, 'n'),
       h(FortranSource, { file: 'a.f90', line: 1, href: 'https://example.org' }), h(FortranSource, { file: 'a.f90', line: 1, href: 'https://example.org' }, 'code'),
       h(FortranGraph, { title: 'g' }, 'd'), h(FortranGraph, { title: 'g', collapsed: true }, 'd'),
@@ -617,6 +788,20 @@ export default async function ({ ok, eq }) {
     const hook = (c) => c === 'fdf-arg-conditional' || c === 'fdf-intent-arrow' || (c.startsWith('fdf-kind-') && !HPC.includes(c.slice(9)));
     eq([...drawn].filter((c) => !styled.has(c) && !hook(c)), [], 'every class the components draw is styled, apart from the hooks');
     eq([...styled].filter((c) => !drawn.has(c)), [], 'every class style.css styles is drawn');
+    // the terms: every one the components write has a meaning, every meaning is for one they write, and none is in the
+    // markup
+    const written = termsOf(gallery).map(([, term, a]) => (a !== undefined && meanings.has(`${term}+arg`) ? `${term}+arg` : term));
+    eq([...new Set(written)].filter((t) => !meanings.has(t)), [], 'every term the components write for what the generator gives has a meaning in style.css');
+    eq([...meanings.keys()].filter((t) => !written.includes(t)), [], 'and every meaning is for a term they write');
+    eq([...meanings.values()].map((m) => m.split('{arg}')[0]).filter((m) => m.length > 8 && gallery.includes(m.slice(0, 40))), [],
+      'no meaning is written into the markup: a page of thousands of pills holds each once, in style.css');
+    eq([...gallery.matchAll(/<\w+ class="([^"]*)"[^>]*? title="/g)].map((m) => m[1]), ['fdf-source-link'],
+      "no pill or badge has a native tooltip on top of its card: the one title left is a source link's");
+    // no new tab stops: a row is one, its summary; pills, shapes, lengths and badges are none
+    const stops = (html) => (html.match(/<(?:a|button|summary|input|select|textarea)\b|tabindex=/g) ?? []).length;
+    eq([stops(arg({ name: 's', type: 'character(len=*)', dims: ':', intent: 'in', attrs: 'allocatable, pass(self)', cond: 'X', decl: 'd' }, 'doc')),
+      stops(render(h(FortranBadges, null, h(FortranBadge, { kind: 'mpi', conditional: 'X', title: 'MPI_Bcast' }), h(FortranBadge, { kind: 'pure' }))))], [1, 0],
+    'no pill, shape, length or badge is a tab stop');
   } finally {
     console.error = error;
   }

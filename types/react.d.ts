@@ -3,6 +3,11 @@ import type { ReactElement, ReactNode } from 'react';
 /**
  * Badge kinds with a label of their own. Kinds of entity are filled; HPC models and libraries (omp to cpp) have a
  * colour each, set by the `--fdf-<kind>` variables in style.css; the rest are neutral.
+ *
+ * On hover a badge, an attribute, an intent, a condition, a shape and the * or : of a character length say what they
+ * mean, in a card: the components name the term (data-term, with data-arg for what goes with it, such as self in
+ * pass(self)), and style.css has the meanings, once for the page. A term it has no meaning for shows no card; a site
+ * gives one, in its own words or language, as `:where([data-term='hdf5']) { --fdf-mean: "HDF5: …"; }`.
  */
 export type FortranBadgeKind =
   | 'module' | 'submodule' | 'program' | 'subroutine' | 'function' | 'type' | 'interface'
@@ -10,13 +15,23 @@ export type FortranBadgeKind =
   | 'bindc' | 'pure' | 'elemental' | 'recursive' | 'abstract' | 'deferred' | 'private' | 'public' | 'deprecated';
 
 export interface FortranBadgeProps {
-  /** A kind above, or any other string, which is shown as written in the neutral style. */
+  /**
+   * A kind above, or any other string, which is shown as written in the neutral style. It is the badge's term, which
+   * has a meaning in style.css for the kinds above and for impure, non-recursive, simple, parameter and blockdata.
+   */
   kind: FortranBadgeKind | (string & {});
-  /** Replaces the kind's label, such as 'OpenMP parallel region' for omp. */
+  /**
+   * Replaces the kind's label, such as 'OpenMP parallel region' for omp. Some labels make a term of their own: those
+   * of an interface (generic interface, operator, assignment, defined I/O, abstract interface, module interface),
+   * 'separate module procedure' for submodule, 'OpenMP parallel region', 'OpenACC routine', and 'conditional' for cpp.
+   */
   label?: string;
-  /** A cpp condition, such as 'USE_MPI': the badge is dashed and adds "when USE_MPI". */
+  /** A cpp condition, such as 'USE_MPI': the badge is dashed and adds "when USE_MPI", which its card explains. */
   conditional?: string;
-  /** Hover text. By default a terse label's expansion (offload, MPI, BLAS, LAPACK, ScaLAPACK, cpp, bind(C)). */
+  /**
+   * More about the badge, such as the routines or the constructs it stands for: shown in its card under the meaning,
+   * and read by screen readers with the badge. It is not a native tooltip.
+   */
   title?: string;
 }
 
@@ -49,17 +64,30 @@ export interface FortranRefTarget {
 
 export interface FortranArgProps {
   name: string;
-  /** The type, as declared: 'real(dp)', 'type(MPI_Comm)', 'character(*)'. */
+  /**
+   * The type, as declared: 'real(dp)', 'type(MPI_Comm)', 'character(*)'. The * or : of a character length has a card,
+   * and an opened row says the length: assumed, deferred, or as written.
+   */
   type?: string;
-  /** Dimensions, shown in the shape column: '(:,:)'. Brackets are added when missing. */
+  /**
+   * Dimensions, shown in the shape column: '(:,:)'. Brackets are added when missing. The shape's card, and the opened
+   * row, say it in words: 'rank 2, assumed shape'.
+   */
   dims?: string;
   /** Codimensions: '[*]'. Brackets are added when missing. */
   codims?: string;
-  /** Shown as → in, ← out and ↔ inout; 'in out' reads as inout, and any other value is shown as written. */
+  /**
+   * Shown as → in, ← out and ↔ inout, with a card that says what each means, as an opened row does; 'in out' reads as
+   * inout, and any other value is shown as written.
+   */
   intent?: 'in' | 'out' | 'inout' | (string & {});
   optional?: boolean;
   value?: boolean;
-  /** Other attributes, comma-separated: 'allocatable, target'. Each is a flag. */
+  /**
+   * Other attributes, comma-separated: 'allocatable, target'. Each is a flag with a card that says what it means, as
+   * an opened row does beside it; its term is its keyword (pass for pass(self)), and default, init and pointer-init
+   * for 'default dp', '= 0' and '=> null()'.
+   */
   attrs?: string;
   /** The cpp condition the row exists under, shown dashed as "when <cond>" and in the panel as "Exists when". */
   cond?: string;
@@ -133,7 +161,10 @@ export declare function FortranBadges(props: { children?: ReactNode }): ReactEle
 export declare function FortranBadge(props: FortranBadgeProps): ReactElement | null;
 /** A table of FortranArg rows in the manner of fumadocs' TypeTable: a title, a header row, then the rows. */
 export declare function FortranArgs(props: FortranArgsProps): ReactElement;
-/** One row (an argument, component, binding or result), which opens to its doc, declaration, shape and condition. */
+/**
+ * One row (an argument, component, binding or result), which opens to its doc, declaration, intent and attributes in
+ * words, shape, length and condition.
+ */
 export declare function FortranArg(props: FortranArgProps): ReactElement;
 /** A name with a link and a hover card; nothing without a name. */
 export declare function FortranRef(props: FortranRefProps): ReactElement | null;
