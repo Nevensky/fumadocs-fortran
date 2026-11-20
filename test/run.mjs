@@ -228,5 +228,12 @@ const parse = (text, opts = {}) => parseSource(text, { root: OUT, ...opts });
   ok(Object.keys(br.entities).length >= 1 && !br.diagnostics.some((d) => d.severity === 'error'), 'two headers in two branches do not abort');
 }
 
+// ---------------------------------------------------------------- the other test files
+// Each test/*.test.mjs exports a default function that receives { ok, eq, here, out } and may be async.
+for (const f of fs.readdirSync(HERE).filter((x) => x.endsWith('.test.mjs')).sort()) {
+  const mod = await import(new URL(f, import.meta.url));
+  await mod.default({ ok, eq, here: HERE, out: OUT });
+}
+
 console.log(`${checks - failures}/${checks} checks passed`);
 if (failures) process.exit(1);

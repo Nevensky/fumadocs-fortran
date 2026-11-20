@@ -23,8 +23,27 @@ export function readEvents(lines, opts) {
 const SENTINEL = /^!\$(ompx|omp|acc|cuf)(?![A-Za-z0-9_])/i;
 const VENDOR = /^!(dir|dec|gcc|ibm|pgi|nec|cdir|mic|vd)\$/i;
 
-function readFree(lines, { omp = false }) {
+/**
+ * The event list, with `blank: true` on the first event after a blank line. A blank line ends a doc block; lines cpp
+ * removed (directives, switched-off branches) never reach the reader, so they do not.
+ */
+function events() {
   const out = [];
+  let blank = false;
+  return {
+    out,
+    blank() { blank = true; },
+    emit(ev) {
+      if (blank) ev.blank = true;
+      blank = false;
+      out.push(ev);
+      return ev;
+    },
+  };
+}
+
+function readFree(lines, { omp = false }) {
+  const { out, emit, blank } = events();
   let cur = null, q = null, dir = null;
   for (let i = 0; i < lines.length; i++) {
     const L = lines[i];
@@ -32,7 +51,7 @@ function readFree(lines, { omp = false }) {
     const n = s.length;
     let k = 0;
     while (k < n && isBlank(s.charCodeAt(k))) k++;
-    if (k >= n) continue;
+    if (k >= n) { blank(); continue; }
     if (dir) {
       const m = s.charCodeAt(k) === 33 ? SENTINEL.exec(s.slice(k)) : null;
       if (m && m[1].toLowerCase() === dir.sentinel) {
@@ -55,8 +74,7 @@ function readFree(lines, { omp = false }) {
           let rest = tail.slice(m[0].length).trim();
           const cont = rest.endsWith('&');
           if (cont) rest = rest.slice(0, -1).trimEnd();
-          const d = { t: 'dir', f: L.f, n: L.n, e: L.n, c: L.c, sentinel: m[1].toLowerCase(), text: rest };
-          out.push(d);
+          const d = emit({ t: 'dir', f: L.f, n: L.n, e: L.n, c: L.c, sentinel: m[1].toLowerCase(), text: rest });
           if (cont) dir = d;
           continue;
         }
@@ -65,20 +83,20 @@ function readFree(lines, { omp = false }) {
           // `!$ code`: OpenMP conditional compilation
           if (omp) s = s.slice(0, k) + '  ' + s.slice(k + 2);
           else {
-            out.push({ t: 'dir', f: L.f, n: L.n, e: L.n, c: L.c, sentinel: '$', text: tail.slice(2).trim() });
+            emit({ t: 'dir', f: L.f, n: L.n, e: L.n, c: L.c, sentinel: '$', text: tail.slice(2).trim() });
             continue;
           }
         } else {
-          out.push({ t: 'comment', f: L.f, n: L.n, c: L.c, lead: '!', body: tail.slice(1).trimEnd() });
+          emit({ t: 'comment', f: L.f, n: L.n, c: L.c, lead: '!', body: tail.slice(1).trimEnd() });
           continue;
         }
       } else {
         const v = VENDOR.exec(tail);
         if (v) {
-          out.push({ t: 'dir', f: L.f, n: L.n, e: L.n, c: L.c, sentinel: v[1].toLowerCase(), text: tail.slice(v[0].length).trim() });
+          emit({ t: 'dir', f: L.f, n: L.n, e: L.n, c: L.c, sentinel: v[1].toLowerCase(), text: tail.slice(v[0].length).trim() });
           continue;
         }
-        out.push({ t: 'comment', f: L.f, n: L.n, c: L.c, lead: '!', body: tail.slice(1).trimEnd() });
+        emit({ t: 'comment', f: L.f, n: L.n, c: L.c, lead: '!', body: tail.slice(1).trimEnd() });
         continue;
       }
     }
@@ -100,8 +118,7 @@ function readFree(lines, { omp = false }) {
     } else {
       let j = 0;
       while (j < code.length && isBlank(code.charCodeAt(j))) j++;
-      cur = { t: 'stmt', f: L.f, n: L.n, e: L.n, c: L.c, text: code.slice(j), parts: null, trail: null };
-      out.push(cur);
+      cur = emit({ t: 'stmt', f: L.f, n: L.n, e: L.n, c: L.c, text: code.slice(j), parts: null, trail: null });
     }
     if (r.cut >= 0) (cur.trail ??= []).push({ n: L.n, lead: '!', body: s.slice(r.cut + 1).trimEnd() });
     if (cont) q = r.q;
@@ -124,7 +141,7 @@ function detab(s) {
 
 function readFixed(lines, { omp = false, fixedLength = 72, dLines = false }) {
   const limit = fixedLength > 0 ? fixedLength : Infinity;
-  const out = [];
+  const { out, emit, blank } = events();
   let cur = null, q = null, dir = null;
   for (let i = 0; i < lines.length; i++) {
     const L = lines[i];
@@ -145,8 +162,7 @@ function readFixed(lines, { omp = false, fixedLength = 72, dLines = false }) {
             dir.text += ' ' + rest;
             dir.e = L.n;
           } else {
-            dir = { t: 'dir', f: L.f, n: L.n, e: L.n, c: L.c, sentinel, text: rest };
-            out.push(dir);
+            dir = emit({ t: 'dir', f: L.f, n: L.n, e: L.n, c: L.c, sentinel, text: rest });
           }
           continue;
         }
@@ -154,7 +170,7 @@ function readFixed(lines, { omp = false, fixedLength = 72, dLines = false }) {
           // conditional compilation: the sentinel in columns 1-2, then an ordinary fixed-form line
           if (!omp) {
             dir = null;
-            out.push({ t: 'dir', f: L.f, n: L.n, e: L.n, c: L.c, sentinel: '$', text: s.slice(6).trim() });
+            emit({ t: 'dir', f: L.f, n: L.n, e: L.n, c: L.c, sentinel: '$', text: s.slice(6).trim() });
             continue;
           }
           s = '  ' + s.slice(2);
@@ -164,8 +180,8 @@ function readFixed(lines, { omp = false, fixedLength = 72, dLines = false }) {
       if (!code) {
         const v = FIXED_VENDOR.exec(s);
         dir = null;
-        if (v) out.push({ t: 'dir', f: L.f, n: L.n, e: L.n, c: L.c, sentinel: v[1].toLowerCase(), text: s.slice(v[0].length).trim() });
-        else out.push({ t: 'comment', f: L.f, n: L.n, c: L.c, lead: c0, body: s.slice(1).trimEnd() });
+        if (v) emit({ t: 'dir', f: L.f, n: L.n, e: L.n, c: L.c, sentinel: v[1].toLowerCase(), text: s.slice(v[0].length).trim() });
+        else emit({ t: 'comment', f: L.f, n: L.n, c: L.c, lead: c0, body: s.slice(1).trimEnd() });
         continue;
       }
     }
@@ -173,9 +189,9 @@ function readFixed(lines, { omp = false, fixedLength = 72, dLines = false }) {
     if (s.length > limit) s = s.slice(0, limit);
     let k = 0;
     while (k < s.length && isBlank(s.charCodeAt(k))) k++;
-    if (k >= s.length) continue;
+    if (k >= s.length) { blank(); continue; }
     if (s[k] === '!' && k !== 5) {
-      out.push({ t: 'comment', f: L.f, n: L.n, c: L.c, lead: '!', body: s.slice(k + 1).trimEnd() });
+      emit({ t: 'comment', f: L.f, n: L.n, c: L.c, lead: '!', body: s.slice(k + 1).trimEnd() });
       continue;
     }
     if (s[k] === '#') continue; // a stray preprocessor line in a file that was not preprocessed
@@ -190,9 +206,8 @@ function readFixed(lines, { omp = false, fixedLength = 72, dLines = false }) {
       cur.e = L.n;
     } else {
       const label = s.slice(0, Math.min(5, s.length)).trim();
-      cur = { t: 'stmt', f: L.f, n: L.n, e: L.n, c: L.c, text: code.trimStart(), parts: null, trail: null };
+      cur = emit({ t: 'stmt', f: L.f, n: L.n, e: L.n, c: L.c, text: code.trimStart(), parts: null, trail: null });
       if (label && /^\d+$/.test(label)) cur.label = label;
-      out.push(cur);
     }
     if (r.cut >= 0) (cur.trail ??= []).push({ n: L.n, lead: '!', body: body.slice(r.cut + 1).trimEnd() });
     q = r.q;

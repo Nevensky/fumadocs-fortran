@@ -30,13 +30,18 @@
     "url": "https://github.com/Nevensky/fumadocs-fortran/issues"
   },
   "type": "module",
+  "sideEffects": [
+    "*.css"
+  ],
   "bin": {
     "fumadocs-fortran": "bin/fumadocs-fortran.js"
   },
   "files": [
     "bin",
     "src",
+    "react",
     "types",
+    "style.css",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
@@ -46,6 +51,15 @@
       "types": "./types/index.d.ts",
       "default": "./src/index.js"
     },
+    "./react": {
+      "types": "./types/react.d.ts",
+      "default": "./react/index.js"
+    },
+    "./math": {
+      "types": "./types/math.d.ts",
+      "default": "./src/docs/math.js"
+    },
+    "./style.css": "./style.css",
     "./package.json": "./package.json"
   },
   "types": "./types/index.d.ts",
@@ -53,6 +67,14 @@
     "test": "node test/run.mjs",
     "gate": "node scripts/gate.mjs",
     "prepublishOnly": "node test/run.mjs"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=18"

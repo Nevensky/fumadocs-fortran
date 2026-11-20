@@ -14,7 +14,7 @@ module solver_kernels
   use omp_lib, only: omp_get_max_threads
 #endif
 #ifdef USE_MPI
-  use mpi_f08, only: MPI_Comm, MPI_Allreduce, MPI_SUM, MPI_DOUBLE_PRECISION
+  use mpi_f08, only: MPI_Comm, MPI_Allreduce, MPI_IN_PLACE, MPI_SUM, MPI_DOUBLE_PRECISION
 #endif
   implicit none
   private
@@ -219,8 +219,10 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(in) :: alpha
     integer :: i
-    do concurrent (i = 1:size(x)) local_init(alpha)
-      x(i) = alpha*x(i)
+    real(dp) :: s
+    s = alpha
+    do concurrent (i = 1:size(x)) local_init(s)
+      x(i) = s*x(i)
     end do
   end subroutine concurrent_scale
 

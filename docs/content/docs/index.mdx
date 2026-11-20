@@ -1,0 +1,44 @@
+---
+title: Introduction
+description: Fortran API reference for fumadocs, written from the sources and the doc comments they already have.
+---
+
+fumadocs-fortran writes the API reference of a Fortran code as MDX pages, which a fumadocs site builds like its
+hand-written ones. It reads the sources with its own parser, written in plain JavaScript with no dependencies, and the
+doc comments the code already has, in FORD, Doxygen or LAPACK style. It understands HPC code: OpenMP and OpenACC
+directives, MPI and coarrays, cpp conditions, and calls into BLAS, LAPACK and ScaLAPACK.
+
+<Callout title="In development">
+  The parser is done and checked against public codes. Page generation and this site are the first slice of v0.1,
+  and nothing is published to npm yet.
+</Callout>
+
+## Showcase
+
+The pages under [Showcase](/docs/showcase/modern) are generated from `examples/modern` in the repository, a small
+code written to use every feature: FORD comments in free form, Doxygen comments, a LAPACK-style routine in fixed form,
+OpenMP, OpenACC, MPI, coarrays and cpp conditions. `docs/scripts/gen-showcase.mjs` writes them, so change the
+Fortran and run it again rather than editing a page.
+
+## What a page holds
+
+Each module, submodule and program gets a page, and each of its types, interfaces, procedures and variables a
+section under its own anchor, with:
+
+- badges for its kind and for the HPC features it uses, dashed when a cpp condition decides whether it exists;
+- its signature, highlighted as Fortran;
+- its documentation, as Markdown with maths, such as $\|x\|_2 = \sqrt{\sum_i x_i^2}$;
+- its arguments, each with its type, dimensions, intent and attributes, and full Markdown under it;
+- a link to its lines on GitHub.
+
+<Cards>
+  <Card title="Showcase" href="/docs/showcase/modern">
+    The API reference of `examples/modern`, generated: modules, a submodule, a program and a LAPACK-style routine.
+  </Card>
+  <Card title="Components" href="/docs/reference/components">
+    The components the pages are drawn with, each shown live with its props.
+  </Card>
+  <Card title="Source on GitHub" href="https://github.com/Nevensky/fumadocs-fortran">
+    The parser, the generator and the example code.
+  </Card>
+</Cards>

@@ -24,7 +24,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
-      # the package has no dependencies, so there is nothing to install
+      # the package has no dependencies; React is installed only so that the components' rendering checks run
+      - run: npm install --no-save --no-package-lock react@19 react-dom@19
       - run: npm test
 
   gate:
@@ -52,8 +53,8 @@ jobs:
         run: npx --yes publint@0.3 --strict
       - name: Check the type declarations
         run: |
-          npm install --no-save --no-package-lock typescript@5 @types/node@24
-          npx tsc --noEmit --strict --target es2022 --lib es2022 --module nodenext --moduleResolution nodenext --types node types/index.d.ts
+          npm install --no-save --no-package-lock typescript@5 @types/node@24 @types/react@19
+          npx tsc --noEmit --strict --target es2022 --lib es2022,dom --module nodenext --moduleResolution nodenext --types node types/index.d.ts types/math.d.ts types/react.d.ts
       - name: List what would be published
         run: npm pack --dry-run
       - name: Install the packed package in a new project and use it
@@ -71,3 +72,25 @@ jobs:
             if (args !== 41 || one.entities['procedure:s'].args[0].intent !== 'in') process.exit(1);
             console.log('the packed package installs, imports and parses');
           "
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+      - name: Check that the generated showcase pages are up to date
+        run: |
+          node docs/scripts/gen-showcase.mjs
+          git diff --exit-code -- docs/content/docs/showcase
+      - run: npm ci
+        working-directory: docs
+      - name: Build the static site
+        run: npm run build
+        working-directory: docs
+        env:
+          DOCS_EXPORT: '1'

@@ -4,7 +4,30 @@ All notable changes to fumadocs-fortran are listed here. The project follows [se
 
 ## Unreleased
 
-Milestone M0: the parser and its gate. There is no API reference output yet; that arrives with v0.1.
+Milestone M0, the parser and its gate, and the first parts of v0.1.
+
+- **Doc comments.** The engine reads each entity's comments in the style they were written in: FORD (Markdown,
+  metadata lines, `@note`…`@endnote`, `[[links]]`, `\( \)` maths), Doxygen (`\brief`, `\param[in]`, `\return`,
+  `\note`, `\see`, `\verbatim`, `\f$` maths) or LAPACK (argument docs in `\verbatim` blocks, intents from
+  `\param[in]` for F77 code that declares none). Doxygen and LAPACK text is escaped as plain text, so `B(LDB,*)`
+  never turns into emphasis.
+- **Pages.** `fumadocs-fortran generate` writes one MDX page per module, submodule and program, groups external
+  procedures by `\ingroup`, and writes `meta.json` for the sidebar. Every entity gets a `###` heading with a stable
+  ID, its signature, badges (OpenMP regions, OpenACC, offload, MPI, coarrays, cpp conditions), its documentation, its
+  arguments and a link to its lines. A manifest makes regeneration delete only stale generated files. All 2,105 pages
+  generated from LAPACK, ScaLAPACK, json-fortran, stdlib, Quantum ESPRESSO, Wannier90 and miniWeather compile as MDX.
+- **Maths.** LaTeX in doc comments renders with KaTeX, in every notation Fortran codes use: `$…$`, `$$…$$`, `\( \)`,
+  `\[ \]`, `\begin{equation}` and the other environments, bare `\begin{array}`-style environments, Doxygen's
+  `\f$ \f[ \f{env}{`, and reStructuredText's `:math:` and `.. math::`. Dollars that are not maths (money, shell
+  variables, `!$omp`, `$Id$`) stay text. TeX that MathJax accepts and KaTeX does not is rewritten (`eqnarray`,
+  `multline`, `_` in `\text{…}`), and `katexMacros` (from `fumadocs-fortran/math`) defines the physics-package and
+  other commands KaTeX lacks. `generate --math code` shows maths as code, for a site without remark-math.
+- **MDX safety.** Doc comments written for FORD or Doxygen cannot break a fumadocs build or its hydration: HTML tags
+  pair or become text, block elements stand as blocks, unknown code-block languages become `text`, `import`/`export`
+  at a line start, braces in links, quotes in attributes and Object.prototype names (`constructor`) are handled,
+  footnotes stay with their doc, headings have unique anchors, and images a site cannot import show their alt text.
+  Doxygen's character references, HTML tags, Markdown, `\pre`, `\post`, `\li`, `\section` and `\cite` render, and
+  commands that only steer Doxygen's output are dropped.
 
 - **Parser.** A statement-level Fortran parser in plain JavaScript, with no dependencies:
   - free and fixed form, decided from the extension or, for `.F` and `.fpp`, from the text; continuation lines,

@@ -3,12 +3,13 @@
 
 import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
-import { extract } from '../src/index.js';
+import { extract, generate } from '../src/index.js';
 
 const HELP = `Usage: fumadocs-fortran <command> [options]
 
 Commands:
   dump [paths…]        parse Fortran sources and print the intermediate model (JSON)
+  generate [paths…]    write the API reference as MDX pages into a fumadocs content folder
 
 Options for dump:
   -D NAME[=VALUE]      define a preprocessor macro (repeatable)
@@ -19,6 +20,16 @@ Options for dump:
   --exclude GLOB       skip matching files (repeatable)
   --summary            print counts per file instead of JSON
   -o, --out FILE       write the JSON to FILE
+
+Options for generate (and -D, -I, --all-branches, --form, --exclude as for dump):
+  -o, --out DIR        the content folder to write (default content/docs/api)
+  --base-url URL       the URL of that folder (default /docs/api)
+  --title TEXT         the overview page's title
+  --display LIST       access levels to show, comma-separated (default public,protected)
+  --repo URL           link each entity to its lines in this repository (GitHub or GitLab)
+  --rev REV            the branch, tag or commit for those links (default main)
+  --math MODE          katex (default): $…$ maths for remark-math and rehype-katex; code: maths shown as code,
+                       for a site without them
   -h, --help           show this help
   -v, --version        print the version
 `;
@@ -45,6 +56,15 @@ function parse(argv) {
     else if (a === '--exclude') o.exclude.push(val());
     else if (a === '--summary') o.summary = true;
     else if (a === '-o' || a === '--out') o.out = val();
+    else if (a === '--base-url') o.baseUrl = val();
+    else if (a === '--title') o.title = val();
+    else if (a === '--display') o.display = val().split(',').map((x) => x.trim()).filter(Boolean);
+    else if (a === '--repo') o.repo = val();
+    else if (a === '--rev') o.rev = val();
+    else if (a === '--math') {
+      o.math = val();
+      if (!['katex', 'code'].includes(o.math)) fail('--math takes katex or code');
+    }
     else if (a.startsWith('-')) fail(`unknown option ${a}`);
     else if (!o.cmd) o.cmd = a;
     else o.paths.push(a);
@@ -86,7 +106,25 @@ if (opts.cmd === 'dump') {
   }
   // exitCode rather than exit(): a large write to a pipe must finish first
   process.exitCode = ir.diagnostics.some((d) => d.severity === 'error') ? 1 : 0;
-} else if (['init', 'generate', 'check', 'doctor'].includes(opts.cmd)) {
+} else if (opts.cmd === 'generate') {
+  const t0 = performance.now();
+  const r = await generate({
+    sources: opts.paths.length ? opts.paths : ['.'],
+    exclude: opts.exclude,
+    cpp: { macros: opts.macros, includeDirs: opts.includeDirs, keepAllBranches: opts.keepAll },
+    form: opts.form,
+    fixedLength: opts.fixedLength,
+    out: opts.out ?? 'content/docs/api',
+    baseUrl: opts.baseUrl,
+    title: opts.title,
+    display: opts.display,
+    repo: opts.repo ? { url: opts.repo, rev: opts.rev } : undefined,
+    math: opts.math,
+  });
+  const warn = r.ir.diagnostics.length;
+  process.stdout.write(`${r.written.length} files (${r.changed.length} changed, ${r.removed.length} removed) from ${r.ir.files.length} sources in ${(performance.now() - t0).toFixed(0)} ms${warn ? `; ${warn} diagnostics` : ''}\n`);
+  for (const d of r.ir.diagnostics.slice(0, 20)) process.stderr.write(`${d.file}:${d.line}: ${d.severity}: ${d.message} [${d.code}]\n`);
+} else if (['init', 'check', 'doctor'].includes(opts.cmd)) {
   fail(`${opts.cmd} is not implemented yet (it arrives with v0.1)`);
 } else fail(`unknown command ${opts.cmd}`);
 

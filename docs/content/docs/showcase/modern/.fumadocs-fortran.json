@@ -1,0 +1,12 @@
+{
+  "generator": "fumadocs-fortran",
+  "files": [
+    "demo.mdx",
+    "eigen_wrappers.mdx",
+    "gtsv.mdx",
+    "index.mdx",
+    "meta.json",
+    "solver_kernels.mdx",
+    "solver_kernels_lapack.mdx"
+  ]
+}

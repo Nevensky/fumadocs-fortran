@@ -1,0 +1,16 @@
+{
+  "title": "examples/modern",
+  "defaultOpen": true,
+  "pages": [
+    "index",
+    "---Modules---",
+    "eigen_wrappers",
+    "solver_kernels",
+    "---Submodules---",
+    "solver_kernels_lapack",
+    "---Programs---",
+    "demo",
+    "---Procedures---",
+    "gtsv"
+  ]
+}

@@ -5,8 +5,9 @@ plain JavaScript with no dependencies, and will write the API reference as MDX p
 its hand-written pages. It reads the doc comments projects already have, in FORD, Doxygen and LAPACK style, and it
 understands HPC code: OpenMP and OpenACC directives, MPI and coarrays, and calls into BLAS, LAPACK and ScaLAPACK.
 
-**Status: in development.** The parser is done and checked (milestone M0). Page generation, the doc-comment engine
-and the documentation site come with v0.1.
+**Status: in development.** The parser is done and checked (milestone M0). The doc-comment engine, page generation
+and the documentation site (v0.1) are in progress: `generate` already writes the pages for the example in
+`examples/modern`.
 
 ## What works now
 
@@ -27,6 +28,33 @@ npx fumadocs-fortran dump -D_OPENMP -DUSE_MPI -I include src/ -o model.json
 `dump` prints the intermediate model: every module, procedure, type, interface and variable with its arguments,
 types, attributes, cpp conditions, directives, calls and doc comments. `fumadocs-fortran dump --help` lists the
 options.
+
+```bash
+npx fumadocs-fortran generate src/ -o content/docs/api --base-url /docs/api -D_OPENMP
+```
+
+`generate` writes the API reference as MDX pages into a fumadocs content folder: one page per module, submodule and
+program, external procedures grouped as LAPACK groups them, and the `meta.json` files of the sidebar. The pages use
+the components from `fumadocs-fortran/react`; register them with `fortranComponents` and import
+`fumadocs-fortran/style.css`.
+
+LaTeX in doc comments (`$…$`, `$$…$$`, `\( \)`, `\[ \]`, `\begin{equation}`, Doxygen's `\f$` and `\f[`) renders with
+KaTeX. Add remark-math and rehype-katex to the site, with the macros for the commands Fortran docs write that KaTeX
+lacks (the physics package and others), and import `katex/dist/katex.css`:
+
+```ts
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import { katexMacros } from 'fumadocs-fortran/math';
+
+// in defineDocs: docs.mdxOptions
+applyMdxPreset({
+  remarkPlugins: [remarkMath],
+  rehypePlugins: (defaults) => [[rehypeKatex, { macros: { ...katexMacros } }], ...defaults],
+});
+```
+
+A site without them can show the maths as code instead: `generate --math code`.
 
 From JavaScript:
 

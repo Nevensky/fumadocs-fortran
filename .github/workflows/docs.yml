@@ -1,0 +1,53 @@
+# Builds the documentation as a static site and publishes it on GitHub Pages, at https://<owner>.github.io/<repo>/.
+# Enable it once in the repository's Settings → Pages → Build and deployment → Source: GitHub Actions.
+name: Docs site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+      - run: npm ci
+        working-directory: docs
+      # the Showcase pages are committed, but generating them again keeps the deployed site in step with the sources
+      - name: Generate the Showcase
+        run: node docs/scripts/gen-showcase.mjs
+      - run: npm run build
+        working-directory: docs
+        env:
+          DOCS_EXPORT: '1'
+          NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
+          NEXT_PUBLIC_SITE_URL: https://${{ github.repository_owner }}.github.io
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs/out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

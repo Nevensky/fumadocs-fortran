@@ -80,6 +80,89 @@ export declare function evaluate(expression: string): number;
 /** Names the construct of a compiler directive. */
 export declare function parseDirective(sentinel: string, text: string): { family: string; construct: string; end: boolean; clauses: string };
 
+// ---------------------------------------------------------------- docs and pages
+
+/** An entity's documentation, rendered as MDX-safe Markdown. */
+export interface RenderedDoc {
+  style: 'ford' | 'doxygen' | 'lapack' | 'none';
+  /** The first paragraph. */
+  summary: string;
+  /** The whole documentation, summary included. */
+  body: string;
+  /** Argument docs from Doxygen's \param, by lower-case name. */
+  params: Record<string, string>;
+  /** The intents \param[in|out|in,out] states, by lower-case name. */
+  paramIntents: Record<string, 'in' | 'out' | 'inout'>;
+  /** The "X is DOUBLE PRECISION array, …" lines of LAPACK argument docs. */
+  paramTypes: Record<string, string>;
+  returns?: string;
+  meta: Record<string, string>;
+  /** Doxygen's \ingroup. */
+  group?: string;
+  deprecated?: boolean;
+}
+
+/** Renders the raw doc blocks of one entity in the style they were written in (FORD, Doxygen or LAPACK). */
+export declare function renderDoc(blocks: DocBlock[] | undefined, options?: { resolve?: (name: string, child?: string) => string | null; style?: 'ford' | 'doxygen' | 'lapack'; name?: string; math?: 'katex' | 'code' }): RenderedDoc;
+
+export interface PageOptions {
+  /** The URL of the output folder. Default: `/docs/api`. */
+  baseUrl?: string;
+  /** The overview page's title. Default: "API reference". */
+  title?: string;
+  /** The overview page's description. */
+  description?: string;
+  /** The access levels to show. Default: public and protected, as FORD. */
+  display?: Array<'public' | 'protected' | 'private'>;
+  /** Links each entity to its lines: `url` like https://github.com/org/code, `rev` a branch, tag or commit, `root` the IR's root inside the repository. */
+  repo?: { url: string; rev?: string; root?: string };
+  /** Shown before file paths. */
+  sourceRoot?: string;
+  /** `katex` (default) writes $…$ for remark-math; `code` shows maths as code, for a site without remark-math. */
+  math?: 'katex' | 'code';
+  /** The output folder starts open in the sidebar. */
+  defaultOpen?: boolean;
+  /** Reads FORD's `{!file!}` includes (`generate` reads them relative to the project root); without it they are dropped. */
+  include?: (file: string) => string | null;
+  /** FORD's `|name|` aliases; a name not here stays as written. */
+  aliases?: Record<string, string>;
+}
+
+export interface GeneratedPage {
+  /** Relative to the output folder. */
+  path: string;
+  url: string;
+  title: string;
+  mdx: string;
+}
+
+/** Builds the pages and sidebar files for an IR. */
+export declare function buildPages(ir: FortranIR, options?: PageOptions): { pages: GeneratedPage[]; metas: Array<{ path: string; data: { title: string; pages: string[] } }> };
+
+/** Writes pages into a content folder; a manifest lets later runs delete only their own stale files. */
+export declare function writePages(result: { pages: GeneratedPage[]; metas: Array<{ path: string; data: object }> }, outDir: string): { written: string[]; changed: string[]; removed: string[] };
+
+/** Reads the sources, builds the pages and writes them into `out`. */
+export declare function generate(options: ExtractOptions & PageOptions & { out: string }): Promise<{ ir: FortranIR; pages: GeneratedPage[]; written: string[]; changed: string[]; removed: string[] }>;
+
+/** The anchor of an entity on its page: its lower-case name; operators get fixed slugs such as `operator-plus`. */
+export declare function anchorOf(entity: Pick<Entity, 'name' | 'kind' | 'id'>): string;
+
+/** A type as written, with a blank after each top-level comma. */
+export declare function prettyType(type: FortranType | null | undefined): string | undefined;
+
+/** cpp conditions as words: `defined(USE_MPI)` reads as USE_MPI. */
+export declare function prettyCond(conditions: string[]): string;
+
+/** KaTeX macros for the commands Fortran docs write that KaTeX lacks, and TeX that KaTeX renders. */
+export { katexMacros, normaliseTex } from './math.js';
+
+/** Escapes plain text (Doxygen and LAPACK prose) for MDX. */
+export declare function escapeText(text: string): string;
+
+/** Makes Markdown safe for MDX while keeping it Markdown. */
+export declare function safeMarkdown(markdown: string): string;
+
 // ---------------------------------------------------------------- the model
 
 export interface FortranIR {
@@ -137,6 +220,8 @@ export interface DocBlock {
   /** Which way the block points: it documents the item after it (`!>`) or before it (`!!`, `!<`). */
   dir: 'before' | 'after';
   line: number;
+  /** The last line, when the block spans more than one (lines cpp removed may lie inside it). */
+  end?: number;
   /** The comment lines after their mark, unprocessed. */
   lines: string[];
   /** A comment trailing the statement on its own line. */

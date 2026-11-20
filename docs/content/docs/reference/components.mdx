@@ -1,0 +1,437 @@
+---
+title: Components
+description: The React components the generated pages are drawn with, each shown live with its props.
+---
+
+The generated pages use five components from `fumadocs-fortran/react`, and fumadocs' own `Callout`. The components
+are plain `createElement` code with no hooks and no `'use client'`, so the same set renders on the server and in
+client-side MDX. Every prop is a string, a number or a boolean.
+
+## Set up
+
+Register them with the site's MDX components:
+
+```tsx title="components/mdx.tsx"
+import defaultMdxComponents from 'fumadocs-ui/mdx';
+import type { MDXComponents } from 'mdx/types';
+import { fortranComponents } from 'fumadocs-fortran/react';
+
+export function getMDXComponents(components?: MDXComponents) {
+  return { ...defaultMdxComponents, ...fortranComponents, ...components };
+}
+```
+
+and import the stylesheet once, in the root layout, before the site's own CSS, so that the site can change its
+colours (see [Styling](#styling)):
+
+```tsx title="app/layout.tsx"
+import 'fumadocs-fortran/style.css';
+import './global.css';
+```
+
+The pages also hold `$…$` and `$$…$$` maths, which need remark-math, rehype-katex and KaTeX's stylesheet. This
+site adds them in [`lib/source.ts`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/lib/source.ts) and
+[`app/layout.tsx`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/app/layout.tsx).
+
+## FortranBadges and FortranBadge
+
+`FortranBadges` lays out a wrapping row of `FortranBadge` pills. The `kind` picks the colour and the default label.
+
+<Tabs items={['Preview', 'MDX']}>
+<Tab value="Preview">
+
+Entities
+
+<FortranBadges>
+<FortranBadge kind="module" />
+<FortranBadge kind="submodule" />
+<FortranBadge kind="program" />
+<FortranBadge kind="subroutine" />
+<FortranBadge kind="function" />
+<FortranBadge kind="type" />
+<FortranBadge kind="interface" />
+</FortranBadges>
+
+Parallelism and offload
+
+<FortranBadges>
+<FortranBadge kind="omp" />
+<FortranBadge kind="acc" />
+<FortranBadge kind="offload" />
+<FortranBadge kind="mpi" />
+<FortranBadge kind="coarray" />
+<FortranBadge kind="cuda" />
+</FortranBadges>
+
+Libraries, the preprocessor and C
+
+<FortranBadges>
+<FortranBadge kind="blas" />
+<FortranBadge kind="lapack" />
+<FortranBadge kind="scalapack" />
+<FortranBadge kind="cpp" />
+<FortranBadge kind="bindc" />
+</FortranBadges>
+
+Attributes
+
+<FortranBadges>
+<FortranBadge kind="pure" />
+<FortranBadge kind="elemental" />
+<FortranBadge kind="recursive" />
+<FortranBadge kind="abstract" />
+<FortranBadge kind="deferred" />
+<FortranBadge kind="private" />
+<FortranBadge kind="public" />
+<FortranBadge kind="deprecated" />
+</FortranBadges>
+
+A label of its own, a condition, a tooltip, and a kind the package does not know
+
+<FortranBadges>
+<FortranBadge kind="omp" label="OpenMP parallel region" />
+<FortranBadge kind="mpi" conditional="USE_MPI" />
+<FortranBadge kind="acc" conditional="_OPENACC" />
+<FortranBadge kind="lapack" title="Calls DGETRF and DGETRS" />
+<FortranBadge kind="hdf5" label="HDF5" />
+</FortranBadges>
+
+</Tab>
+<Tab value="MDX">
+
+```mdx
+<FortranBadges>
+<FortranBadge kind="module" />
+<FortranBadge kind="omp" label="OpenMP parallel region" />
+<FortranBadge kind="mpi" conditional="USE_MPI" />
+<FortranBadge kind="lapack" title="Calls DGETRF and DGETRS" />
+<FortranBadge kind="hdf5" label="HDF5" />
+</FortranBadges>
+```
+
+</Tab>
+</Tabs>
+
+### Props of FortranBadge
+
+<TypeTable
+  type={{
+    kind: {
+      type: 'string',
+      required: true,
+      description:
+        'Picks the colour and the default label: module, submodule, program, subroutine, function, type, interface, omp, acc, offload, mpi, coarray, cuda, blas, lapack, scalapack, cpp, bindc, pure, elemental, recursive, abstract, deferred, private, public or deprecated. Any other string gives a neutral badge.',
+    },
+    label: {
+      type: 'string',
+      default: "the kind's own, such as OpenMP for omp",
+      description: 'The text of the badge.',
+    },
+    conditional: {
+      type: 'string',
+      description:
+        'A cpp condition, such as USE_MPI. The badge is dashed and ends in "when USE_MPI", because the feature exists only in builds where the condition holds.',
+    },
+    title: {
+      type: 'string',
+      default: 'the expansion of an abbreviated label, such as Message Passing Interface for mpi',
+      description: 'The hover text.',
+    },
+  }}
+/>
+
+`FortranBadges` takes only `children`: the badges.
+
+## FortranArgs and FortranArg
+
+`FortranArgs` is a titled list of `FortranArg` rows: the arguments of a procedure, the result of a function or the
+components of a type. Each row shows the name, the type with its dimensions, an intent marker, the flags and the
+condition, and the documentation under them, as full Markdown.
+
+<Tabs items={['Preview', 'MDX']}>
+<Tab value="Preview">
+
+<FortranArgs>
+<FortranArg name="n" type="integer" intent="in">
+
+The order of the matrix $A$, $n \ge 0$.
+
+</FortranArg>
+<FortranArg name="a" type="real(dp)" dims="(lda,*)" intent="inout">
+
+On entry, the $n \times n$ matrix $A$. On exit, the factors $L$ and $U$ of the factorisation
+
+$$
+A = P L U,
+$$
+
+where the unit diagonal of $L$ is not stored.
+
+</FortranArg>
+<FortranArg name="ipiv" type="integer" dims="(n)" intent="out">
+
+The pivot indices: row $i$ was interchanged with row `ipiv(i)`.
+
+</FortranArg>
+<FortranArg name="tol" type="real(dp)" intent="in" optional>
+
+The tolerance. Without it, `epsilon(1.0_dp)`.
+
+</FortranArg>
+<FortranArg name="alpha" type="real(c_double)" value>
+
+Passed by value, as C passes it.
+
+</FortranArg>
+<FortranArg name="work" type="real(dp)" dims="(:)" attrs="allocatable, target" intent="inout">
+
+Workspace, grown when needed:
+
+- at least $3n$ entries;
+- kept between calls.
+
+</FortranArg>
+<FortranArg name="halo" type="real(dp)" dims="(:,:)" codims="[*]">
+
+A coarray: one block on every image.
+
+</FortranArg>
+<FortranArg name="comm" type="type(MPI_Comm)" intent="in" cond="USE_MPI">
+
+The communicator. The argument exists only when the code is built with `-DUSE_MPI`.
+
+</FortranArg>
+<FortranArg name="info" type="integer" intent="out" />
+</FortranArgs>
+
+<FortranArgs title="Result">
+<FortranArg name="nrm" type="real(dp)">
+
+The global 2-norm, $\|x\|_2$.
+
+</FortranArg>
+</FortranArgs>
+
+</Tab>
+<Tab value="MDX">
+
+```mdx
+<FortranArgs>
+<FortranArg name="a" type="real(dp)" dims="(lda,*)" intent="inout">
+
+On entry, the $n \times n$ matrix $A$. On exit, the factors $L$ and $U$.
+
+</FortranArg>
+<FortranArg name="tol" type="real(dp)" intent="in" optional>
+
+The tolerance. Without it, `epsilon(1.0_dp)`.
+
+</FortranArg>
+<FortranArg name="halo" type="real(dp)" dims="(:,:)" codims="[*]">
+
+A coarray: one block on every image.
+
+</FortranArg>
+<FortranArg name="comm" type="type(MPI_Comm)" intent="in" cond="USE_MPI">
+
+The communicator.
+
+</FortranArg>
+<FortranArg name="info" type="integer" intent="out" />
+</FortranArgs>
+
+<FortranArgs title="Result">
+<FortranArg name="nrm" type="real(dp)">
+
+The global 2-norm, $\|x\|_2$.
+
+</FortranArg>
+</FortranArgs>
+```
+
+Leave a blank line after an opening `<FortranArg>` and before its closing tag, so that what is between them is read
+as Markdown.
+
+</Tab>
+</Tabs>
+
+### Props of FortranArgs
+
+<TypeTable
+  type={{
+    title: {
+      type: 'string',
+      default: 'Arguments',
+      description: 'The heading of the list, such as Result or Components. An empty string leaves it out.',
+    },
+    children: {
+      type: 'ReactNode',
+      description: 'The FortranArg rows.',
+    },
+  }}
+/>
+
+### Props of FortranArg
+
+<TypeTable
+  type={{
+    name: {
+      type: 'string',
+      required: true,
+      description: 'The name of the argument, result or component.',
+    },
+    type: {
+      type: 'string',
+      description: 'The type, as declared: integer, real(dp), type(MPI_Comm), class(*) and so on.',
+    },
+    dims: {
+      type: 'string',
+      description: 'The dimensions, shown after the type, such as (:,:) or (lda,*). Parentheses are added when missing.',
+    },
+    codims: {
+      type: 'string',
+      description: 'The codimensions of a coarray, such as [*]. Brackets are added when missing.',
+    },
+    intent: {
+      type: "'in' | 'out' | 'inout'",
+      description:
+        'The intent. in, out and inout have markers that look different; in out reads as inout, and any other value is shown as written.',
+    },
+    optional: {
+      type: 'boolean',
+      default: 'false',
+      description: 'The optional attribute.',
+    },
+    value: {
+      type: 'boolean',
+      default: 'false',
+      description: 'The value attribute.',
+    },
+    attrs: {
+      type: 'string',
+      description: 'Other attributes, as comma-separated text, such as allocatable, target.',
+    },
+    cond: {
+      type: 'string',
+      description:
+        'A cpp condition, such as USE_MPI: the argument exists only in builds where it holds, and the row says so ("when USE_MPI"), dashed.',
+    },
+    children: {
+      type: 'ReactNode',
+      description: 'The documentation, as Markdown: paragraphs, lists, code, tables and maths. It may be absent.',
+    },
+  }}
+/>
+
+## FortranSource
+
+A quiet line that says where an entity is defined, linked to its lines when `href` is given.
+
+<Tabs items={['Preview', 'MDX']}>
+<Tab value="Preview">
+
+<FortranSource
+  file="examples/modern/src/modern_ford.F90"
+  line={171}
+  lineEnd={193}
+  href="https://github.com/Nevensky/fumadocs-fortran/blob/main/examples/modern/src/modern_ford.F90#L171-L193"
+/>
+
+<FortranSource file="examples/modern/src/tridiag.f" line={93} lineEnd={164} />
+
+<FortranSource file="examples/modern/src/modern_doxygen.f90" line={25} />
+
+</Tab>
+<Tab value="MDX">
+
+```mdx
+<FortranSource
+  file="examples/modern/src/modern_ford.F90"
+  line={171}
+  lineEnd={193}
+  href="https://github.com/Nevensky/fumadocs-fortran/blob/main/examples/modern/src/modern_ford.F90#L171-L193"
+/>
+
+<FortranSource file="examples/modern/src/tridiag.f" line={93} lineEnd={164} />
+
+<FortranSource file="examples/modern/src/modern_doxygen.f90" line={25} />
+```
+
+</Tab>
+</Tabs>
+
+### Props of FortranSource
+
+<TypeTable
+  type={{
+    file: {
+      type: 'string',
+      required: true,
+      description: 'The source file, relative to the repository.',
+    },
+    line: {
+      type: 'number',
+      required: true,
+      description: 'The first line of the entity.',
+    },
+    lineEnd: {
+      type: 'number',
+      description: 'The last line, when the entity spans more than one.',
+    },
+    href: {
+      type: 'string',
+      description: 'Where the lines can be read, such as the file on GitHub with #L171-L193.',
+    },
+  }}
+/>
+
+## Notes and warnings
+
+FORD's `@note`, `@warning`, `@bug` and `@todo`, and their Doxygen counterparts, become fumadocs' own `Callout`, which
+every fumadocs site already registers:
+
+<Callout type="info" title="Note">
+  A FORD `@note` becomes a callout like this one.
+</Callout>
+
+<Callout type="warn" title="Warning">
+  So does a `@warning`.
+</Callout>
+
+<Callout type="error" title="Bug">
+  And a `@bug`.
+</Callout>
+
+## fortranComponents
+
+`fortranComponents` holds all five, `{ FortranBadges, FortranBadge, FortranArgs, FortranArg, FortranSource }`, to
+spread into `getMDXComponents()` as in [Set up](#set-up). Each is also a named export, for use in TSX: this site's
+home page draws a procedure with them.
+
+```tsx
+import { FortranArg, FortranArgs, FortranBadge, FortranBadges, FortranSource } from 'fumadocs-fortran/react';
+```
+
+## Styling
+
+`fumadocs-fortran/style.css` is plain CSS on `.fdf-*` classes, built on fumadocs' colour variables, so it follows
+the site's theme in light and dark mode. It needs no Tailwind `@source` line. Sites can change these colours:
+
+| Variable | Colours |
+| --- | --- |
+| `--fdf-omp`, `--fdf-acc`, `--fdf-offload` | OpenMP, OpenACC and offload badges |
+| `--fdf-mpi`, `--fdf-coarray` | MPI and coarray badges |
+| `--fdf-cuda` | CUDA Fortran badges |
+| `--fdf-blas`, `--fdf-lapack`, `--fdf-scalapack` | badges for calls into the libraries |
+| `--fdf-cpp` | cpp badges |
+| `--fdf-in`, `--fdf-out`, `--fdf-inout` | the intent markers of arguments |
+
+Each is one mid tone for both themes: the text mixes it with black in light mode and with white in dark mode, and
+the tint and the border are made from it. Set them on `:root` in CSS that comes after the stylesheet, such as the
+site's own `app/global.css` imported after it, as in [Set up](#set-up):
+
+```css title="app/global.css"
+:root {
+  --fdf-mpi: oklch(0.6 0.12 190);
+}
+```

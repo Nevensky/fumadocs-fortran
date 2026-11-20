@@ -136,7 +136,7 @@ class Parser {
     const r = this.role(ev.lead, ev.body);
     if (r === SKIP) return;
     if (!r) {
-      if (this.block?.alt && ev.lead === '!') {
+      if (this.block?.alt && ev.lead === '!' && ev.f === this.block.f && !ev.blank) {
         this.block.lines.push(ev.body);
         this.block.e = ev.n;
         return;
@@ -145,12 +145,17 @@ class Parser {
       return;
     }
     const text = ev.body.slice(1);
+    // a blank line or another file ends a block (a line cpp removed, such as #ifdef, does not)
+    if (this.block && (ev.f !== this.block.f || ev.blank)) this.closeBlock();
+    // a before-mark after an after-block starts the next item's doc; an after-mark continues a before-block
+    // (Doxygen's `!>` brief followed by `!!` lines)
+    if (this.block && this.block.dir === 'after' && r.dir === 'before') this.closeBlock();
     if (this.block) {
       this.block.lines.push(text);
       this.block.e = ev.n;
       return;
     }
-    this.block = { dir: r.dir, alt: r.alt, lines: [text], n: ev.n, e: ev.n };
+    this.block = { dir: r.dir, alt: r.alt, lines: [text], n: ev.n, e: ev.n, f: ev.f };
   }
 
   closeBlock() {
@@ -158,10 +163,8 @@ class Parser {
     if (!b) return;
     this.block = null;
     if (b.dir === 'before') {
-      if (this.pending) {
-        this.pending.lines.push('', ...b.lines);
-        this.pending.e = b.e;
-      } else this.pending = b;
+      // before-blocks wait for their statement; they stay separate (a Doxygen \file block is not the next entity's)
+      (this.pending ??= []).push(b);
     } else if (this.after) {
       for (const t of this.after) addDoc(t, b);
     }
@@ -172,7 +175,7 @@ class Parser {
     this.pending = null;
     const silent = r.exec || r.end || r.sink;
     const targets = r.targets.length ? r.targets : this.top.entity ? [this.top.entity] : [];
-    if (pend && !silent) for (const t of targets) addDoc(t, pend);
+    if (pend && !silent) for (const t of targets) for (const b of pend) addDoc(t, b);
     this.after = silent || !targets.length ? null : targets;
     if (last && ev.trail && !silent) {
       for (const c of ev.trail) {
@@ -471,9 +474,10 @@ class Parser {
     const def = sc.defaultAccess ?? 'public';
     const access = (name, attr) => attr ?? sc.access.get(name.toLowerCase()) ?? def;
     for (const c of sc.entity.children) {
-      if (c.kind === 'interface' && !c.name) {
+      if (c.kind === 'interface') {
+        // the procedures an interface block declares are module names of their own (the specifics of a generic too)
         for (const b of c.children) b.access = access(b.name, b.accessAttr);
-        continue;
+        if (!c.name) continue;
       }
       if (c.kind === 'enum') {
         if (c.name) c.access = access(c.name, c.accessAttr);
@@ -527,7 +531,10 @@ class Parser {
     if (prefix.length) e.prefix = prefix;
     if (h.bind !== null) e.bind = h.bind;
     if (h.args) e.args = h.args.map((name) => ({ name }));
-    if (h.proc === 'function') e.result = { name: h.result ?? h.name, type: h.rtype };
+    if (h.proc === 'function') {
+      e.result = { name: h.result ?? h.name, type: h.rtype };
+      if (h.rtype) e.result.typeInHeader = true; // `pure real(dp) function f(x)`: shown in the signature
+    }
     if (h.proc === 'procedure') e.separate = true;
     if (scope === 'interface' && h.prefix.includes('module')) e.separate = true;
     const args = new Map();
@@ -1066,7 +1073,7 @@ function fillVar(v, type, attrs, en) {
 }
 
 function addDoc(t, b) {
-  (t.doc ??= []).push({ dir: b.dir, line: b.n, lines: b.lines, ...(b.inline ? { inline: true } : {}) });
+  (t.doc ??= []).push({ dir: b.dir, line: b.n, ...(b.e !== b.n ? { end: b.e } : {}), lines: b.lines, ...(b.inline ? { inline: true } : {}) });
 }
 
 /** The physical line of a continued statement on which `name` appears. */
