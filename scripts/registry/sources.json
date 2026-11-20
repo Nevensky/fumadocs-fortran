@@ -1,0 +1,235 @@
+{
+  "about": "The pinned upstream sources of registry/*.json. build.mjs turns this file into registry/SOURCES.md; sources.lock.json holds the SHA-256 of every download.",
+  "sources": [
+    {
+      "id": "lapack",
+      "name": "Reference-LAPACK (BLAS and LAPACK)",
+      "version": "3.12.1",
+      "licence": "BSD-3-Clause",
+      "homepage": "https://github.com/Reference-LAPACK/lapack",
+      "urls": {
+        "tarball": "https://github.com/Reference-LAPACK/lapack/archive/refs/tags/v3.12.1.tar.gz"
+      },
+      "notice": "LICENSE",
+      "uses": "Routine names, arguments and result types from the code; intents and types from `\\param`; summaries from `\\brief` (or the first sentence of Purpose when the brief is only the name); precision families from `\\ingroup`; family titles from DOCS/groups-usr.dox; hint tags from the argument documentation.",
+      "copied": "Summaries and family titles, which are BSD-licensed."
+    },
+    {
+      "id": "netlib-lapack",
+      "name": "Netlib LAPACK documentation, Doxygen search index",
+      "version": "3.12.1, as published (Netlib keeps no older builds)",
+      "licence": "BSD-3-Clause (generated from Reference-LAPACK)",
+      "homepage": "https://www.netlib.org/lapack/explore-html/",
+      "urls": {
+        "searchdata": "https://www.netlib.org/lapack/explore-html/search/searchdata.js",
+        "functions": "https://www.netlib.org/lapack/explore-html/search/functions_{n}.js"
+      },
+      "uses": "The anchor of each routine's member page.",
+      "copied": "Anchors only."
+    },
+    {
+      "id": "scalapack",
+      "name": "Reference-ScaLAPACK (ScaLAPACK, PBLAS, BLACS, REDIST and TOOLS)",
+      "version": "2.2.2",
+      "licence": "BSD-3-Clause",
+      "homepage": "https://github.com/Reference-ScaLAPACK/scalapack",
+      "urls": {
+        "tarball": "https://github.com/Reference-ScaLAPACK/scalapack/archive/refs/tags/v2.2.2.tar.gz"
+      },
+      "notice": "LICENSE",
+      "uses": "Routine names and arguments from the code; scope (global or local), intent and type from the Arguments prose; summaries from the first sentence of Purpose; hint tags.",
+      "copied": "Summaries, which are BSD-licensed."
+    },
+    {
+      "id": "netlib-scalapack",
+      "name": "Netlib ScaLAPACK documentation, Doxygen search index",
+      "version": "2.2.2, as published",
+      "licence": "BSD-3-Clause (generated from Reference-ScaLAPACK)",
+      "homepage": "https://www.netlib.org/scalapack/explore-html/",
+      "urls": {
+        "searchdata": "https://www.netlib.org/scalapack/explore-html/search/searchdata.js",
+        "functions": "https://www.netlib.org/scalapack/explore-html/search/functions_{n}.js"
+      },
+      "uses": "The anchor of each routine's member page.",
+      "copied": "Anchors only."
+    },
+    {
+      "id": "openmpi",
+      "name": "Open MPI",
+      "version": "5.0.11",
+      "licence": "BSD-3-Clause-Open-MPI",
+      "homepage": "https://www.open-mpi.org/",
+      "urls": {
+        "tarball": "https://github.com/open-mpi/ompi/archive/refs/tags/v5.0.11.tar.gz"
+      },
+      "notice": "LICENSE",
+      "uses": "The one-line summaries of the man pages (docs/man-openmpi/man3/*.3.rst) and which routines have a page in the 5.0.x documentation.",
+      "copied": "Summaries, which are BSD-licensed."
+    },
+    {
+      "id": "openmpi-api",
+      "name": "Open MPI machine-readable API catalogue (openmpi-mpi-api.jsonl)",
+      "version": "docset v6.1.0a1 (main), pinned by SHA-256",
+      "licence": "BSD-3-Clause-Open-MPI",
+      "homepage": "https://docs.open-mpi.org/en/main/llms.txt",
+      "urls": {
+        "jsonl": "https://docs.open-mpi.org/en/main/llms/openmpi-mpi-api.jsonl"
+      },
+      "uses": "The MPI procedures callable from Fortran, their category (collective, point-to-point, …), their `mpi_f08` arguments (name, intent, type, optional) and their kind (standard or deprecated).",
+      "copied": "Names, categories and argument lists; none of its parameter descriptions."
+    },
+    {
+      "id": "openmpi-main",
+      "name": "Open MPI man pages, development branch",
+      "version": "main at 363df5354f9481830a76cba24000e22a1f8562d5",
+      "licence": "BSD-3-Clause-Open-MPI",
+      "homepage": "https://github.com/open-mpi/ompi",
+      "urls": {
+        "rst": "https://raw.githubusercontent.com/open-mpi/ompi/363df5354f9481830a76cba24000e22a1f8562d5/docs/man-openmpi/man3/{name}.3.rst"
+      },
+      "uses": "Summaries of the routines that have no man page in Open MPI 5.0.x (MPI 4.1 and 5.0 additions).",
+      "copied": "Summaries, which are BSD-licensed."
+    },
+    {
+      "id": "mpi-abi-stubs",
+      "name": "MPI ABI stubs (mpi-forum/mpi-abi-stubs)",
+      "version": "1.0.0 at 421c088a6d3e23e8af0184dd8eeaeb6ffbd00c1d",
+      "licence": "MIT",
+      "homepage": "https://github.com/mpi-forum/mpi-abi-stubs",
+      "urls": {
+        "tarball": "https://github.com/mpi-forum/mpi-abi-stubs/archive/421c088a6d3e23e8af0184dd8eeaeb6ffbd00c1d.tar.gz"
+      },
+      "notice": "LICENSE.md",
+      "uses": "The MPI 5.0 procedure list (to check the catalogue is complete), the callback prototypes and the predefined callback functions of mpi.h.",
+      "copied": "Names only."
+    },
+    {
+      "id": "mpi-standard",
+      "name": "MPI Standard 5.0 and 4.1, HTML editions (unofficial)",
+      "version": "5.0 (2025-06-05) and 4.1 (2023-11-02)",
+      "licence": "© University of Tennessee; copying without fee permitted",
+      "homepage": "https://www.mpi-forum.org/docs/",
+      "urls": {
+        "contents-5.0": "https://www.mpi-forum.org/docs/mpi-5.0/mpi50-report/mpi50-report.htm",
+        "contents-4.1": "https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report/mpi41-report.htm",
+        "index-5.0": "https://www.mpi-forum.org/docs/mpi-5.0/mpi50-report/node632.htm",
+        "index-4.1": "https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report/node606.htm",
+        "node-5.0": "https://www.mpi-forum.org/docs/mpi-5.0/mpi50-report/node{n}.htm",
+        "node-4.1": "https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report/node{n}.htm"
+      },
+      "uses": "Which page defines each procedure in each version (found from the contents, the function index and the binding on the page), and which procedures are new in 5.0.",
+      "copied": "Page numbers only; none of the standard's text."
+    },
+    {
+      "id": "openmp-spec",
+      "name": "OpenMP API Specification, HTML editions: contents pages",
+      "version": "6.1 (2026), 6.0 (2024) and 5.2 (2021)",
+      "licence": "© OpenMP Architecture Review Board",
+      "homepage": "https://www.openmp.org/specifications/",
+      "urls": {
+        "6.1": "https://www.openmp.org/spec-html/6.1/openmp.html",
+        "6.0": "https://www.openmp.org/spec-html/6.0/openmp.html",
+        "5.2": "https://www.openmp.org/spec-html/5.2/openmp.html"
+      },
+      "uses": "The names of directives, clauses, routines, environment variables and types, with the page and fragment ID of their sections in each version.",
+      "copied": "Names, page names and fragment IDs only; none of the specification's prose. Our own one-liners describe the most used items."
+    },
+    {
+      "id": "llvm-openmp",
+      "name": "LLVM OpenMP runtime, Fortran module omp_lib",
+      "version": "llvmorg-23.1.6",
+      "licence": "Apache-2.0 WITH LLVM-exception",
+      "homepage": "https://github.com/llvm/llvm-project/tree/main/openmp",
+      "urls": {
+        "omp_lib": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-23.1.6/openmp/module/omp_lib.F90.var",
+        "licence": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-23.1.6/openmp/LICENSE.TXT"
+      },
+      "notice": "licence",
+      "uses": "The Fortran interfaces of the omp_* runtime routines (arguments, their types and VALUE attributes, function results), and the kinds and named constants of omp_lib.",
+      "copied": "Interface names, types and constant names only."
+    },
+    {
+      "id": "openacc-spec",
+      "name": "OpenACC Application Programming Interface 3.4 (PDF): outline only",
+      "version": "3.4 (June 2025)",
+      "licence": "© OpenACC-Standard.org; not reproduced",
+      "homepage": "https://www.openacc.org/specification",
+      "urls": {
+        "pdf": "https://www.openacc.org/sites/default/files/inline-files/OpenACC_3.4.pdf"
+      },
+      "uses": "The page of the section that documents each directive, clause, routine and environment variable, read from the PDF's outline.",
+      "copied": "Page numbers only. The names are the API's; the one-liners are our own."
+    },
+    {
+      "id": "m-intrinsics",
+      "name": "M_intrinsics (Fortran intrinsic procedure descriptions)",
+      "version": "fc14233036d910e3678d350efc24609e11475067 (2026-11-01)",
+      "licence": "MIT",
+      "homepage": "https://github.com/urbanjost/M_intrinsics",
+      "urls": {
+        "tarball": "https://github.com/urbanjost/M_intrinsics/archive/fc14233036d910e3678d350efc24609e11475067.tar.gz"
+      },
+      "notice": "LICENSE",
+      "uses": "Intrinsic procedure names, categories, one-line descriptions and call synopses (arguments, optional ones in brackets).",
+      "copied": "Categories, one-liners and argument names, which are MIT-licensed."
+    },
+    {
+      "id": "fortran-lang",
+      "name": "fortran-lang.org, Sphinx inventory of the intrinsics pages",
+      "version": "objects.inv as published, pinned by SHA-256; site repository at bbdc33ec7bfc06fa6111093ae9712a7f7837b555",
+      "licence": "MIT",
+      "homepage": "https://fortran-lang.org/learn/intrinsics/",
+      "urls": {
+        "inventory": "https://fortran-lang.org/objects.inv",
+        "licence": "https://raw.githubusercontent.com/fortran-lang/fortran-lang.org/bbdc33ec7bfc06fa6111093ae9712a7f7837b555/LICENSE"
+      },
+      "notice": "licence",
+      "uses": "The page and anchor of each intrinsic on fortran-lang.org.",
+      "copied": "Page paths and anchors only."
+    },
+    {
+      "id": "gfortran-index",
+      "name": "GCC 16.1.0 gfortran manual, Intrinsic Procedures index",
+      "version": "16.1.0",
+      "licence": "GFDL-1.3 (not reproduced)",
+      "homepage": "https://gcc.gnu.org/onlinedocs/gcc-16.1.0/gfortran/",
+      "urls": {
+        "index": "https://gcc.gnu.org/onlinedocs/gcc-16.1.0/gfortran/Intrinsic-Procedures.html"
+      },
+      "uses": "Which intrinsics have a page in the gfortran manual, so that links only point to pages that exist.",
+      "copied": "Page names only; none of the manual's text."
+    }
+  ],
+  "links": [
+    {
+      "name": "Open MPI 5.0.x documentation",
+      "url": "https://docs.open-mpi.org/en/v5.0.x/",
+      "note": "Default MPI link target."
+    },
+    {
+      "name": "MPICH documentation",
+      "url": "https://www.mpich.org/static/docs/",
+      "note": "Answers scripts with 403; the link check tolerates it."
+    },
+    {
+      "name": "Intel oneMKL Developer Reference for Fortran",
+      "url": "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-fortran/",
+      "note": "Link target only; Intel's text is never copied. Answers scripts with 403."
+    },
+    {
+      "name": "OpenBLAS documentation",
+      "url": "https://www.openmathlib.org/OpenBLAS/docs/",
+      "note": "Link target for the OpenBLAS extensions."
+    },
+    {
+      "name": "NVIDIA HPC SDK, Fortran CUDA Interfaces",
+      "url": "https://docs.nvidia.com/hpc-sdk/compilers/fortran-cuda-interfaces/index.html",
+      "note": "Link target for cuBLAS; NVIDIA's text is never copied."
+    },
+    {
+      "name": "GCC libgomp manual",
+      "url": "https://gcc.gnu.org/onlinedocs/libgomp/",
+      "note": "Link target for OpenMP and OpenACC routines and environment variables (GFDL; nothing copied)."
+    }
+  ]
+}
