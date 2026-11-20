@@ -40,6 +40,7 @@
     "bin",
     "src",
     "react",
+    "registry",
     "types",
     "style.css",
     "README.md",
@@ -65,8 +66,10 @@
   "types": "./types/index.d.ts",
   "scripts": {
     "test": "node test/run.mjs",
+    "test:registry": "node test/registry/check.mjs",
     "gate": "node scripts/gate.mjs",
-    "prepublishOnly": "node test/run.mjs"
+    "registry": "node scripts/registry/build.mjs",
+    "prepublishOnly": "node test/run.mjs && node test/registry/check.mjs"
   },
   "peerDependencies": {
     "react": ">=18"

@@ -27,6 +27,8 @@ jobs:
       # the package has no dependencies; React is installed only so that the components' rendering checks run
       - run: npm install --no-save --no-package-lock react@19 react-dom@19
       - run: npm test
+      # the committed HPC registry: counts, size, known entries, links, sources and notices (no network)
+      - run: npm run test:registry
 
   gate:
     name: Parser gate
@@ -71,6 +73,11 @@ jobs:
             const args = Object.values(ir.entities).reduce((n, e) => n + (e.args?.length ?? 0), 0);
             if (args !== 41 || one.entities['procedure:s'].args[0].intent !== 'in') process.exit(1);
             console.log('the packed package installs, imports and parses');
+          "
+          node --input-type=module -e "
+            const { lookup } = await import('./node_modules/fumadocs-fortran/registry/read.mjs');
+            if (lookup('lapack', 'dgesv')?.family?.id !== 'gesv' || !lookup('mpi', 'MPI_Allreduce')?.links.openmpi) process.exit(1);
+            console.log('the packed HPC registry loads');
           "
 
   docs:

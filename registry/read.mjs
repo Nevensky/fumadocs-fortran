@@ -1,7 +1,7 @@
 // Reads the HPC registry: expands an entry of registry/*.json (family defaults, type templates, codes) and builds
-// its links for every provider. Plain ESM, no dependencies, for build time only.
+// its links for every provider. Plain ESM, no dependencies, for build time only. It is not a public export: the
+// package's own code imports it by path.
 //
-//   import { lookup } from 'fumadocs-fortran/registry/read.mjs';
 //   lookup('lapack', 'dgesv') → { lib, name, kind, args: [['n', 'in', 'integer'], …], family, summary, tags, links }
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
