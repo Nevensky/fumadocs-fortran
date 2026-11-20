@@ -3,10 +3,13 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { gzipSync } from 'node:zlib';
+import { deflateSync, gzipSync } from 'node:zlib';
+import * as MPI from '../../scripts/registry/data/mpi.mjs';
 import * as OPENACC from '../../scripts/registry/data/openacc.mjs';
 import * as OPENMP from '../../scripts/registry/data/openmp.mjs';
-import { load, lookup, names } from '../../registry/read.mjs';
+import { firstSentence } from '../../scripts/registry/lib.mjs';
+import { pdfOutline } from '../../scripts/registry/pdf.mjs';
+import { LIBRARY_SECTIONS, libraryOf, load, lookup, names } from '../../registry/read.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const DIR = path.join(ROOT, 'registry');
@@ -222,11 +225,296 @@ for (const id of ['lapack', 'scalapack']) {
   ok(Object.values(vendors.mkl.lapack95).every((f) => f.every((g) => lapack.groups[g])), 'lapack95 maps to existing LAPACK families');
 }
 
+// ---------------------------------------------------------------- BLAS and LAPACK apart: the library is the folder
+{
+  const library = (n) => lookup('lapack', n)?.library;
+  // BLAS/SRC, with the lsame, xerbla and xerbla_array every BLAS ships (LAPACK has copies in SRC and INSTALL)
+  for (const n of ['dgemm', 'ddot', 'idamax', 'dznrm2', 'srotmg', 'zgemmtr', 'lsame', 'xerbla', 'xerbla_array']) {
+    eq(library(n), 'blas', `${n} is a BLAS routine`);
+  }
+  // SRC, SRC/DEPRECATED and INSTALL, the BLAS-like auxiliaries of SRC (csyr, icmax1) included
+  for (const n of ['dgesv', 'dlamch', 'ilaenv', 'dgeqpf', 'csyr', 'zsyr', 'icmax1', 'scsum1']) {
+    eq(library(n), 'lapack', `${n} is a LAPACK routine`);
+  }
+  eq(names('lapack').filter((n) => library(n) === 'blas').length, 155, 'the routines of BLAS/SRC');
+  ok(Object.values(lapack.entries).every((e) => !('l' in e) || e.l === 'blas'), 'lapack.json marks only BLAS routines');
+  ok(lapack.legend.libraries?.blas && lapack.legend.fields.l, 'the legend explains the library field');
+}
+
+// ---------------------------------------------------------------- summaries: Fortran's dotted names end no sentence
+{
+  const lsame = 'Returns .TRUE. if CA is the same letter as CB regardless of case.';
+  eq(lookup('lapack', 'lsame').summary, lsame, 'lsame summary');
+  eq(firstSentence('LSAME returns .TRUE. if CA is the same letter as CB.\n\nMore.'),
+    'LSAME returns .TRUE. if CA is the same letter as CB.', 'a logical constant before a word in lower case goes on');
+  eq(firstSentence('It is set to .TRUE. Otherwise it is .FALSE.'), 'It is set to .TRUE.',
+    'a logical constant before a capital ends one');
+  eq(firstSentence('Returns .NOT. A, e.g. for B.'), 'Returns .NOT. A, e.g. for B.', 'an operator takes its operand');
+}
+
+// ---------------------------------------------------------------- PXERBLA, ScaLAPACK's error handler
+{
+  const e = lookup('scalapack', 'PXERBLA');
+  ok(e, 'pxerbla is in scalapack.json');
+  eq(e?.library, 'pblas', 'pxerbla comes from PBLAS/SRC/PTZBLAS');
+  const args = [['ictxt', 'in', 'integer', 'l'], ['srname', 'in', 'character(*)', 'g'], ['info', 'in', 'integer', 'g']];
+  eq(e?.args, args, 'pxerbla arguments');
+  ok(/^PXERBLA is an error handler for the ScaLAPACK routines/.test(e?.summary), `pxerbla summary: ${e?.summary}`);
+  const member = /explore-html\/(d[0-9a-f]\/d[0-9a-f]{2})\/pxerbla_8f_a([0-9a-f]{32})\.html#a\2$/;
+  const dir = member.exec(e?.links.netlib)?.[1];
+  ok(dir, `pxerbla Netlib member page: ${e?.links.netlib}`);
+  eq(e?.links.netlibFile, `https://www.netlib.org/scalapack/explore-html/${dir}/pxerbla_8f.html`,
+    'pxerbla Netlib file page: pxerbla.f, not PTZBLAS/pxerbla.f');
+}
+
+// ---------------------------------------------------------------- OpenACC: the page that prints the heading
+{
+  const page = (section, n) => Number(/#page=(\d+)$/.exec(lookup('openacc', n, { section })?.links.spec ?? '')?.[1]);
+  // hyperref left these sections' anchors at the foot of the page before their headings
+  const moved = {
+    directives: { loop: 64, cache: 75, atomic: 77, set: 87 },
+    clauses: { copyin: 55, copyout: 56, create: 57, independent: 69, num_gangs: 38, read: 77, capture: 77 },
+    routines: { acc_set_device_num: 108, acc_get_property: 109, acc_get_property_string: 109, acc_wait_any: 115 },
+  };
+  Object.assign(moved.clauses, { default_async: 87 });
+  Object.assign(moved.routines, { acc_memcpy_to_device: 127, acc_memcpy_d2d: 132 });
+  // these headings are on their anchors' pages, the foot of a page included (wait clause, page 37)
+  const kept = {
+    directives: { parallel: 33, 'enter data': 45 },
+    clauses: { if: 37, wait: 37, num_workers: 38 },
+    routines: { acc_copyin: 118 },
+  };
+  for (const want of [moved, kept]) {
+    for (const [section, pages] of Object.entries(want)) {
+      for (const [n, p] of Object.entries(pages)) eq(page(section, n), p, `OpenACC ${n}: page ${p}`);
+    }
+  }
+}
+{
+  // a PDF of two pages: section 2's anchor is at the foot of page 1, its heading ("2 Second final section", with the
+  // fi ligature of the font's encoding) on page 2, in a Flate stream; section 3's heading is on neither page
+  const text1 = 'BT /F1 10 Tf 72 700 Td [(1)-1000(First)-333(section)]TJ 0 -400 Td (See 2 Second final section.) Tj ET';
+  const text2 = 'BT /F1 10 Tf 72 750 Td [(2)-1000(Second)-333(\\002nal)-333(section)]TJ ET';
+  const bytes = (s) => Buffer.from(s, 'latin1');
+  const obj = (n, body) => bytes(`${n} 0 obj\n${body}\nendobj\n`);
+  const stream = (n, data, filter = '') => {
+    const head = bytes(`${n} 0 obj\n<< /Length ${data.length}${filter} >>\nstream\n`);
+    return Buffer.concat([head, data, bytes('\nendstream\nendobj\n')]);
+  };
+  const dests = [[1, 712], [2, 90], [3, 80]].map(([n, y]) => `(section.${n}) [5 0 R /XYZ 72 ${y} null]`).join(' ');
+  const resources = '/Resources << /Font << /F1 9 0 R >> >>';
+  const page = (contents) => `<< /Type /Page /Parent 2 0 R ${resources} /Contents ${contents} 0 R >>`;
+  const pdf = Buffer.concat([
+    bytes('%PDF-1.4\n'),
+    obj(1, '<< /Type /Catalog /Pages 2 0 R /Outlines 3 0 R /Names << /Dests 4 0 R >> >>'),
+    obj(2, '<< /Type /Pages /Kids [5 0 R 6 0 R] /Count 2 >>'),
+    obj(3, '<< /Type /Outlines /First 7 0 R /Last 13 0 R /Count 4 >>'),
+    obj(4, `<< /Names [${dests}] >>`),
+    obj(5, page(10)),
+    obj(6, page(11)),
+    obj(7, '<< /Title (First section) /Dest (section.1) /Parent 3 0 R /Next 8 0 R >>'),
+    obj(8, '<< /Title (Second final section) /Dest (section.2) /Parent 3 0 R /Next 12 0 R >>'),
+    obj(9, '<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding 14 0 R >>'),
+    stream(10, bytes(text1)),
+    stream(11, deflateSync(bytes(text2)), ' /Filter /FlateDecode'),
+    obj(12, '<< /Title (Third section) /Dest (section.3) /Parent 3 0 R /Next 13 0 R >>'),
+    obj(13, '<< /Title (Index) /Dest [6 0 R /XYZ 72 750 null] /Parent 3 0 R >>'),
+    obj(14, '<< /Type /Encoding /BaseEncoding /WinAnsiEncoding /Differences [2 /fi] >>'),
+  ]);
+  const { pages, outline } = pdfOutline(pdf);
+  eq(pages, 2, 'pdfOutline: pages');
+  const want = [
+    ['First section', 1, 1, true],
+    ['Second final section', 1, 2, true],
+    ['Third section', 1, 1, false],
+    ['Index', 2, 2, null],
+  ];
+  eq(outline.map((o) => [o.title, o.anchor, o.page, o.printed]), want,
+    'pdfOutline: a heading printed only on the page after its anchor moves the entry; a mention in a line does not');
+}
+
+// ---------------------------------------------------------------- names() and lookup() agree
+{
+  ok(lookup('openacc', 'host_data'), 'lookup finds host_data, as names lists it');
+  eq(lookup('openacc', 'host data', { section: 'directives' })?.name, 'host_data', 'host data finds host_data');
+  eq(lookup('openacc', 'enter_data', { section: 'directives' })?.name, 'enter data', 'enter_data finds enter data');
+  const sections = {
+    mpi: ['entries', 'types'],
+    openmp: ['directives', 'clauses', 'routines', 'env', 'types', 'constants'],
+    openacc: ['directives', 'clauses', 'routines', 'env'],
+  };
+  for (const [id, list] of Object.entries(sections)) {
+    for (const s of list) {
+      const lost = names(id, s).filter((n) => lookup(id, n, { section: s })?.name !== n);
+      eq(lost, [], `${id} ${s}: lookup finds every name names() lists`);
+    }
+  }
+  const tried = (f) => {
+    try {
+      return f();
+    } catch (err) {
+      return err.message;
+    }
+  };
+  const ids = ['lapack', 'scalapack', 'mpi', 'openmp', 'openacc', 'intrinsics'];
+  eq(ids.map((id) => tried(() => lookup(id, 'constructor'))), Array(6).fill(null),
+    'a name only Object.prototype has (constructor) is in no registry');
+  const message = tried(() => names('vendors'));
+  ok(/load\('vendors'\)/.test(message), `names('vendors') says to use load(): ${message}`);
+}
+
+// ---------------------------------------------------------------- mpi_f08's derived types
+{
+  const std = (v, n) => `https://www.mpi-forum.org/docs/mpi-${v}/mpi${v.replace('.', '')}-report/node${n}.htm`;
+  const t = lookup('mpi', 'mpi_comm');
+  ok(t, 'MPI_Comm is in mpi.json (any case)');
+  eq([t?.section, t?.name, t?.kind, t?.module], ['types', 'MPI_Comm', 'type', 'mpi_f08'],
+    'MPI_Comm: a derived type of mpi_f08');
+  eq(t?.components, [['MPI_VAL', 'integer']], 'MPI_Comm holds one integer, MPI_VAL');
+  eq(t?.legacy, 'integer', 'use mpi and mpif.h declare a communicator integer');
+  eq(t?.nullHandle, 'MPI_COMM_NULL', 'the null communicator');
+  eq(t?.links, { 'standard-5.0': std('5.0', 35), 'standard-4.1': std('4.1', 33) },
+    'MPI_Comm: Opaque Objects in MPI 5.0 and 4.1');
+  const st = lookup('mpi', 'MPI_Status');
+  eq(st?.components?.map((c) => c[0]), ['MPI_SOURCE', 'MPI_TAG', 'MPI_ERROR'], 'MPI_Status: its public components');
+  eq(st?.legacy, 'integer, dimension(MPI_STATUS_SIZE)', 'use mpi and mpif.h declare a status an integer array');
+  eq(st?.nullHandle, null, 'a status is no handle');
+  eq(st?.links, { 'standard-5.0': std('5.0', 62), 'standard-4.1': std('4.1', 60) },
+    'MPI_Status: Return Status in MPI 5.0 and 4.1');
+  const typeOf = (a) => /^type\((MPI_\w+)\)/.exec(a[2])?.[1];
+  const used = new Set(names('mpi').flatMap((n) => lookup('mpi', n).args.map(typeOf).filter(Boolean)));
+  eq(names('mpi', 'types'), [...used].sort(), 'an entry for each type the mpi_f08 arguments use');
+  eq(names('mpi', 'types').length, 12, 'the 12 types');
+  for (const n of Object.keys(mpi.types ?? {})) {
+    const e = lookup('mpi', n, { section: 'types' });
+    const full = e?.summary === MPI.TYPES?.[n] && e.legacy && e.components.length;
+    ok(full && e.links['standard-5.0'] && e.links['standard-4.1'], `${n}: one-liner, use mpi form, components, links`);
+    if (n !== 'MPI_Status') {
+      const handle = [[['MPI_VAL', 'integer']], `${n.toUpperCase()}_NULL`];
+      eq([e?.components, e?.nullHandle], handle, `${n}: a handle, with its null handle`);
+    }
+  }
+  eq(lookup('mpi', 'MPI_Comm', { section: 'entries' }), null, 'the procedures and the types are apart');
+  ok(!names('mpi').includes('MPI_Comm') && names('mpi').includes('MPI_Comm_rank'),
+    'names(mpi) lists the procedures and callbacks');
+  ok(mpi.legend.typeFields && mpi.legend.sections?.types, 'the legend explains the types');
+}
+
+// ---------------------------------------------------------------- omp_lib's kinds: integer kind parameters
+{
+  const k = lookup('openmp', 'OMP_LOCK_KIND');
+  eq([k?.section, k?.kind, k?.type], ['types', 'kind', 'integer'],
+    'omp_lock_kind: an integer kind parameter, not a derived type');
+  ok(/^Integer kind of a simple lock/.test(k?.summary), `omp_lock_kind summary: ${k?.summary}`);
+  ok(k?.links.spec?.endsWith('#openmp-lock-type'), 'omp_lock_kind links to the OpenMP lock type');
+  for (const n of ['omp_integer_kind', 'omp_logical_kind']) {
+    const e = lookup('openmp', n, { section: 'types' });
+    ok(e?.kind === 'kind' && /LLVM’s omp_lib/.test(e.summary), `${n}: an entry, which says whose name it is`);
+  }
+  const sync = lookup('openmp', 'omp_sync_hint_kind').links.spec;
+  eq(lookup('openmp', 'omp_lock_hint_kind')?.links.spec, sync, 'omp_lock_hint_kind links to omp_sync_hint_kind');
+  const used = new Set();
+  const scan = (t) => {
+    for (const m of String(t ?? '').matchAll(/\bomp_\w+_kind\b/g)) used.add(m[0]);
+  };
+  for (const n of names('openmp', 'routines')) {
+    const e = lookup('openmp', n, { section: 'routines' });
+    scan(e.result);
+    for (const a of e.args ?? []) scan(a[2]);
+  }
+  for (const n of names('openmp', 'constants')) scan(lookup('openmp', n, { section: 'constants' }).type);
+  const missing = [...used].filter((n) => !Object.hasOwn(openmp.types, n)).sort();
+  eq(missing, [], 'every omp_*_kind the interfaces and constants use has an entry');
+  const kinds = names('openmp', 'types');
+  ok(kinds.length >= 18 && kinds.every((n) => lookup('openmp', n, { section: 'types' }).summary === OPENMP.KINDS?.[n]),
+    'every kind has our one-liner');
+  // a one-liner that names constants of its kind names only those, and all of them unless it says … or such as
+  // (omp_pause_resource_kind has four: omp_pause_resume, omp_pause_soft, omp_pause_hard and omp_pause_stop_tool)
+  for (const n of kinds) {
+    const s = openmp.types[n].s ?? '';
+    const named = (s.match(/\bomp_\w+/g) ?? []).filter((c) => Object.hasOwn(openmp.constants, c)).sort();
+    const all = Object.keys(openmp.constants).filter((c) => openmp.constants[c].ty === `integer(${n})`).sort();
+    ok(named.every((c) => all.includes(c)), `${n}: the constants its one-liner names are of that kind`);
+    if (named.length && !/…|such as/.test(s)) eq(named, all, `${n}: its one-liner names every constant of the kind`);
+  }
+  // OpenMP 5.0 renamed the lock hints of 4.5 to synchronisation hints: the old kind and constants are deprecated
+  const dep = (section, n) => {
+    const e = lookup('openmp', n, { section });
+    return e && [e.tags.includes('dep'), e.deprecated];
+  };
+  eq(dep('types', 'omp_lock_hint_kind'), [true, '5.0'], 'omp_lock_hint_kind: deprecated in OpenMP 5.0');
+  eq(dep('types', 'omp_sync_hint_kind'), [false, null], 'omp_sync_hint_kind: not deprecated');
+  for (const h of ['none', 'uncontended', 'contended', 'nonspeculative', 'speculative']) {
+    eq(dep('constants', `omp_lock_hint_${h}`), [true, '5.0'], `omp_lock_hint_${h}: deprecated in OpenMP 5.0`);
+    eq(dep('constants', `omp_sync_hint_${h}`), [false, null], `omp_sync_hint_${h}: not deprecated`);
+  }
+  const marked = ['directives', 'routines', 'env', 'types', 'constants'].map((s) => openmp[s]);
+  const unused = Object.keys(OPENMP.DEPRECATED).filter((n) => !marked.some((m) => Object.hasOwn(m, n)));
+  eq(unused, [], 'every deprecation of data/openmp.mjs marks an entry');
+}
+
+// ---------------------------------------------------------------- libraryOf: the library of a name a program writes
+{
+  const of = (n) => {
+    const r = libraryOf(n);
+    return r && [r.lib, r.library, r.name, r.section];
+  };
+  const want = {
+    DGEMM: ['lapack', 'blas', 'dgemm', 'entries'],
+    xerbla: ['lapack', 'blas', 'xerbla', 'entries'],
+    dgesv: ['lapack', 'lapack', 'dgesv', 'entries'],
+    PDGESV: ['scalapack', 'scalapack', 'pdgesv', 'entries'],
+    numroc: ['scalapack', 'tools', 'numroc', 'entries'],
+    pdgemm: ['scalapack', 'pblas', 'pdgemm', 'entries'],
+    pdgemr2d: ['scalapack', 'redist', 'pdgemr2d', 'entries'],
+    blacs_gridinit: ['scalapack', 'blacs', 'blacs_gridinit', 'entries'],
+    pxerbla: ['scalapack', 'pblas', 'pxerbla', 'entries'],
+    mpi_allreduce: ['mpi', 'mpi', 'MPI_Allreduce', 'entries'],
+    MPI_User_function: ['mpi', 'mpi', 'MPI_User_function', 'entries'],
+    mpi_comm: ['mpi', 'mpi', 'MPI_Comm', 'types'],
+    omp_get_thread_num: ['openmp', 'openmp', 'omp_get_thread_num', 'routines'],
+    omp_lock_kind: ['openmp', 'openmp', 'omp_lock_kind', 'types'],
+    omp_sched_static: ['openmp', 'openmp', 'omp_sched_static', 'constants'],
+    acc_copyin: ['openacc', 'openacc', 'acc_copyin', 'routines'],
+    MatMul: ['intrinsics', 'intrinsics', 'matmul', 'entries'],
+  };
+  for (const [n, w] of Object.entries(want)) eq(of(n), w, `libraryOf(${n})`);
+  // directives, clauses and environment variables are no names a program calls or declares
+  const none = ['parallel', 'do', 'reduction', 'host_data', 'OMP_NUM_THREADS', 'my_solver', 'constructor', '__proto__'];
+  for (const n of [...none, '']) {
+    eq(libraryOf(n), null, `libraryOf(${JSON.stringify(n)}): no library`);
+  }
+  const r = libraryOf('dgesv');
+  eq(r?.entry, lookup('lapack', 'dgesv'), 'libraryOf gives what lookup gives');
+  r?.entry.family.members.push('mine');
+  ok(r && !libraryOf('dgesv').entry.family.members.includes('mine'), 'each call gives fresh objects');
+  const ga = 'ga831ce6a40e7fd16295752d18aed2d541';
+  eq(r?.link, `https://www.netlib.org/lapack/explore-html/d8/da6/group__gesv_${ga}.html#${ga}`,
+    'link: the Netlib member page');
+  const links = {
+    MPI_Send: 'https://docs.open-mpi.org/en/v5.0.x/man-openmpi/man3/MPI_Send.3.html',
+    MPI_Comm: 'https://www.mpi-forum.org/docs/mpi-5.0/mpi50-report/node35.htm',
+    omp_get_thread_num: lookup('openmp', 'omp_get_thread_num').links.spec,
+    acc_copyin: lookup('openacc', 'acc_copyin', { section: 'routines' }).links.spec,
+    matmul: 'https://fortran-lang.org/learn/intrinsics/transform/#matmul',
+    omp_integer_kind: null,
+  };
+  for (const [n, link] of Object.entries(links)) eq(libraryOf(n)?.link, link, `libraryOf(${n}).link`);
+  const all = LIBRARY_SECTIONS.flatMap(([id, s]) => Object.keys(load(id)[s] ?? {}));
+  ok(all.length > 4000, `the procedures, types, kinds and constants of the registry: ${all.length}`);
+  eq(new Set(all.map((n) => n.toLowerCase())).size, all.length, 'no name is in two libraries');
+  eq(all.filter((n) => libraryOf(n.toUpperCase())?.name !== n), [], 'libraryOf finds every name, in any case');
+}
+
 // ---------------------------------------------------------------- our own text only (no specification prose)
 {
   const ours = new Set([...Object.values(OPENMP.SUMMARIES).flatMap((m) => Object.values(m))]);
   const omp = ['directives', 'clauses', 'routines', 'env'].flatMap((s) => Object.values(openmp[s]).map((e) => e.s).filter(Boolean));
   ok(omp.every((s) => ours.has(s)), 'every OpenMP summary is one of ours');
+  const kindsOurs = new Set(Object.values(OPENMP.KINDS ?? {}));
+  ok(Object.values(openmp.types).every((e) => kindsOurs.has(e.s)), 'every OpenMP kind summary is one of ours');
+  const typesOurs = new Set(Object.values(MPI.TYPES ?? {}));
+  ok(Object.values(mpi.types ?? {}).every((e) => typesOurs.has(e.s)), 'every MPI type summary is one of ours');
   const accOurs = new Set([...Object.values(OPENACC.DIRECTIVES).map((d) => d[2]), ...Object.values(OPENACC.CLAUSE_SUMMARIES), ...Object.values(OPENACC.ROUTINE_SUMMARIES), ...Object.values(OPENACC.ENV)]);
   const acc = ['directives', 'clauses', 'routines', 'env'].flatMap((s) => Object.values(openacc[s]).map((e) => e.s).filter(Boolean));
   ok(acc.every((s) => accOurs.has(s)), 'every OpenACC summary is one of ours');
@@ -253,6 +541,9 @@ for (const id of ['lapack', 'scalapack']) {
     ok(notice.includes(marker), `NOTICE includes ${marker}`);
   }
   for (const l of sources.links) ok(md.includes(l.url), `SOURCES.md lists the link target ${l.name}`);
+  // the OpenACC builder reads the text of the PDF's pages too, to find the page that prints each heading
+  const acc = sources.sources.find((s) => s.id === 'openacc-spec')?.name;
+  ok(!/outline only/.test(acc) && /heading/.test(acc), `the OpenACC source says what is read: ${acc}`);
 }
 
 console.log(`${checks - failures}/${checks} registry checks passed`);

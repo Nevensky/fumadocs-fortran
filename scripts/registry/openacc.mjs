@@ -1,5 +1,5 @@
 // Builds registry/openacc.json: OpenACC 3.4 directives, clauses, runtime routines and environment variables, with
-// the PDF page of the section that documents each, read from the specification's outline.
+// the PDF page of the section that documents each: the page that prints the heading of its entry in the outline.
 //
 //   node scripts/registry/openacc.mjs [--refresh]
 //
@@ -23,7 +23,14 @@ export async function build() {
   const src = source(sources, 'openacc-spec');
   const { pages, outline } = pdfOutline(await fetchPinned('openacc-spec', src.urls.pdf));
   const problems = [];
-  const pageOf = (title) => outline.find((o) => o.title === title && o.depth > 0)?.page ?? outline.find((o) => o.title === title)?.page ?? null;
+  // an outline entry's page is the one that prints its heading, which can be the page after its anchor's
+  const checked = (o) => {
+    if (o?.printed === false) problems.push(`"${o.title}": no page prints its heading (anchor on page ${o.anchor})`);
+    return o;
+  };
+  const entryOf = (title) =>
+    outline.find((o) => o.title === title && o.depth > 0) ?? outline.find((o) => o.title === title);
+  const pageOf = (title) => checked(entryOf(title))?.page ?? null;
 
   const directives = {};
   for (const [name, [title, tags, summary]] of Object.entries(DIRECTIVES)) {
@@ -55,7 +62,7 @@ export async function build() {
   const routineSection = (name) => {
     let n = ROUTINE_HOMES[name] ?? name;
     for (;;) {
-      const hit = outline.find((o) => o.title.split(' and ').includes(n));
+      const hit = checked(outline.find((o) => o.title.split(' and ').includes(n)));
       if (hit) return hit.page;
       const shorter = n.replace(/_(?:async|finalize|device|all|any|string)$/, '');
       if (shorter === n) return null;
@@ -99,8 +106,16 @@ export async function build() {
         decl: 'declarative',
         dep: 'deprecated',
       },
-      fields: { k: 'kind', c: 'parts of a combined construct', t: 'tags', s: 'our own one-line summary', pg: 'page of the specification PDF that documents it' },
-      keys: 'directive names lower case with blanks (enter data); clauses and routines lower case; environment variables upper case',
+      fields: {
+        k: 'kind',
+        c: 'parts of a combined construct',
+        t: 'tags',
+        s: 'our own one-line summary',
+        pg: 'page of the specification PDF that prints the heading of the section that documents it',
+      },
+      keys:
+        'directive names lower case with blanks between words (enter data; host_data keeps its underscore); clauses ' +
+        'and routines lower case; environment variables upper case',
     },
     links: {
       spec: { url: src.urls.pdf, page: '#page={pg}', pages },

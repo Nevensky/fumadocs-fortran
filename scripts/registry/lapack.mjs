@@ -332,6 +332,9 @@ export async function build() {
     for (const r of members) {
       const e = {};
       if (!standalone) e.g = g;
+      // the library comes from the folder: BLAS/SRC is the BLAS, with the lsame, xerbla and xerbla_array every BLAS
+      // ships (LAPACK keeps copies of them in SRC and INSTALL, read after BLAS/SRC)
+      if (r.folder === 'blas') e.l = 'blas';
       for (const [key, get] of FIELDS) {
         const v = get(r);
         const d = standalone ? undefined : isComplex(r) && `${key}c` in defaults ? defaults[`${key}c`] : defaults[key];
@@ -354,6 +357,10 @@ export async function build() {
     version: src.version,
     sources: ['lapack', 'netlib-lapack'],
     legend: {
+      libraries: {
+        blas: 'the reference BLAS (BLAS/SRC), with the xerbla, xerbla_array and lsame every BLAS ships',
+        lapack: 'LAPACK (SRC, SRC/DEPRECATED and the INSTALL routines)',
+      },
       kinds: { s: 'subroutine (the default, not stored)', f: 'function' },
       intents: { i: 'in', o: 'out', b: 'inout' },
       types: {
@@ -381,6 +388,7 @@ export async function build() {
       fields: {
         p: 'precision letter for the T and R templates, when it is not the first letter of the name (icamax: c)',
         g: 'precision family (the \\ingroup; for deprecated routines, the name without its precision letter); its record in `groups` holds the defaults, and a key ending in c (ac, sc, …) is the default for the complex members (c, z)',
+        l: 'library (see libraries), when it is not lapack',
         k: 'kind',
         r: 'function result type',
         s: 'summary',
@@ -416,6 +424,7 @@ export async function build() {
   const bytes = await writeRegistry('lapack.json', text);
   const stats = {
     routines: routines.size,
+    blas: [...routines.values()].filter((r) => r.folder === 'blas').length,
     families: Object.keys(groups).length,
     linked,
     withoutGroup: [...routines.values()].filter((r) => !r.group).length,

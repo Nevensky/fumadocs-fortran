@@ -100,3 +100,22 @@ export const CALLBACKS = {
   MPI_DUP_FN: ['Deprecated predefined copy callback; use MPI_COMM_DUP_FN.', 'MPI_Keyval_create'],
   MPI_NULL_DELETE_FN: ['Deprecated predefined delete callback; use MPI_COMM_NULL_DELETE_FN.', 'MPI_Keyval_create'],
 };
+
+/**
+ * Our one-liners for the derived types of mpi_f08 that the arguments use: the handle types, each a derived type with
+ * one integer component MPI_VAL, and MPI_Status, which is no handle.
+ */
+export const TYPES = {
+  MPI_Comm: 'Handle of a communicator: a group of processes and the context their messages are sent in.',
+  MPI_Datatype: 'Handle of a datatype: the type and memory layout of the data an operation sends, receives or reads.',
+  MPI_Errhandler: 'Handle of an error handler: what MPI does on an error in a communicator, window, file or session.',
+  MPI_File: 'Handle of a file that MPI_File_open opened, for parallel input and output (MPI-IO).',
+  MPI_Group: 'Handle of a group: an ordered set of processes, without a context to communicate in.',
+  MPI_Info: 'Handle of an info object: a set of (key, value) hints passed to MPI.',
+  MPI_Message: 'Handle of a message that MPI_Mprobe or MPI_Improbe matched, to receive with MPI_Mrecv or MPI_Imrecv.',
+  MPI_Op: 'Handle of a reduction operation, such as MPI_SUM, or one that MPI_Op_create defines.',
+  MPI_Request: 'Handle of a nonblocking or persistent operation, to complete with MPI_Wait or MPI_Test.',
+  MPI_Session: 'Handle of an MPI session, which MPI_Session_init starts (MPI 4.0).',
+  MPI_Status: 'Status of a receive or a completed request: its source, tag and error code.',
+  MPI_Win: 'Handle of a window: memory that a process exposes to the one-sided operations of other processes.',
+};

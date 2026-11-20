@@ -3,6 +3,7 @@
 // package's own code imports it by path.
 //
 //   lookup('lapack', 'dgesv') → { lib, name, kind, args: [['n', 'in', 'integer'], …], family, summary, tags, links }
+//   libraryOf('MPI_Comm')     → { lib: 'mpi', library: 'mpi', name: 'MPI_Comm', section: 'types', entry, link }
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
@@ -13,6 +14,13 @@ export function load(id) {
   if (!files.has(id)) files.set(id, JSON.parse(readFileSync(new URL(`./${id}.json`, import.meta.url), 'utf8')));
   return files.get(id);
 }
+
+/** A value computed once per key, for the indexes below. */
+const memo = new Map();
+const once = (key, make) => {
+  if (!memo.has(key)) memo.set(key, make());
+  return memo.get(key);
+};
 
 // ------------------------------------------------------------------------------------------------ Doxygen pages
 
@@ -40,12 +48,21 @@ export function mklSlug(name, lib) {
   return /^[sdcz]/.test(name) ? name.slice(1) : name;
 }
 
+/** The members of each precision family of lapack.json or scalapack.json: family id → names. */
+const familyMembers = (id) =>
+  once(`members:${id}`, () => {
+    const out = new Map();
+    for (const [n, e] of Object.entries(load(id).entries)) if (e.g) out.set(e.g, [...(out.get(e.g) ?? []), n]);
+    return out;
+  });
+
 // ------------------------------------------------------------------------------------------------ LAPACK, ScaLAPACK
 
 function linalg(id, name) {
   const reg = load(id);
+  // own keys only: a project's procedure called constructor is no entry
+  if (!Object.hasOwn(reg.entries, name)) return null;
   const e = reg.entries[name];
-  if (!e) return null;
   const g = e.g ? reg.groups[e.g] : null;
   // precision letter: explicit, the letter at the family's ?, or the first letter
   const at = e.g?.indexOf('?') ?? -1;
@@ -65,7 +82,8 @@ function linalg(id, name) {
   };
   const args = (field('a') ?? []).map(([n, i, t, scope]) => (scope ? [n, INTENTS[i] ?? i, type(t), scope] : [n, INTENTS[i] ?? i, type(t)]));
   const kind = field('k') === 'f' ? 'function' : 'subroutine';
-  const family = g ? { id: e.g, name: g.n ?? e.g, title: g.title ?? null, members: Object.keys(reg.entries).filter((n) => reg.entries[n].g === e.g) } : null;
+  const members = g ? [...familyMembers(id).get(e.g)] : null;
+  const family = g ? { id: e.g, name: g.n ?? e.g, title: g.title ?? null, members } : null;
 
   const links = {};
   const nl = reg.links.netlib;
@@ -79,6 +97,7 @@ function linalg(id, name) {
   if (slug) links.mkl = `${reg.links.mkl.base}${slug}.html`;
   return {
     lib: id,
+    // blas or lapack in lapack.json; scalapack, tools, pblas, redist or blacs in scalapack.json
     library: e.l ?? id,
     name,
     kind,
@@ -94,9 +113,17 @@ function linalg(id, name) {
 
 // ------------------------------------------------------------------------------------------------ MPI
 
+/** The keys of a section of mpi.json by their lower-case spelling (the first of a spelling, as a search would find). */
+const mpiKeys = (section) =>
+  once(`mpi:${section}`, () => {
+    const out = new Map();
+    for (const k of Object.keys(load('mpi')[section] ?? {})) if (!out.has(k.toLowerCase())) out.set(k.toLowerCase(), k);
+    return out;
+  });
+
 function mpiEntry(name) {
   const reg = load('mpi');
-  const key = Object.keys(reg.entries).find((k) => k.toLowerCase() === name.toLowerCase());
+  const key = mpiKeys('entries').get(name.toLowerCase());
   if (!key) return null;
   const e = reg.entries[key];
   const kinds = { s: 'subroutine', f: 'function', cb: 'callback interface', pf: 'predefined callback' };
@@ -123,19 +150,54 @@ function mpiEntry(name) {
   };
 }
 
+/** A derived type of mpi_f08 (MPI_Comm, MPI_Status): what it holds, its `use mpi` form and its null handle. */
+function mpiType(name) {
+  const reg = load('mpi');
+  const key = mpiKeys('types').get(name.toLowerCase());
+  if (!key) return null;
+  const e = reg.types[key];
+  const links = {};
+  if (e.std?.[0]) links['standard-5.0'] = reg.links.standard['5.0'].replace('{std[0]}', e.std[0]);
+  if (e.std?.[1]) links['standard-4.1'] = reg.links.standard['4.1'].replace('{std[1]}', e.std[1]);
+  return {
+    lib: 'mpi',
+    section: 'types',
+    name: key,
+    kind: 'type',
+    module: 'mpi_f08',
+    components: (e.c ?? []).map((c) => [...c]),
+    legacy: e.old ?? null,
+    nullHandle: e.n ?? null,
+    summary: e.s ?? null,
+    tags: e.t ?? [],
+    links,
+  };
+}
+
 // ------------------------------------------------------------------------------------------------ OpenMP, OpenACC
 
-const SECTIONS = { openmp: ['directives', 'clauses', 'routines', 'env', 'types', 'constants'], openacc: ['directives', 'clauses', 'routines', 'env'] };
+const SECTIONS = {
+  mpi: ['entries', 'types'],
+  openmp: ['directives', 'clauses', 'routines', 'env', 'types', 'constants'],
+  openacc: ['directives', 'clauses', 'routines', 'env'],
+};
 
-function directiveKey(section, name) {
-  return section === 'directives' ? name.toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ').trim() : section === 'env' ? name.toUpperCase() : name.toLowerCase();
+/**
+ * The keys a name may have in a section: directives are keyed lower case with blanks between words (target data),
+ * but a few keep an underscore of their own (OpenACC's host_data), so both spellings are tried.
+ */
+function keysOf(section, name) {
+  if (section === 'env') return [name.toUpperCase()];
+  const key = name.toLowerCase().replace(/\s+/g, ' ').trim();
+  return section === 'directives' ? [key.replace(/_/g, ' '), key, key.replace(/ /g, '_')] : [key];
 }
+const keyIn = (map, section, name) => (map ? keysOf(section, name).find((k) => Object.hasOwn(map, k)) : undefined);
 
 function openmpEntry(section, name, version) {
   const reg = load('openmp');
-  const key = directiveKey(section, name);
-  const e = reg[section]?.[key];
-  if (!e) return null;
+  const key = keyIn(reg[section], section, name);
+  if (key === undefined) return null;
+  const e = reg[section][key];
   const links = {};
   if (e.l) {
     reg.versions.forEach((v, i) => {
@@ -146,15 +208,18 @@ function openmpEntry(section, name, version) {
     links.spec = links[`spec-${want}`] ?? reg.versions.map((v) => links[`spec-${v}`]).find(Boolean);
   }
   if (section === 'routines' || section === 'env') links.libgomp = `${reg.links.libgomp.base}${texinfo(key)}.html`;
+  // the types section holds omp_lib's kinds: integer kind parameters, not derived types
+  const kinds = section === 'types';
+  const kind = e.k === 'f' ? 'function' : section === 'routines' ? 'subroutine' : kinds ? 'kind' : null;
   return {
     lib: 'openmp',
     section,
     name: key,
-    kind: e.k === 'f' ? 'function' : section === 'routines' ? 'subroutine' : e.k ?? section.replace(/s$/, ''),
+    kind: kind ?? e.k ?? section.replace(/s$/, ''),
     leaves: e.c ?? null,
     spelling6: e.u ?? null,
     result: e.r ?? null,
-    type: e.ty ?? null,
+    type: kinds ? 'integer' : e.ty ?? null,
     args: e.a ? e.a.map(([n, i, t]) => [n, INTENTS[i] ?? i, t]) : null,
     summary: e.s ?? null,
     tags: e.t ?? [],
@@ -165,9 +230,9 @@ function openmpEntry(section, name, version) {
 
 function openaccEntry(section, name) {
   const reg = load('openacc');
-  const key = directiveKey(section, name);
-  const e = reg[section]?.[key];
-  if (!e) return null;
+  const key = keyIn(reg[section], section, name);
+  if (key === undefined) return null;
+  const e = reg[section][key];
   const links = {};
   if (e.pg) links.spec = `${reg.links.spec.url}#page=${e.pg}`;
   if (section === 'routines' || section === 'env') links.libgomp = `${reg.links.libgomp.base}${texinfo(key)}.html`;
@@ -179,8 +244,8 @@ function openaccEntry(section, name) {
 function intrinsicEntry(name) {
   const reg = load('intrinsics');
   const key = name.toLowerCase();
+  if (!Object.hasOwn(reg.entries, key)) return null;
   const e = reg.entries[key];
-  if (!e) return null;
   const links = {};
   if (e.fl) links['fortran-lang'] = `${reg.links['fortran-lang'].base}${e.fl}/#${e.fa ?? key.replace(/_/g, '-')}`;
   if (e.gf !== 0) links.gfortran = `${reg.links.gfortran.base}${e.gp ?? texinfo(key.toUpperCase())}.html`;
@@ -200,21 +265,32 @@ function intrinsicEntry(name) {
 // ------------------------------------------------------------------------------------------------ lookup
 
 /**
- * The expanded entry `name` of registry file `id`, or null. OpenMP and OpenACC take a section (directives, clauses,
- * routines, env, types, constants): lookup('openmp', 'parallel do', { section: 'directives', version: '5.2' }).
- * Names are matched without regard to case.
+ * The expanded entry `name` of registry file `id`, or null. MPI, OpenMP and OpenACC take a section; without one, the
+ * first section that has the name wins, in the order of SECTIONS:
+ * - mpi: entries (procedures and callbacks), types (the derived types of mpi_f08: lookup('mpi', 'MPI_Comm'));
+ * - openmp: directives, clauses, routines, env, types (the kinds of omp_lib), constants;
+ * - openacc: directives, clauses, routines, env.
+ * lookup('openmp', 'parallel do', { section: 'directives', version: '5.2' }). Names are matched without regard to case.
  */
 export function lookup(id, name, { section, version } = {}) {
+  const one = (s) => {
+    switch (id) {
+      case 'mpi':
+        return s === 'types' ? mpiType(name) : s === 'entries' ? mpiEntry(name) : null;
+      case 'openmp':
+        return openmpEntry(s, name, version);
+      default:
+        return openaccEntry(s, name);
+    }
+  };
   switch (id) {
     case 'lapack':
     case 'scalapack':
       return linalg(id, name.toLowerCase());
     case 'mpi':
-      return mpiEntry(name);
     case 'openmp':
-      return section ? openmpEntry(section, name, version) : SECTIONS.openmp.map((s) => openmpEntry(s, name, version)).find(Boolean) ?? null;
     case 'openacc':
-      return section ? openaccEntry(section, name) : SECTIONS.openacc.map((s) => openaccEntry(s, name)).find(Boolean) ?? null;
+      return section ? one(section) : SECTIONS[id].map(one).find(Boolean) ?? null;
     case 'intrinsics':
       return intrinsicEntry(name);
     default:
@@ -222,9 +298,84 @@ export function lookup(id, name, { section, version } = {}) {
   }
 }
 
-/** Every name of a registry file (of one section for OpenMP and OpenACC). */
+/**
+ * Every name of a registry file, or of one section of it: MPI's entries by default (its types with 'types'), OpenMP's
+ * and OpenACC's directives.
+ */
 export function names(id, section) {
   const reg = load(id);
-  if (id === 'openmp' || id === 'openacc') return Object.keys(reg[section ?? 'directives']);
+  if (id === 'mpi') return Object.keys(reg[section ?? 'entries'] ?? {});
+  if (id === 'openmp' || id === 'openacc') return Object.keys(reg[section ?? 'directives'] ?? {});
+  if (!reg.entries) throw new Error(`registry ${id} has no entries to name: read it with load('${id}')`);
   return Object.keys(reg.entries);
+}
+
+// ------------------------------------------------------------------------------------------------ libraryOf
+
+/**
+ * The sections of names a program writes (procedures, types, kinds, constants), in the order they are tried; the
+ * directives, clauses and environment variables of OpenMP and OpenACC are left out. No name is in two of them.
+ */
+export const LIBRARY_SECTIONS = [
+  ['lapack', 'entries'],
+  ['scalapack', 'entries'],
+  ['mpi', 'entries'],
+  ['mpi', 'types'],
+  ['openmp', 'routines'],
+  ['openmp', 'types'],
+  ['openmp', 'constants'],
+  ['openacc', 'routines'],
+  ['intrinsics', 'entries'],
+];
+
+/** Lower-case name → [id, section, key] over LIBRARY_SECTIONS; the first section that has a name keeps it. */
+const libraryIndex = () =>
+  once('library', () => {
+    const out = new Map();
+    for (const [id, section] of LIBRARY_SECTIONS) {
+      for (const key of Object.keys(load(id)[section] ?? {})) {
+        const k = key.toLowerCase();
+        if (!out.has(k)) out.set(k, [id, section, key]);
+      }
+    }
+    return out;
+  });
+
+/** The page a hover card on an entry links to: see libraryOf. */
+function linkOf(entry) {
+  const l = entry.links;
+  switch (entry.lib) {
+    case 'lapack':
+    case 'scalapack':
+      return l.netlib ?? l.netlibFile ?? null;
+    case 'mpi':
+      return l.openmpi ?? l['standard-5.0'] ?? l['standard-4.1'] ?? null;
+    case 'intrinsics':
+      return l['fortran-lang'] ?? l.gfortran ?? null;
+    default:
+      return l.spec ?? null;
+  }
+}
+
+/**
+ * The library a name a program writes belongs to, without regard to case, or null: a procedure of BLAS, LAPACK,
+ * ScaLAPACK (with its tools, PBLAS, REDIST and BLACS), MPI, OpenMP or OpenACC, an intrinsic procedure, a derived type
+ * of mpi_f08, or a kind or named constant of omp_lib. It looks the name up in an index built on the first call.
+ *
+ *   libraryOf('DGEMM') → { lib: 'lapack', library: 'blas', name: 'dgemm', section: 'entries', entry, link }
+ *
+ * - lib: the registry file (lapack, scalapack, mpi, openmp, openacc, intrinsics);
+ * - library: blas or lapack for lapack.json; scalapack, tools, pblas, redist or blacs for scalapack.json; else lib;
+ * - name: the registry's spelling (MPI_Allreduce); section: the section of the file that holds it;
+ * - entry: what lookup(lib, name, { section }) returns, a fresh object;
+ * - link: the page a card links to, or null: Netlib (BLAS, LAPACK, ScaLAPACK), Open MPI's manual page (an MPI
+ *   procedure), the MPI 5.0 standard (an MPI type), the OpenMP or OpenACC specification, fortran-lang.org.
+ * A project's own procedure or type of the same name wins: ask only for names the project does not define.
+ */
+export function libraryOf(name) {
+  const hit = libraryIndex().get(String(name ?? '').toLowerCase());
+  if (!hit) return null;
+  const [id, section, key] = hit;
+  const entry = lookup(id, key, { section });
+  return { lib: id, library: entry.library ?? id, name: entry.name, section, entry, link: linkOf(entry) };
 }

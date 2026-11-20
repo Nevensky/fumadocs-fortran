@@ -12,6 +12,8 @@ import {
   DEPRECATED,
   DIRECTIVE_HOMES,
   DIRECTIVE_TAGS,
+  KIND_HOMES,
+  KINDS,
   LEAF_TAGS,
   SUMMARIES,
 } from './data/openmp.mjs';
@@ -237,11 +239,24 @@ export async function build() {
     env[n] = e;
   }
 
-  // Fortran kinds of omp_lib_kinds that the specification documents as OpenMP types
+  // the kinds of omp_lib that the specification documents as OpenMP types, and those of data/openmp.mjs (the ones
+  // LLVM's interfaces use without a section of their own); each is an integer kind parameter
   const types = {};
-  for (const n of names('types')) {
-    if (!lib.kinds.has(n)) continue;
-    types[n] = { l: linkOf('types', n) };
+  for (const n of [...new Set([...names('types'), ...Object.keys(KINDS)])].sort()) {
+    if (!lib.kinds.has(n)) {
+      if (KINDS[n]) problems.push(`kind ${n}: not in omp_lib`);
+      continue;
+    }
+    const e = {};
+    if (KINDS[n]) e.s = KINDS[n];
+    else problems.push(`kind ${n}: no one-liner in data/openmp.mjs`);
+    const l = linkOf('types', n) ?? (KIND_HOMES[n] ? linkOf('types', KIND_HOMES[n]) : null);
+    if (l) e.l = l;
+    if (DEPRECATED[n]) {
+      e.t = ['dep'];
+      e.dep = DEPRECATED[n];
+    }
+    types[n] = e;
   }
 
   // named constants of omp_lib, linked through their kind's type section; the allocator-trait keys and values
@@ -261,6 +276,10 @@ export async function build() {
   for (const [kind, map] of Object.entries(SUMMARIES)) {
     const target = { directives, clauses, routines, env }[kind];
     for (const n of Object.keys(map)) if (!target[n]) problems.push(`summary for ${kind} ${n}: no such entry`);
+  }
+  const marked = [directives, routines, env, types, constants];
+  for (const n of Object.keys(DEPRECATED)) {
+    if (!marked.some((m) => m[n])) problems.push(`deprecated ${n}: no such entry`);
   }
 
   const out = {
@@ -289,6 +308,10 @@ export async function build() {
         l: 'link: p holds the page of each version in `versions` order (null: not in that version), f the fragment, fv the fragments that differ by version',
       },
       keys: 'directive names are lower case with blanks (target data, declare simd); clauses, routines, kinds and constants lower case; environment variables upper case',
+      types:
+        'the kinds of omp_lib: integer kind parameters (integer, parameter), so integer(omp_lock_kind) declares a ' +
+        'lock; not derived types. The specification calls them OpenMP types; omp_integer_kind and ' +
+        'omp_logical_kind are LLVM’s, and omp_lock_hint_kind links to the section of omp_sync_hint_kind',
       constants: 'the named constants of omp_lib, with their type (ty) and the link of their kind; the allocator-trait keys and values (omp_atk_*, omp_atv_*) and interop runtime IDs (omp_ifr_*) are left out',
     },
     links: {

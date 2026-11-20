@@ -28,6 +28,9 @@ import {
 
 const SUMMARY_MAX = 110;
 
+/** ScaLAPACK's error handler, as XERBLA is LAPACK's: code written in ScaLAPACK's style calls it too. */
+const PXERBLA = 'PBLAS/SRC/PTZBLAS/pxerbla.f';
+
 /** Prose sections of a comment block (lines without their comment marks): heading → lines. */
 export function proseSections(lines) {
   const sections = new Map();
@@ -149,15 +152,17 @@ export async function build() {
   const sources = await loadSources();
   const src = source(sources, 'scalapack');
   const tar = readTarGz(await fetchPinned('scalapack', src.urls.tarball), (p) =>
-    /^(SRC|TOOLS|PBLAS\/SRC|REDIST\/SRC|BLACS\/SRC)\/[^/]+\.(f|c)$/.test(p) || p === 'LICENSE',
+    /^(SRC|TOOLS|PBLAS\/SRC|REDIST\/SRC|BLACS\/SRC)\/[^/]+\.(f|c)$/.test(p) || p === PXERBLA || p === 'LICENSE',
   );
   const routines = new Map();
   const dropped = [];
 
-  // Fortran: SRC, TOOLS and PBLAS's own pilaenv.f; the prose sits inside each unit, after its header.
+  // Fortran: SRC, TOOLS, PBLAS's own pilaenv.f and its error handler PXERBLA (the rest of PBLAS/SRC/PTZBLAS is
+  // internal); the prose sits inside each unit, after its header.
   for (const [prefix, folder] of [['SRC/', 'scalapack'], ['TOOLS/', 'tools'], ['PBLAS/SRC/', 'pblas']]) {
     for (const path of [...tar.keys()].filter((p) => p.startsWith(prefix) && p.endsWith('.f')).sort()) {
-      const file = path.slice(prefix.length);
+      // Doxygen names a file's page by its base name (pxerbla.f, not PTZBLAS/pxerbla.f)
+      const file = path.split('/').pop();
       const text = tar.get(path).toString('latin1');
       const lines = text.split(/\r?\n/);
       for (const u of units(text)) {

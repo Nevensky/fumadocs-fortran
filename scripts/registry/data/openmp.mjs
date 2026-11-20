@@ -135,7 +135,7 @@ export const CLAUSE_GROUPS = {
 /** Clauses that some versions list in a group but that are not in every version (no section of their own). */
 export const CLAUSE_SINCE = { self_maps: '6.0', no_openmp_constructs: '6.0' };
 
-/** Deprecated directives, routines and environment variables, with the version that deprecated them. */
+/** Deprecated directives, routines, environment variables, kinds and constants, with the version deprecating them. */
 export const DEPRECATED = {
   master: '5.1',
   'parallel master': '5.1',
@@ -147,6 +147,13 @@ export const DEPRECATED = {
   omp_get_nested: '5.0',
   OMP_NESTED: '5.0',
   omp_proc_bind_master: '5.1',
+  // OpenMP 5.0 renamed the lock hints of 4.5 to synchronisation hints
+  omp_lock_hint_kind: '5.0',
+  omp_lock_hint_none: '5.0',
+  omp_lock_hint_uncontended: '5.0',
+  omp_lock_hint_contended: '5.0',
+  omp_lock_hint_nonspeculative: '5.0',
+  omp_lock_hint_speculative: '5.0',
 };
 
 /** Directives the contents pages do not list under their own name: name → the section that documents them. */
@@ -372,3 +379,37 @@ export const SUMMARIES = {
     OMP_TOOL_LIBRARIES: 'The tool libraries to load.',
   },
 };
+
+/**
+ * Our one-liners for the kinds of omp_lib. Each is an integer kind parameter (an integer named constant, so
+ * integer(omp_lock_kind) declares a lock), not a derived type; the specification calls them OpenMP types. The last
+ * three have no section there: LLVM's omp_lib uses omp_integer_kind and omp_logical_kind in its interfaces, and keeps
+ * omp_lock_hint_kind, the name OpenMP 4.5 gave omp_sync_hint_kind (deprecated in 5.0). A one-liner that names only
+ * some constants of its kind ends the list with … or says "such as".
+ */
+export const KINDS = {
+  omp_allocator_handle_kind: 'Integer kind of a memory allocator handle, such as omp_default_mem_alloc.',
+  omp_alloctrait_key_kind: 'Integer kind of an allocator trait key (omp_atk_alignment, …).',
+  omp_alloctrait_val_kind: 'Integer kind of an allocator trait value (omp_atv_default, …, or a number).',
+  omp_control_tool_kind: 'Integer kind of the command omp_control_tool passes to a tool (omp_control_tool_start, …).',
+  omp_control_tool_result_kind: 'Integer kind of what omp_control_tool returns (omp_control_tool_notool, …).',
+  omp_depend_kind: 'Integer kind of a dependence object, which the DEPOBJ construct initialises.',
+  omp_event_handle_kind: 'Integer kind of the event of a detached task, which omp_fulfill_event fulfils.',
+  omp_interop_fr_kind: 'Integer kind of the foreign runtime of an interoperability object (omp_ifr_cuda, …).',
+  omp_interop_kind: 'Integer kind of an interoperability object, which the INTEROP construct creates.',
+  omp_lock_kind: 'Integer kind of a simple lock variable, for omp_init_lock, omp_set_lock and the like.',
+  omp_memspace_handle_kind: 'Integer kind of a memory space handle, such as omp_default_mem_space.',
+  omp_nest_lock_kind: 'Integer kind of a nestable lock variable, for omp_init_nest_lock and the like.',
+  omp_pause_resource_kind:
+    'Integer kind of a pause request for omp_pause_resource (omp_pause_soft, omp_pause_hard, …).',
+  omp_proc_bind_kind: 'Integer kind of a thread-affinity policy (omp_proc_bind_close, …).',
+  omp_sched_kind: 'Integer kind of a loop schedule (omp_sched_static, …), for omp_set_schedule.',
+  omp_sync_hint_kind: 'Integer kind of a synchronisation hint (omp_sync_hint_contended, …).',
+  omp_integer_kind: 'Integer kind of the integer arguments and results of LLVM’s omp_lib routines.',
+  omp_logical_kind: 'Logical kind of the logical arguments and results of LLVM’s omp_lib routines.',
+  omp_lock_hint_kind:
+    'Integer kind of a lock hint: the older name of omp_sync_hint_kind, which replaced it in OpenMP 5.0.',
+};
+
+/** Kinds without a section of their own: name → the kind whose section documents them. */
+export const KIND_HOMES = { omp_lock_hint_kind: 'omp_sync_hint_kind' };

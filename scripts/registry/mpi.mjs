@@ -4,9 +4,10 @@
 //   node scripts/registry/mpi.mjs [--refresh]
 //
 // Sources: Open MPI's API catalogue (names, categories, mpi_f08 arguments) and the man pages of Open MPI 5.0.11
-// (summaries), Open MPI's Fortran callback interfaces, the MPI ABI stubs (to check the catalogue against MPI 5.0),
-// and the function indexes of the MPI 5.0 and 4.1 standards (which page defines each procedure; no text).
-import { CALLBACKS, COLLECTIVE, COLLECTIVE_IO, DEPRECATED } from './data/mpi.mjs';
+// (summaries), Open MPI's Fortran callback interfaces and handle types, the MPI ABI stubs (to check the catalogue and
+// the handle types against MPI 5.0), and the contents and function indexes of the MPI 5.0 and 4.1 standards (which
+// page defines each procedure or describes each type; no text).
+import { CALLBACKS, COLLECTIVE, COLLECTIVE_IO, DEPRECATED, TYPES } from './data/mpi.mjs';
 import { statements } from './fortran.mjs';
 import {
   clip,
@@ -14,6 +15,7 @@ import {
   formatRegistry,
   isMain,
   loadSources,
+  mode,
   pool,
   readTarGz,
   saveLock,
@@ -24,6 +26,12 @@ import {
 
 const SUMMARY_MAX = 120;
 const MPICH_VERSION = 'v5.0.2';
+// Open MPI's definitions of the mpi_f08 types, and its named constants of them (the null handles among them)
+const F08_TYPES = 'ompi/mpi/fortran/use-mpi/mpi-types.F90.in';
+const F08_HANDLES = 'ompi/mpi/fortran/use-mpi-f08/mod/mpi-f08-types.F90';
+// the sections of the standard that describe the handles, and the status
+const HANDLES_SECTION = 'Opaque Objects';
+const STATUS_SECTION = 'Return Status';
 const DIRECTION = { in: 'i', out: 'o', inout: 'b' };
 
 /** Splits at top-level commas. */
@@ -187,6 +195,33 @@ async function definitionNodes(src, version, names, hints = new Map(), reference
   return { nodes: out, paths, names: new Set(idx.keys()), pages: pages.length + more.length + rest.length };
 }
 
+/**
+ * The derived types of Open MPI's module mpi_types (ompi/mpi/fortran/use-mpi/mpi-types.F90.in), which mpi_f08 uses:
+ * name → public components [[name, type]]. A private component (MPI_Status's padding) is no part of the interface.
+ */
+export function derivedTypes(text) {
+  const out = new Map();
+  let cur = null;
+  for (const st of statements(text, { free: true })) {
+    const h = /^type\s*,\s*bind\s*\(\s*c\s*\)\s*::\s*(\w+)$/i.exec(st.text);
+    if (h) {
+      cur = [];
+      out.set(h[1], cur);
+    } else if (/^end\s*type\b/i.test(st.text)) cur = null;
+    else if (cur) {
+      const d = /^(integer|logical|real|double precision)\s*(\w+)?\s*::\s*(.*)$/i.exec(st.text);
+      if (d && !d[2]) for (const n of splitTop(d[3])) cur.push([n.replace(/\(.*$/, ''), d[1].toLowerCase()]);
+    }
+  }
+  return out;
+}
+
+/** The page of the section of a standard's contents page with this title, when exactly one has it. */
+function sectionNode(contents, title) {
+  const hits = [...contentsPaths(contents).byPath].filter(([path]) => path.split(' > ').pop() === title);
+  return hits.length === 1 ? hits[0][1] : null;
+}
+
 /** Units of Open MPI's Fortran callback sources: name → { args: [[name, '', type]] }. */
 function callbackUnits(text) {
   const out = new Map();
@@ -225,6 +260,8 @@ export async function build() {
     /^docs\/man-openmpi\/man3\/\w+\.3\.rst$/.test(p) ||
     /^ompi\/mpi\/fortran\/use-mpi-f08\/mod\/mpi-f08-(interfaces-)?callbacks\.F90$/.test(p) ||
     p === 'ompi/mpi/fortran/base/attr-fn-int-callback-interfaces.h' ||
+    p === F08_TYPES ||
+    p === F08_HANDLES ||
     p === 'LICENSE',
   );
   const pages = new Map();
@@ -345,6 +382,74 @@ export async function build() {
     };
   }
 
+  // The derived types of mpi_f08 that the arguments use: the handle types and MPI_Status. Their public components come
+  // from Open MPI, their null handles from the ABI stubs' mpi.h (checked against Open MPI's), the type `use mpi` and
+  // mpif.h declare them with from the catalogue (the same argument in that binding), and their pages from the contents
+  // of each standard (checked against the pages).
+  const typeOf = (t) => /^type\((MPI_\w+)\)/.exec(t)?.[1];
+  const used = [...new Set(Object.values(entries).flatMap((e) => e.a.map((a) => typeOf(a[2]))))].filter(Boolean).sort();
+  const defs = derivedTypes(tar.get(F08_TYPES).toString('utf8'));
+  const handleTypedef = /typedef\s+struct\s+MPI_ABI_\w+\s*\*\s*(MPI_\w+)\s*;/g;
+  const abiHandles = new Set([...mpiH.matchAll(handleTypedef)].map((m) => m[1]));
+  const abiNull = new Map([...mpiH.matchAll(/#define\s+(MPI_\w+_NULL)\s+\(\((MPI_\w+)\)/g)].map((m) => [m[2], m[1]]));
+  const ompiNull = new Map();
+  for (const st of statements(tar.get(F08_HANDLES).toString('utf8'), { free: true })) {
+    const m = /^type\s*\(\s*(MPI_\w+)\s*\)\s*,\s*parameter\s*::\s*(MPI_\w+_NULL)\b/i.exec(st.text);
+    if (!m) continue;
+    if (ompiNull.has(m[1])) problems.push(`${m[1]}: two null handles in Open MPI, ${ompiNull.get(m[1])} and ${m[2]}`);
+    ompiNull.set(m[1], m[2]);
+  }
+  const legacy = new Map();
+  const declared = (b) => new Map(b.signature.split('\n').slice(1).flatMap((line) => [...parseArgsLine(line)]));
+  for (const r of fortran) {
+    const f08 = r.bindings.find((b) => b.language === 'fortran_mpi_f08' && !b.large_count);
+    const old = r.bindings.find((b) => b.language === 'fortran_use_mpi');
+    if (!f08 || !old) continue;
+    const oldTypes = declared(old);
+    for (const [n, t] of declared(f08)) {
+      const type = /^type\((MPI_\w+)\)$/.exec(t.type)?.[1];
+      const o = oldTypes.get(n);
+      if (!type || !o) continue;
+      // integer, dimension(MPI_STATUS_SIZE): integer(MPI_STATUS_SIZE) would read as a kind
+      const form = o.dims ? `${o.base}, dimension${o.dims.replace(/\bmpi_\w+/gi, (x) => x.toUpperCase())}` : o.base;
+      legacy.set(type, [...(legacy.get(type) ?? []), form]);
+    }
+  }
+  const sections = {};
+  for (const v of ['5.0', '4.1']) {
+    const contents = (await fetchPinned('mpi-standard', std.urls[`contents-${v}`])).toString('latin1');
+    sections[v] = {};
+    for (const [title, mark] of [[HANDLES_SECTION, 'MPI_VAL'], [STATUS_SECTION, 'MPI_Status']]) {
+      const n = sectionNode(contents, title);
+      const page = n && (await fetchPinned('mpi-standard', std.urls[`node-${v}`].replace('{n}', n))).toString('latin1');
+      if (!page || !page.includes(mark)) problems.push(`MPI ${v}: the section "${title}" (page ${n}) lacks ${mark}`);
+      sections[v][title] = n;
+    }
+  }
+  const types = {};
+  for (const name of used) {
+    const e = {};
+    if (TYPES[name]) e.s = TYPES[name];
+    else problems.push(`type ${name}: no one-liner in data/mpi.mjs`);
+    if (defs.get(name)?.length) e.c = defs.get(name);
+    else problems.push(`type ${name}: not defined in Open MPI's ${F08_TYPES}`);
+    const old = mode(legacy.get(name) ?? []);
+    if (old) e.old = old;
+    else problems.push(`type ${name}: no \`use mpi\` binding declares it`);
+    if (name !== 'MPI_Status') {
+      const [abi, ompi] = [abiNull.get(name), ompiNull.get(name)];
+      if (!abiHandles.has(name)) problems.push(`type ${name}: not a handle type of the MPI 5.0 ABI`);
+      if (abi && abi === ompi) e.n = abi;
+      else problems.push(`type ${name}: null handle ${abi} in mpi.h, ${ompi} in Open MPI`);
+    }
+    const section = name === 'MPI_Status' ? STATUS_SECTION : HANDLES_SECTION;
+    e.std = [sections['5.0'][section], sections['4.1'][section]];
+    types[name] = e;
+  }
+  for (const name of Object.keys(TYPES)) {
+    if (!types[name]) problems.push(`type ${name}: in data/mpi.mjs, but no argument uses it`);
+  }
+
   const out = {
     format: 1,
     id: 'mpi',
@@ -366,6 +471,10 @@ export async function build() {
         lc: 'mpi_f08 also has a large-count form, with integer(MPI_COUNT_KIND) counts',
         dep: 'deprecated',
       },
+      sections: {
+        entries: 'procedures, callback interfaces and predefined callbacks',
+        types: 'the derived types of mpi_f08 that the arguments use: the handle types and MPI_Status',
+      },
       fields: {
         k: 'kind, when it is not s',
         r: 'function result type',
@@ -379,6 +488,13 @@ export async function build() {
         since: 'the MPI version that added it, when that is 5.0',
         see: 'the procedure that takes this callback',
         abi: '0: not in the MPI 5.0 ABI',
+      },
+      typeFields: {
+        s: 'our own one-line summary',
+        c: 'public components of the derived type: [name, type] (a handle has one, MPI_VAL, the integer handle of mpi)',
+        old: 'the type `use mpi` and mpif.h declare it with',
+        n: 'the null handle',
+        std: 'pages of the section that describes it in the MPI 5.0 and 4.1 standards (Opaque Objects; Return Status)',
       },
     },
     modules: {
@@ -396,13 +512,15 @@ export async function build() {
       },
     },
     entries: Object.fromEntries(Object.keys(entries).sort((a, b) => a.localeCompare(b)).map((k) => [k, entries[k]])),
+    types,
   };
-  const text = formatRegistry(out, ['entries']);
+  const text = formatRegistry(out, ['entries', 'types']);
   const bytes = await writeRegistry('mpi.json', text);
   const all = Object.values(entries);
   const stats = {
-    entries: all.length,
+    entries: all.length + Object.keys(types).length,
     procedures: fortran.length,
+    types: Object.keys(types).length,
     callbacks: all.filter((e) => e.k === 'cb' || e.k === 'pf').length,
     withSummary: all.filter((e) => e.s).length,
     fromMain: mainSummaries.size,
@@ -424,7 +542,7 @@ export async function build() {
   };
 }
 
-/** One declaration line of a binding → name → { type, attrs }. */
+/** One declaration line of a binding → name → { type, attrs, base, dims }: type is base and dims together. */
 function parseArgsLine(line) {
   const out = new Map();
   const l = line.trim();
@@ -447,8 +565,9 @@ function parseArgsLine(line) {
     const em = /^(\w+)\s*(\(.*\))?$/.exec(ent);
     if (!em) continue;
     const dims = em[2]?.replace(/\s+/g, '') ?? (dimAttr ? dimAttr.slice('dimension'.length) : '');
-    const type = /^external$/i.test(spec) ? 'external' : fortranType(spec) + dims.toLowerCase();
-    out.set(em[1].toLowerCase(), { type, attrs: a });
+    const base = /^external$/i.test(spec) ? 'external' : fortranType(spec);
+    const type = base === 'external' ? base : base + dims.toLowerCase();
+    out.set(em[1].toLowerCase(), { type, attrs: a, base, dims });
   }
   return out;
 }

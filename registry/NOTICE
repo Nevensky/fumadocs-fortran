@@ -115,7 +115,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-Open MPI: man-page summaries and the API catalogue (procedures, categories, mpi_f08 arguments)
+Open MPI: man-page summaries, the API catalogue (procedures, categories, mpi_f08 arguments) and the mpi_f08 types (components, null handles)
 ==============================================================================
 
 Most files in this release are marked with the copyrights of the
@@ -266,7 +266,7 @@ product, or process disclosed, or represents that its use would not infringe
 privately owned rights.
 
 ==============================================================================
-MPI ABI stubs: procedure and callback names
+MPI ABI stubs: procedure, callback, handle-type and null-handle names
 ==============================================================================
 
 # MIT License

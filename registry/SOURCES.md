@@ -18,11 +18,11 @@ The registry is used at build time only: pages embed just the entries they refer
 
 | File | Entries | Bytes | Contents |
 |---|---:|---:|---|
-| `lapack.json` | 2,265 | 533,185 | BLAS and LAPACK 3.12.1: routines and precision families |
-| `scalapack.json` | 1,009 | 250,623 | ScaLAPACK 2.2.2 with TOOLS, PBLAS, REDIST and BLACS |
-| `mpi.json` | 463 | 148,129 | MPI 5.0 procedures callable from Fortran (4.1 alias), callbacks |
-| `openmp.json` | 466 | 76,751 | OpenMP 6.1, 6.0 and 5.2: directives, clauses, routines, environment variables, kinds, constants |
-| `openacc.json` | 147 | 10,530 | OpenACC 3.4: directives, clauses, routines, environment variables |
+| `lapack.json` | 2,265 | 535,170 | BLAS and LAPACK 3.12.1: routines and precision families |
+| `scalapack.json` | 1,010 | 250,822 | ScaLAPACK 2.2.2 with TOOLS, PBLAS, REDIST and BLACS |
+| `mpi.json` | 475 | 150,976 | MPI 5.0 procedures callable from Fortran (4.1 alias), callbacks, the derived types of mpi_f08 |
+| `openmp.json` | 469 | 79,258 | OpenMP 6.1, 6.0 and 5.2: directives, clauses, routines, environment variables, kinds, constants |
+| `openacc.json` | 147 | 10,615 | OpenACC 3.4: directives, clauses, routines, environment variables |
 | `intrinsics.json` | 218 | 34,580 | Fortran intrinsic procedures |
 | `vendors.json` | 533 | 13,473 | oneMKL (lapack95, blas95), OpenBLAS and cuBLAS |
 
@@ -37,7 +37,7 @@ rules of its link providers. `read.mjs` expands entries and builds their links.
 - **Licence:** BSD-3-Clause
 - **Homepage:** <https://github.com/Reference-LAPACK/lapack>
 - **tarball:** <https://github.com/Reference-LAPACK/lapack/archive/refs/tags/v3.12.1.tar.gz> (sha256 `2ca6407a001a474d…`)
-- **Used for:** Routine names, arguments and result types from the code; intents and types from `\param`; summaries from `\brief` (or the first sentence of Purpose when the brief is only the name); precision families from `\ingroup`; family titles from DOCS/groups-usr.dox; hint tags from the argument documentation.
+- **Used for:** Routine names, arguments and result types from the code; intents and types from `\param`; summaries from `\brief` (or the first sentence of Purpose when the brief is only the name); precision families from `\ingroup`; family titles from DOCS/groups-usr.dox; hint tags from the argument documentation; the library from the folder (BLAS/SRC, with its lsame, xerbla and xerbla_array, is the BLAS).
 - **Copied:** Summaries and family titles, which are BSD-licensed.
 
 ### Netlib LAPACK documentation, Doxygen search index
@@ -56,7 +56,7 @@ rules of its link providers. `read.mjs` expands entries and builds their links.
 - **Licence:** BSD-3-Clause
 - **Homepage:** <https://github.com/Reference-ScaLAPACK/scalapack>
 - **tarball:** <https://github.com/Reference-ScaLAPACK/scalapack/archive/refs/tags/v2.2.2.tar.gz> (sha256 `a2f0c9180a210bf7…`)
-- **Used for:** Routine names and arguments from the code; scope (global or local), intent and type from the Arguments prose; summaries from the first sentence of Purpose; hint tags.
+- **Used for:** Routine names and arguments from the code (SRC, TOOLS, PBLAS, REDIST, BLACS, and the error handler PBLAS/SRC/PTZBLAS/pxerbla.f); scope (global or local), intent and type from the Arguments prose; summaries from the first sentence of Purpose; hint tags.
 - **Copied:** Summaries, which are BSD-licensed.
 
 ### Netlib ScaLAPACK documentation, Doxygen search index
@@ -75,8 +75,8 @@ rules of its link providers. `read.mjs` expands entries and builds their links.
 - **Licence:** BSD-3-Clause-Open-MPI
 - **Homepage:** <https://www.open-mpi.org/>
 - **tarball:** <https://github.com/open-mpi/ompi/archive/refs/tags/v5.0.11.tar.gz> (sha256 `fa94db0f46c8a4cd…`)
-- **Used for:** The one-line summaries of the man pages (docs/man-openmpi/man3/*.3.rst) and which routines have a page in the 5.0.x documentation.
-- **Copied:** Summaries, which are BSD-licensed.
+- **Used for:** The one-line summaries of the man pages (docs/man-openmpi/man3/*.3.rst) and which routines have a page in the 5.0.x documentation; the derived types of mpi_f08 with their public components (ompi/mpi/fortran/use-mpi/mpi-types.F90.in) and null handles (ompi/mpi/fortran/use-mpi-f08/mod/mpi-f08-types.F90).
+- **Copied:** Summaries, which are BSD-licensed; the names of the types, their components and null handles.
 
 ### Open MPI machine-readable API catalogue (openmpi-mpi-api.jsonl)
 
@@ -84,7 +84,7 @@ rules of its link providers. `read.mjs` expands entries and builds their links.
 - **Licence:** BSD-3-Clause-Open-MPI
 - **Homepage:** <https://docs.open-mpi.org/en/main/llms.txt>
 - **jsonl:** <https://docs.open-mpi.org/en/main/llms/openmpi-mpi-api.jsonl> (sha256 `b2082b0854274083…`)
-- **Used for:** The MPI procedures callable from Fortran, their category (collective, point-to-point, …), their `mpi_f08` arguments (name, intent, type, optional) and their kind (standard or deprecated).
+- **Used for:** The MPI procedures callable from Fortran, their category (collective, point-to-point, …), their `mpi_f08` arguments (name, intent, type, optional) and their kind (standard or deprecated); the type `use mpi` and mpif.h give each `mpi_f08` type (the same argument in those bindings).
 - **Copied:** Names, categories and argument lists; none of its parameter descriptions.
 
 ### Open MPI man pages, development branch
@@ -102,7 +102,7 @@ rules of its link providers. `read.mjs` expands entries and builds their links.
 - **Licence:** MIT
 - **Homepage:** <https://github.com/mpi-forum/mpi-abi-stubs>
 - **tarball:** <https://github.com/mpi-forum/mpi-abi-stubs/archive/421c088a6d3e23e8af0184dd8eeaeb6ffbd00c1d.tar.gz> (sha256 `de8794a82a22f3e1…`)
-- **Used for:** The MPI 5.0 procedure list (to check the catalogue is complete), the callback prototypes and the predefined callback functions of mpi.h.
+- **Used for:** The MPI 5.0 procedure list (to check the catalogue is complete), the callback prototypes and the predefined callback functions of mpi.h; its handle types and null handles, to check Open MPI's.
 - **Copied:** Names only.
 
 ### MPI Standard 5.0 and 4.1, HTML editions (unofficial)
@@ -116,7 +116,7 @@ rules of its link providers. `read.mjs` expands entries and builds their links.
 - **index-4.1:** <https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report/node606.htm> (sha256 `6258ddf4ae2045fc…`)
 - **node-5.0:** `https://www.mpi-forum.org/docs/mpi-5.0/mpi50-report/node{n}.htm` (283 files, each pinned in sources.lock.json)
 - **node-4.1:** `https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report/node{n}.htm` (318 files, each pinned in sources.lock.json)
-- **Used for:** Which page defines each procedure in each version (found from the contents, the function index and the binding on the page), and which procedures are new in 5.0.
+- **Used for:** Which page defines each procedure in each version (found from the contents, the function index and the binding on the page), which procedures are new in 5.0, and the pages of the sections on handles (Opaque Objects) and on the status (Return Status).
 - **Copied:** Page numbers only; none of the standard's text.
 
 ### OpenMP API Specification, HTML editions: contents pages
@@ -137,16 +137,16 @@ rules of its link providers. `read.mjs` expands entries and builds their links.
 - **Homepage:** <https://github.com/llvm/llvm-project/tree/main/openmp>
 - **omp_lib:** <https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-23.1.6/openmp/module/omp_lib.F90.var> (sha256 `f1d1ce45bd27bf70…`)
 - **licence:** <https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-23.1.6/openmp/LICENSE.TXT> (sha256 `fdad1758a9e1f9d5…`)
-- **Used for:** The Fortran interfaces of the omp_* runtime routines (arguments, their types and VALUE attributes, function results), and the kinds and named constants of omp_lib.
+- **Used for:** The Fortran interfaces of the omp_* runtime routines (arguments, their types and VALUE attributes, function results), and the kinds (omp_integer_kind and omp_logical_kind among them) and named constants of omp_lib.
 - **Copied:** Interface names, types and constant names only.
 
-### OpenACC Application Programming Interface 3.4 (PDF): outline only
+### OpenACC Application Programming Interface 3.4 (PDF): outline and section headings
 
 - **Version:** 3.4 (June 2025)
 - **Licence:** © OpenACC-Standard.org; not reproduced
 - **Homepage:** <https://www.openacc.org/specification>
 - **pdf:** <https://www.openacc.org/sites/default/files/inline-files/OpenACC_3.4.pdf> (sha256 `e8b06aa4f9c8fb81…`)
-- **Used for:** The page of the section that documents each directive, clause, routine and environment variable, read from the PDF's outline.
+- **Used for:** The page of the section that documents each directive, clause, routine and environment variable: the page that prints the heading of its entry in the PDF's outline (the outline and the text of the pages are read).
 - **Copied:** Page numbers only. The names are the API's; the one-liners are our own.
 
 ### M_intrinsics (Fortran intrinsic procedure descriptions)
@@ -192,5 +192,6 @@ These sites are linked to; nothing is downloaded from them or copied.
 
 No prose is taken from the GFDL manuals (gfortran, libgomp), the OpenMP, OpenACC or MPI specifications, Intel,
 NVIDIA or FFTW. From the specifications and manuals the registry keeps names, page numbers and fragment IDs only. Its
-OpenMP, OpenACC, BLACS, MPI-callback and vendor one-liners are our own; the summaries of LAPACK, ScaLAPACK, Open MPI
-and M_intrinsics come from those projects under their permissive licences (see NOTICE).
+OpenMP (kinds included), OpenACC, BLACS, MPI-callback, MPI-type and vendor one-liners are our own; the
+summaries of LAPACK, ScaLAPACK, Open MPI and M_intrinsics come from those projects under their permissive
+licences (see NOTICE).

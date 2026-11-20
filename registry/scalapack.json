@@ -1052,6 +1052,7 @@
 "pstrtri":{"g":"p?trtri","v":"2794ac8dca2c49b3a6fac91091d006f9"},
 "pstrtrs":{"g":"p?trtrs","v":"80f2b111e0054c9ae90bd923d2658938"},
 "pstzrzf":{"g":"p?tzrzf","v":"ec602c2cf0560df7e82fa80e3be262b1"},
+"pxerbla":{"l":"pblas","s":"PXERBLA is an error handler for the ScaLAPACK routines.","a":[["ictxt","i","i","l"],["srname","i","a*","g"],["info","i","i","g"]],"v":"7bb474048133e36677b68f9cab4dea4d"},
 "pzagemv":{"g":"p?agemv","l":"pblas","v":"6aba51acd21a1cabb6a6c79a6b50dbe1","f":"pzagemv_.c"},
 "pzahemv":{"g":"p?ahemv","l":"pblas","v":"a75acd447393425eb0f44a87675c2767","f":"pzahemv_.c"},
 "pzamax":{"g":"p?amax","l":"pblas","v":"f161e7408f40124fab4767d1c3d7ec65","f":"pzamax_.c"},

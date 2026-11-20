@@ -11,7 +11,7 @@
         "tarball": "https://github.com/Reference-LAPACK/lapack/archive/refs/tags/v3.12.1.tar.gz"
       },
       "notice": "LICENSE",
-      "uses": "Routine names, arguments and result types from the code; intents and types from `\\param`; summaries from `\\brief` (or the first sentence of Purpose when the brief is only the name); precision families from `\\ingroup`; family titles from DOCS/groups-usr.dox; hint tags from the argument documentation.",
+      "uses": "Routine names, arguments and result types from the code; intents and types from `\\param`; summaries from `\\brief` (or the first sentence of Purpose when the brief is only the name); precision families from `\\ingroup`; family titles from DOCS/groups-usr.dox; hint tags from the argument documentation; the library from the folder (BLAS/SRC, with its lsame, xerbla and xerbla_array, is the BLAS).",
       "copied": "Summaries and family titles, which are BSD-licensed."
     },
     {
@@ -37,7 +37,7 @@
         "tarball": "https://github.com/Reference-ScaLAPACK/scalapack/archive/refs/tags/v2.2.2.tar.gz"
       },
       "notice": "LICENSE",
-      "uses": "Routine names and arguments from the code; scope (global or local), intent and type from the Arguments prose; summaries from the first sentence of Purpose; hint tags.",
+      "uses": "Routine names and arguments from the code (SRC, TOOLS, PBLAS, REDIST, BLACS, and the error handler PBLAS/SRC/PTZBLAS/pxerbla.f); scope (global or local), intent and type from the Arguments prose; summaries from the first sentence of Purpose; hint tags.",
       "copied": "Summaries, which are BSD-licensed."
     },
     {
@@ -63,8 +63,8 @@
         "tarball": "https://github.com/open-mpi/ompi/archive/refs/tags/v5.0.11.tar.gz"
       },
       "notice": "LICENSE",
-      "uses": "The one-line summaries of the man pages (docs/man-openmpi/man3/*.3.rst) and which routines have a page in the 5.0.x documentation.",
-      "copied": "Summaries, which are BSD-licensed."
+      "uses": "The one-line summaries of the man pages (docs/man-openmpi/man3/*.3.rst) and which routines have a page in the 5.0.x documentation; the derived types of mpi_f08 with their public components (ompi/mpi/fortran/use-mpi/mpi-types.F90.in) and null handles (ompi/mpi/fortran/use-mpi-f08/mod/mpi-f08-types.F90).",
+      "copied": "Summaries, which are BSD-licensed; the names of the types, their components and null handles."
     },
     {
       "id": "openmpi-api",
@@ -75,7 +75,7 @@
       "urls": {
         "jsonl": "https://docs.open-mpi.org/en/main/llms/openmpi-mpi-api.jsonl"
       },
-      "uses": "The MPI procedures callable from Fortran, their category (collective, point-to-point, …), their `mpi_f08` arguments (name, intent, type, optional) and their kind (standard or deprecated).",
+      "uses": "The MPI procedures callable from Fortran, their category (collective, point-to-point, …), their `mpi_f08` arguments (name, intent, type, optional) and their kind (standard or deprecated); the type `use mpi` and mpif.h give each `mpi_f08` type (the same argument in those bindings).",
       "copied": "Names, categories and argument lists; none of its parameter descriptions."
     },
     {
@@ -100,7 +100,7 @@
         "tarball": "https://github.com/mpi-forum/mpi-abi-stubs/archive/421c088a6d3e23e8af0184dd8eeaeb6ffbd00c1d.tar.gz"
       },
       "notice": "LICENSE.md",
-      "uses": "The MPI 5.0 procedure list (to check the catalogue is complete), the callback prototypes and the predefined callback functions of mpi.h.",
+      "uses": "The MPI 5.0 procedure list (to check the catalogue is complete), the callback prototypes and the predefined callback functions of mpi.h; its handle types and null handles, to check Open MPI's.",
       "copied": "Names only."
     },
     {
@@ -117,7 +117,7 @@
         "node-5.0": "https://www.mpi-forum.org/docs/mpi-5.0/mpi50-report/node{n}.htm",
         "node-4.1": "https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report/node{n}.htm"
       },
-      "uses": "Which page defines each procedure in each version (found from the contents, the function index and the binding on the page), and which procedures are new in 5.0.",
+      "uses": "Which page defines each procedure in each version (found from the contents, the function index and the binding on the page), which procedures are new in 5.0, and the pages of the sections on handles (Opaque Objects) and on the status (Return Status).",
       "copied": "Page numbers only; none of the standard's text."
     },
     {
@@ -145,19 +145,19 @@
         "licence": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-23.1.6/openmp/LICENSE.TXT"
       },
       "notice": "licence",
-      "uses": "The Fortran interfaces of the omp_* runtime routines (arguments, their types and VALUE attributes, function results), and the kinds and named constants of omp_lib.",
+      "uses": "The Fortran interfaces of the omp_* runtime routines (arguments, their types and VALUE attributes, function results), and the kinds (omp_integer_kind and omp_logical_kind among them) and named constants of omp_lib.",
       "copied": "Interface names, types and constant names only."
     },
     {
       "id": "openacc-spec",
-      "name": "OpenACC Application Programming Interface 3.4 (PDF): outline only",
+      "name": "OpenACC Application Programming Interface 3.4 (PDF): outline and section headings",
       "version": "3.4 (June 2025)",
       "licence": "© OpenACC-Standard.org; not reproduced",
       "homepage": "https://www.openacc.org/specification",
       "urls": {
         "pdf": "https://www.openacc.org/sites/default/files/inline-files/OpenACC_3.4.pdf"
       },
-      "uses": "The page of the section that documents each directive, clause, routine and environment variable, read from the PDF's outline.",
+      "uses": "The page of the section that documents each directive, clause, routine and environment variable: the page that prints the heading of its entry in the PDF's outline (the outline and the text of the pages are read).",
       "copied": "Page numbers only. The names are the API's; the one-liners are our own."
     },
     {

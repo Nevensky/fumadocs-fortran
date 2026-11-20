@@ -71,8 +71,9 @@ async function sourcesMd(sources, results) {
   lines.push(
     'No prose is taken from the GFDL manuals (gfortran, libgomp), the OpenMP, OpenACC or MPI specifications, Intel,',
     'NVIDIA or FFTW. From the specifications and manuals the registry keeps names, page numbers and fragment IDs only. Its',
-    'OpenMP, OpenACC, BLACS, MPI-callback and vendor one-liners are our own; the summaries of LAPACK, ScaLAPACK, Open MPI',
-    'and M_intrinsics come from those projects under their permissive licences (see NOTICE).',
+    'OpenMP (kinds included), OpenACC, BLACS, MPI-callback, MPI-type and vendor one-liners are our own; the',
+    'summaries of LAPACK, ScaLAPACK, Open MPI and M_intrinsics come from those projects under their permissive',
+    'licences (see NOTICE).',
     '',
   );
   return lines.join('\n');
@@ -101,7 +102,18 @@ function notice(sources, texts) {
       '',
     ].join('\n'),
   ];
-  const named = { lapack: 'Reference-LAPACK 3.12.1 (BLAS and LAPACK): routine names, arguments, summaries and family titles', scalapack: 'Reference-ScaLAPACK 2.2.2: routine names, arguments and summaries', openmpi: 'Open MPI: man-page summaries and the API catalogue (procedures, categories, mpi_f08 arguments)', 'mpi-abi-stubs': 'MPI ABI stubs: procedure and callback names', 'llvm-openmp': 'LLVM OpenMP runtime (omp_lib): routine interfaces, kinds and constants (Apache-2.0 WITH LLVM-exception)', 'm-intrinsics': 'M_intrinsics: intrinsic categories, one-liners and arguments', 'fortran-lang': 'fortran-lang.org: intrinsic page paths' };
+  const named = {
+    lapack: 'Reference-LAPACK 3.12.1 (BLAS and LAPACK): routine names, arguments, summaries and family titles',
+    scalapack: 'Reference-ScaLAPACK 2.2.2: routine names, arguments and summaries',
+    openmpi:
+      'Open MPI: man-page summaries, the API catalogue (procedures, categories, mpi_f08 arguments) and the mpi_f08 ' +
+      'types (components, null handles)',
+    'mpi-abi-stubs': 'MPI ABI stubs: procedure, callback, handle-type and null-handle names',
+    'llvm-openmp':
+      'LLVM OpenMP runtime (omp_lib): routine interfaces, kinds and constants (Apache-2.0 WITH LLVM-exception)',
+    'm-intrinsics': 'M_intrinsics: intrinsic categories, one-liners and arguments',
+    'fortran-lang': 'fortran-lang.org: intrinsic page paths',
+  };
   for (const [id, title] of Object.entries(named)) {
     if (!texts[id]) throw new Error(`NOTICE: no licence text for ${id}`);
     parts.push(block(title, texts[id]));
@@ -137,7 +149,7 @@ export async function buildAll(only = []) {
     const about = {
       'lapack.json': 'BLAS and LAPACK 3.12.1: routines and precision families',
       'scalapack.json': 'ScaLAPACK 2.2.2 with TOOLS, PBLAS, REDIST and BLACS',
-      'mpi.json': 'MPI 5.0 procedures callable from Fortran (4.1 alias), callbacks',
+      'mpi.json': 'MPI 5.0 procedures callable from Fortran (4.1 alias), callbacks, the derived types of mpi_f08',
       'openmp.json': 'OpenMP 6.1, 6.0 and 5.2: directives, clauses, routines, environment variables, kinds, constants',
       'openacc.json': 'OpenACC 3.4: directives, clauses, routines, environment variables',
       'intrinsics.json': 'Fortran intrinsic procedures',

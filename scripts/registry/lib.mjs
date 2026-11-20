@@ -310,12 +310,19 @@ export function doxygenDir(base) {
 export const squash = (s) => s.replace(/\s+/g, ' ').trim();
 
 const ABBREVIATION = /\b(?:e\.g|i\.e|etc|vs|resp|cf|approx|no|eq|fig|ref|max|min)\.$/i;
+// Fortran's dotted operators (.NOT., .EQ.) take an operand, so they end no sentence; its logical constants (.TRUE.)
+// end one only before a capital
+const OPERATOR = /(?:^|[\s(])\.(?:not|and|or|eqv|neqv|eq|ne|lt|le|gt|ge)\.$/i;
+const LOGICAL = /(?:^|[\s(])\.(?:true|false)\.$/i;
 
 /** The text up to the first full stop, question or exclamation mark that ends a sentence, or null. */
 function sentenceEnd(s) {
   for (const m of s.matchAll(/[.!?](?=\s+\S|\s*$)/g)) {
     const head = s.slice(0, m.index + 1);
-    if (!ABBREVIATION.test(head)) return head;
+    if (ABBREVIATION.test(head)) continue;
+    // "LSAME returns .TRUE. if CA is …" goes on
+    if (OPERATOR.test(head) || (LOGICAL.test(head) && /^\s+[^\sA-Z]/.test(s.slice(m.index + 1)))) continue;
+    return head;
   }
   return null;
 }
