@@ -6,9 +6,11 @@
 // them. The look is in style.css (.fdf-* classes, on fumadocs' colour variables); the parts outside Markdown carry
 // fumadocs' not-prose class.
 //
-// What a pill, a badge, a shape or the * of character(*) means is written once, in style.css: the components name the
-// term (data-term, and data-arg for what goes with it, as self in pass(self)), and a card that CSS draws on hover
-// says it. A page of thousands of pills holds no meaning twice.
+// What a pill, a badge or the * of character(*) means is written once, in style.css: the components name the term
+// (data-term, and data-arg for what goes with it, as self in pass(self)), and CSS says it, in a card on hover and in
+// the lines of an opened row (its intent, its attributes and its length). A page of thousands of pills holds no meaning
+// twice. A shape's words ("rank 2, assumed shape") are the one exception: the components make them from the
+// dimensions, in English, as the argument of the shape's term and as the text of an opened row's Shape line.
 
 import { Children, createElement as h, useId } from 'react';
 
@@ -46,11 +48,12 @@ const INTENTS = {
   inout: { arrow: '↔\uFE0E' },
 };
 
-// The * and the : of a character length, and what an opened row says of each
-const LENGTHS = {
-  '*': { term: 'assumed-length', words: 'assumed, taken from the actual argument' },
-  ':': { term: 'deferred-length', words: 'deferred, set when the variable is allocated or assigned' },
-};
+// The terms of the * and the : of a character length, which say what each means, in their cards and an opened row's
+// Length line. The * of a function's result (an obsolescent form) is a term of its own: the length comes from where
+// the function is called.
+const LENGTHS = { '*': 'assumed-length', ':': 'deferred-length' };
+const lengthTerm = (spec, result) => (spec === '*' && result ? 'assumed-length-result'
+  : Object.hasOwn(LENGTHS, spec) ? LENGTHS[spec] : '');
 
 // The optional columns of an argument table, in the order they are drawn, with their headings. The name column and
 // the expander are always there.
@@ -140,30 +143,38 @@ function closing(s, at) {
 
 /**
  * The length of a character type, as written, and where it stands in the type: '*', ':', an expression such as 'n',
- * or '' when none is given (at -1). It is len= in the selector, or its first item without a keyword (the second is the
- * kind), or what follows character*. Null for any other type.
+ * or '' when none is given (at -1). It is what follows character* or, leniently, the selector (character(len=10)*20
+ * gives 20, though the generator writes that type as character(len=20)), or else len= in the selector, or its first
+ * item without a keyword (the second is the kind). Null for any other type.
  */
 function lengthOf(t) {
   const m = /^\s*character\b\s*/i.exec(t);
   if (!m) return null;
-  let i = m[0].length;
+  const i = m[0].length;
   const spec = (a, b) => {
     while (a < b && /\s/.test(t[a])) a++;
     while (b > a && /\s/.test(t[b - 1])) b--;
     return { spec: t.slice(a, b), at: a };
   };
   const none = { spec: '', at: -1 };
+  // *(*) or *10 from `at`, or null
+  const starred = (at) => {
+    let j = at;
+    while (t[j] === ' ') j++;
+    if (t[j] !== '*') return null;
+    j++;
+    while (t[j] === ' ') j++;
+    const k = t[j] === '(' ? closing(t, j) : -1;
+    if (k > 0) return spec(j + 1, k);
+    const n = /^\d+/.exec(t.slice(j));
+    return n ? spec(j, j + n[0].length) : null;
+  };
   // character*(*), character*10
-  if (t[i] === '*') {
-    i++;
-    while (t[i] === ' ') i++;
-    const k = t[i] === '(' ? closing(t, i) : -1;
-    if (k > 0) return spec(i + 1, k);
-    const n = /^\d+/.exec(t.slice(i));
-    return n ? spec(i, i + n[0].length) : none;
-  }
+  if (t[i] === '*') return starred(i) ?? none;
   const k = t[i] === '(' ? closing(t, i) : -1;
   if (k < 0) return none;
+  const own = starred(k + 1);
+  if (own) return own;
   let n = 0;
   for (const [a, b] of itemsOf(t, i + 1, k)) {
     const kw = /^\s*(len|kind)\s*=\s*/i.exec(t.slice(a, b));
@@ -177,10 +188,11 @@ function lengthOf(t) {
 /**
  * What an attribute pill stands for, for its card (the meanings are in style.css, by term): [term, what goes with it].
  * The keyword in lower case and what its brackets hold, as pass and self for pass(self); `default dp` is default and
- * dp, `= 0` init and 0, `=> null()` pointer-init and null(). Nothing for text that is none of these.
+ * dp, `= 0` init and 0, `=> null()` pointer-init and null(). Nothing for text that is none of these, such as => alone,
+ * which is no initialisation to '>'.
  */
 function termOf(flag) {
-  let m = /^(=>?)\s*(\S[\s\S]*)$/.exec(flag);
+  let m = /^(=>|=(?!>))\s*(\S[\s\S]*)$/.exec(flag);
   if (m) return [m[1] === '=' ? 'init' : 'pointer-init', m[2]];
   m = /^default\s+(\S[\s\S]*)$/i.exec(flag);
   if (m) return ['default', m[1]];
@@ -298,16 +310,14 @@ function refsOf(refs) {
 // in a span of its own, which has a card that says what it means. The code is cut around these rather than wrapping
 // them, so that a card, which sits inside its name or its glyph, takes the page's font and not the code's. A long type
 // breaks where it must (overflow-wrap in style.css): break opportunities written into it would split the names that
-// screen readers read.
-function typeRuns(t, refs) {
+// screen readers read. `result`: the type is a function result's, whose * has a meaning of its own.
+function typeRuns(t, refs, result = false) {
   const code = (s) => h('code', null, s);
   // what is cut out of the code: [where, how long, the element]
   const cuts = [];
   const len = lengthOf(t);
-  if (len && Object.hasOwn(LENGTHS, len.spec)) {
-    const term = LENGTHS[len.spec].term;
-    cuts.push([len.at, 1, () => h('span', { className: 'fdf-len', 'data-term': term }, code(len.spec))]);
-  }
+  const term = len ? lengthTerm(len.spec, result) : '';
+  if (term) cuts.push([len.at, 1, () => h('span', { className: 'fdf-len', 'data-term': term }, code(len.spec))]);
   if (refs) {
     for (const m of t.matchAll(/[A-Za-z_][\w$]*/g)) {
       // the tail of a longer word (the dp of 2dp) is not a name
@@ -360,10 +370,12 @@ function shapeWords(dims, codims, attrs) {
  * exists under. Each pill, the shape and the * or : of a character length have a card that says what they mean (the
  * meanings are in style.css). The row opens, as fumadocs' TypeTable rows do, to a panel with the doc (the children,
  * Markdown), the declaration, the intent in words and the attributes each beside its meaning (the text of their
- * cards, for the keyboard and screen readers), the shape in words, a character type's length and the condition. A row
- * with no doc, declaration, shape, condition or length to say in words is a plain row, which does not open. In a
- * narrow table the row keeps the name and the intent, and the panel shows the type and the shape too: both are drawn,
- * and the stylesheet shows the one that fits.
+ * cards, for the keyboard and screen readers), the shape in words, a character type's length (that of a * or a : in
+ * words, from style.css) and the condition. A row with nothing for its panel to say (no doc, declaration, shape,
+ * condition, * or : length, intent in words, or attribute with a term) is a plain row, which does not open: a type, a
+ * result, an intent of its own and attributes without a term are all in its cells. In a narrow table the row keeps
+ * the name and the intent, and the panel shows the type and the shape too: both are drawn, and the stylesheet shows
+ * the one that fits.
  */
 export function FortranArg({
   name, type, dims, codims, intent, optional, value, attrs, cond, result, decl, refs, children,
@@ -377,7 +389,8 @@ export function FortranArg({
   // renders an element it meets twice only once, and the hover cards of both copies would then share one id. The
   // shape and the pills are new elements for each place too.
   const r = refsOf(refs);
-  const typeEl = () => (t ? h('span', { className: 'fdf-arg-type' }, ...typeRuns(t, r)) : null);
+  const res = on(result);
+  const typeEl = () => (t ? h('span', { className: 'fdf-arg-type' }, ...typeRuns(t, r, res)) : null);
   const shapeEl = () => (d || cd
     ? h('code', { className: 'fdf-arg-shape' },
       d ? h('span', { className: 'fdf-arg-dims' }, d) : null,
@@ -388,7 +401,7 @@ export function FortranArg({
   const i = text(intent);
   const key = i.toLowerCase().replace(/[\s_]+/g, '');
   const known = Object.hasOwn(INTENTS, key) ? INTENTS[key] : null;
-  const intentEl = on(result)
+  const intentEl = res
     ? h('span', { className: 'fdf-intent fdf-intent-result', 'data-term': 'result' }, 'result')
     : !i ? null : known
       ? h('span', { className: `fdf-intent fdf-intent-${key}`, 'data-term': `intent-${key}` },
@@ -408,9 +421,10 @@ export function FortranArg({
   const c = text(cond);
   const condEl = c ? h('span', { className: 'fdf-cond', ...termed('when', c) }, 'when ', h('code', null, c)) : null;
   const words = shapeWords(d, cd, seen);
-  // a character type's length: assumed (*) and deferred (:) in words, any other as written, none the default of 1
+  // a character type's length: assumed (*) and deferred (:) by their terms, whose meanings style.css writes in, any
+  // other as written, none the default of 1
   const len = lengthOf(t);
-  const lenWords = len && Object.hasOwn(LENGTHS, len.spec) ? LENGTHS[len.spec].words : '';
+  const lenTerm = len ? lengthTerm(len.spec, res) : '';
   const dc = text(decl);
   const doc = filled(children) ? children : null;
 
@@ -424,7 +438,9 @@ export function FortranArg({
     h('span', { className: 'fdf-col-attrs' }, ...spaced([...flags.map((x) => flag(x, true)), condEl])),
   ]);
 
-  if (!doc && !dc && !words && !c && !lenWords) {
+  // An intent, or an attribute with a term, is said in words in the panel: without it, the keyboard and screen readers,
+  // which get no hover card, would never hear what the pill means.
+  if (!doc && !dc && !words && !c && !lenTerm && !(known && !res) && !flags.some((x) => x.term)) {
     // nothing to open to: a plain row, and for a narrow table a line with what its hidden cells hold
     const alt = spaced([typeEl(), shapeEl(), ...flags.map((x) => flag(x, true))]);
     return h('div', { className: 'fdf-arg fdf-arg-plain' },
@@ -435,20 +451,21 @@ export function FortranArg({
   const field = (label, content, narrow, props = null) => h('div', {
     className: cx('fdf-arg-field', narrow && 'fdf-arg-narrow'),
   }, h('dt', null, label), h('dd', props, ...content));
-  const length = !len ? null : lenWords || (len.spec
+  // the length as written, or for a * or a : nothing: style.css writes in the meaning of the term, as for the intent
+  const length = !len || lenTerm ? null : len.spec
     ? h('span', { className: 'fdf-arg-type' }, ...typeRuns(len.spec, r))
-    : '1, the default');
-  // What the intent and the attributes mean, which style.css writes in by the term: the intent's meaning names it, an
-  // attribute's stands beside its pill
+    : '1, the default';
+  // What the intent, the attributes and a * or : length mean, which style.css writes in by the term: the intent's
+  // meaning and the length's name them, an attribute's stands beside its pill
   const fields = [
     // the type, which a narrow table hides
     t && field('Type', [typeEl()], true),
     dc && field('Declaration', [h('code', { className: 'fdf-arg-decl' }, dc)]),
-    known && !on(result) && field('Intent', [], false, { 'data-term': `intent-${key}` }),
+    known && !res && field('Intent', [], false, { 'data-term': `intent-${key}` }),
     flags.length && field('Attributes', [h('dl', { className: 'fdf-arg-terms' },
       ...flags.flatMap((x) => [h('dt', null, flag(x, false)), h('dd', termed(x.term, x.arg))]))]),
     (d || cd) && field('Shape', spaced([h('span', { className: 'fdf-arg-narrow' }, shapeEl()), words]), !words),
-    length && field('Length', [length]),
+    len && field('Length', length ? [length] : [], false, lenTerm ? { 'data-term': lenTerm } : null),
     c && field('Exists when', [h('code', null, c)]),
   ].filter(Boolean);
 

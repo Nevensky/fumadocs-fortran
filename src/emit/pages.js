@@ -7,6 +7,7 @@ import { renderDoc } from '../docs/index.js';
 import { splitTop } from '../parse/text.js';
 import { buildGraphs } from './graphs.js';
 import { INTRINSIC_MODULES } from './kinds.js';
+import { classifyLibrary, moduleName, routineCard } from './library.js';
 import { attr, decodeText, escapeText, inlineCode, plainText, yamlString } from './mdx.js';
 
 /**
@@ -42,7 +43,9 @@ import { attr, decodeText, escapeText, inlineCode, plainText, yamlString } from 
  * @property {number} [maxNodes] the most nodes a graph draws (default 40; below 2 counts as 2), and the most units
  *   the overview draws (default 80)
  * @property {(name: string) => string|null} [classify] the library a routine called by name is from, by its
- *   lower-case name: 'blas', 'lapack', 'scalapack', 'mpi' and so on, or null when unknown
+ *   lower-case name: 'blas', 'lapack', 'scalapack', 'mpi' and so on, or null when unknown. Without it, the HPC
+ *   registry's: BLAS, LAPACK, ScaLAPACK (PBLAS, BLACS and its tools too), MPI, OpenMP and OpenACC. A routine the
+ *   project defines is always the project's
  */
 
 const OPS = { '+': 'plus', '-': 'minus', '*': 'times', '/': 'divide', '**': 'power', '//': 'concat', '==': 'eq', '/=': 'ne', '<': 'lt', '<=': 'le', '>': 'gt', '>=': 'ge' };
@@ -60,6 +63,10 @@ const IDENT = /^[A-Za-z][A-Za-z0-9_]*$/;
 const KINDED = new Set(['integer', 'real', 'complex', 'logical', 'character']);
 // control characters other than tab, which a source block drops
 const CONTROLS = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
+// Intel oneMKL's modules: code that uses one links its BLAS, LAPACK and ScaLAPACK routines to MKL's pages
+const MKL_MODULE = /^(?:lapack95|blas95|f95_precision|mkl_\w+)$/i;
+const FORTRAN_MODULES = new Set(['iso_fortran_env', 'iso_c_binding', 'ieee_arithmetic', 'ieee_exceptions',
+  'ieee_features']);
 
 /** The anchor of an entity on its page: lower-case name; operators get fixed slugs. */
 export function anchorOf(e) {
@@ -87,6 +94,11 @@ export function buildPages(ir, opts = {}) {
   const children = (e) => (e.children ?? []).map((id) => E[id]).filter(Boolean);
   // the interface bodies of separate module procedures by lower-case name, in the IR's order (findInterface)
   let separateBodies = null;
+  // for the cards of library routines: the names the project defines (ownNames), whether it uses MKL (usesMkl), the
+  // dummy arguments each caller sees (dummiesOf)
+  let projectNames = null;
+  let mkl = null;
+  const dummies = new Map();
   // a separate module procedure has the access of the interface body that declares it
   const accessOf = (e) => e.access ?? (e.scope === 'separate' ? findInterface(e)?.access : undefined);
   const shown = (e) => {
@@ -215,8 +227,11 @@ export function buildPages(ir, opts = {}) {
     return (under && p && where.get(p.id)) || null;
   };
   const graphOpts = opts.graphs && typeof opts.graphs === 'object' ? opts.graphs : {};
+  // the libraries of routines called by name: the site's classify, else the registry's (a project's own routine of
+  // that name is the project's either way: buildGraphs asks only for names the project does not define)
+  const classify = typeof graphOpts.classify === 'function' ? graphOpts.classify : (n) => classifyLibrary(n);
   const graphs = opts.graphs === false ? null : buildGraphs(ir, {
-    url: graphUrl, shown, classify: graphOpts.classify, depth: graphOpts.depth, maxNodes: graphOpts.maxNodes,
+    url: graphUrl, shown, classify, depth: graphOpts.depth, maxNodes: graphOpts.maxNodes,
   });
   /** A graph card around a ```mermaid block, open or collapsed; nothing when there is no graph. */
   const graphCard = (title, mermaid, collapsed = false) => {
@@ -256,7 +271,8 @@ export function buildPages(ir, opts = {}) {
   const declaredIn = (unit, key, want) => children(unit)
     .find((c) => lc(c.name) === key && c.kind === (want === 'type' ? 'type' : 'variable'));
   // a name the use statements of x give: a project entity (followed through the modules that pass it on), a name of
-  // an intrinsic module, a module outside the project that is known to give it, or null
+  // an intrinsic module, a type or kind of a library module the registry knows (mpi_f08's MPI_Comm, omp_lib's
+  // omp_lock_kind), a module outside the project that is known to give it, or null
   const fromUses = (x, key, want, seen) => {
     for (const u of x.uses ?? []) {
       const mod = lc(u.module);
@@ -284,7 +300,13 @@ export function buildPages(ir, opts = {}) {
         if (item || Object.hasOwn(INTRINSIC_MODULES[mod].names, remote)) {
           return { intrinsic: mod, name: item?.name ?? remote, renamed: !!item?.local, use: u, at: x };
         }
-      } else if (item) return { outside: mod };
+      } else {
+        // a plain use of mpi_f08 or omp_lib gives the names the registry lists for it, as an only list does; so does
+        // `use, intrinsic :: omp_lib`, as gfortran keeps its OpenMP modules with the intrinsic ones
+        const library = moduleName(mod, remote, want);
+        if (library) return { library, renamed: !!item?.local, use: u, at: x };
+        if (item) return { outside: mod };
+      }
     }
     return null;
   };
@@ -332,9 +354,20 @@ export function buildPages(ir, opts = {}) {
       note: `${hit.renamed ? 'Renamed in' : 'From'} the use statement at ${shownPath(hit.at.file)}:${hit.use.line}`,
     };
   };
+  // mpi_f08's MPI_Comm, omp_lib's omp_lock_kind: the registry's line on it and its page, and the module it comes from
+  const libraryRef = (written, hit) => {
+    const { name, summary, href } = hit.library;
+    const ref = href ? { href } : {};
+    ref.title = lc(written) === lc(name) ? written : `${written} ⇒ ${name}`;
+    if (summary) ref.detail = summary;
+    const at = `${shownPath(hit.at.file)}:${hit.use.line}`;
+    ref.note = `${hit.renamed ? 'Renamed in' : 'From'} the use of ${hit.use.module} at ${at}`;
+    return ref;
+  };
   const refCache = new Map();
-  // the card for a kind name or a derived type: 1. an entity with a heading, 2. a name of an intrinsic module,
-  // 3. nothing. A name the scope does not explain (declared where the model does not look) is looked up by name.
+  // the card for a kind name or a derived type: 1. an entity with a heading, 2. a name of an intrinsic module or of a
+  // library module the registry knows, 3. nothing. A name the scope does not explain (declared where the model does
+  // not look) is looked up by name.
   const refOf = (name, want, scope) => {
     const key = `${want}\0${name}\0${scope?.id ?? ''}\0${current}`;
     if (refCache.has(key)) return refCache.get(key);
@@ -347,6 +380,7 @@ export function buildPages(ir, opts = {}) {
       const title = `${prettyType(p.type) ?? 'integer'}, ${p.attr ?? 'kind'} :: ${p.name}${init}`;
       ref = withDetail({ title }, summaryOf(p));
     } else if (hit?.intrinsic) ref = intrinsicRef(name, hit);
+    else if (hit?.library) ref = libraryRef(name, hit);
     else if (!hit) {
       const fits = (h) => (want === 'type' ? h.kind === 'type' : h.kind === 'variable' && E[h.id]?.parameter);
       const hits = (index.get(lc(name)) ?? []).filter(fits);
@@ -721,11 +755,13 @@ export function buildPages(ir, opts = {}) {
       out.push(`Extends ${url ? `[${inlineCode(t.extends)}](${url})` : inlineCode(t.extends)}.`);
     }
     if (params.length) {
-      // the row shows "kind, default dp"; the declaration says it as Fortran
+      // the row reads as the declaration `integer, kind :: k = dp` does: the type "integer, kind" and one pill
+      // "default dp"; the declaration says it as Fortran
       out.push(argsTable('Type parameters', params.map((p) => {
-        const attrs = [[p.attr, p.init !== undefined && `default ${p.init}`].filter(Boolean).join(', ')];
+        const type = p.attr ? `${prettyType(p.type) ?? 'integer'}, ${p.attr}` : prettyType(p.type);
+        const attrs = p.init !== undefined ? `default ${p.init}` : '';
         const decl = declOf({ ...p, attrs: p.attr ? [p.attr] : [] });
-        return varRow({ ...p, attrs, init: undefined }, t, { decl, doc: docOf(p, p.name).body });
+        return varRow({ ...p, init: undefined }, t, { type, attrs, decl, doc: docOf(p, p.name).body });
       })));
     }
     const comps = children(t).filter((c) => c.kind === 'component' && shown(c));
@@ -870,14 +906,24 @@ export function buildPages(ir, opts = {}) {
       const conds = items.map((x) => (x.cond ? prettyCond(x.cond) : ''));
       return conds.every((c) => c && c === conds[0]) ? conds[0] : undefined;
     };
+    // the constructs, unless the label says them already (screen readers read the title with the label): OpenACC
+    // routine for `!$acc routine seq`, OpenMP parallel region for a lone `!$omp parallel`
+    const said = (label, items) => {
+      const words = new Set(label.toLowerCase().split(' '));
+      return items.every((d) => d.construct.toLowerCase().split(/\s+/).every((w) => words.has(w))) ? undefined
+        : items.map((d) => d.construct).join('; ');
+    };
+    const badge = (kind, label, items) => ({ kind, label, conditional: when(items), title: said(label, items) });
     const omp = dirs.filter((d) => d.family === 'omp');
     const offload = omp.filter((d) => /\btarget\b/.test(d.construct));
     const regions = omp.filter((d) => /\b(parallel|teams)\b/.test(d.construct) && !/\btarget\b/.test(d.construct));
-    if (regions.length) b.push({ kind: 'omp', label: 'OpenMP parallel region', conditional: when(regions), title: regions.map((d) => d.construct).join('; ') });
-    else if (omp.length > offload.length) b.push({ kind: 'omp', label: 'OpenMP', conditional: when(omp), title: omp.map((d) => d.construct).join('; ') });
-    if (offload.length) b.push({ kind: 'offload', label: 'OpenMP offload', conditional: when(offload), title: offload.map((d) => d.construct).join('; ') });
+    if (regions.length) b.push(badge('omp', 'OpenMP parallel region', regions));
+    else if (omp.length > offload.length) b.push(badge('omp', 'OpenMP', omp));
+    if (offload.length) b.push(badge('offload', 'OpenMP offload', offload));
     const acc = dirs.filter((d) => d.family === 'acc');
-    if (acc.length) b.push({ kind: 'acc', label: acc.every((d) => d.construct === 'routine') ? 'OpenACC routine' : 'OpenACC', conditional: when(acc), title: acc.map((d) => d.construct).join('; ') });
+    if (acc.length) {
+      b.push(badge('acc', acc.every((d) => d.construct === 'routine') ? 'OpenACC routine' : 'OpenACC', acc));
+    }
     if (dirs.some((d) => d.family === 'cuf')) b.push({ kind: 'cuda', label: 'CUDA Fortran' });
     const mpi = (e.calls ?? []).filter((c) => /^mpi_/i.test(c.name));
     if (mpi.length) b.push({ kind: 'mpi', label: 'MPI', conditional: when(mpi), title: [...new Set(mpi.map((c) => c.name))].join(', ') });
@@ -920,14 +966,93 @@ export function buildPages(ir, opts = {}) {
     const seen = new Map();
     for (const c of e.calls) {
       const k = c.name.toLowerCase();
-      if (!seen.has(k)) seen.set(k, { name: c.name, conds: new Set() });
-      seen.get(k).conds.add(c.cond ? prettyCond(c.cond) : '');
+      if (!seen.has(k)) seen.set(k, { name: c.name, conds: new Set(), local: true });
+      const s = seen.get(k);
+      s.conds.add(c.cond ? prettyCond(c.cond) : '');
+      // a call through a procedure pointer the caller declares (the parser marks it) calls the project's target
+      if (!c.local) s.local = false;
     }
     const items = [...seen.values()].map((c) => {
       const cond = c.conds.size === 1 && !c.conds.has('') ? ` when ${escapeText([...c.conds][0])}` : '';
-      return `${link(c.name)}${cond}`;
+      return `${callee(e, c.name, c.local)}${cond}`;
     });
     return `**Calls:** ${items.join(', ')}`;
+  }
+
+  /**
+   * A name a procedure or program calls: a link to the project's heading for it; a library routine's card (the
+   * registry's title, summary and page), when the project has nothing of that name and not every call of it goes
+   * through a procedure pointer the caller declares (`local`); else the name as code.
+   */
+  function callee(e, name, local = false) {
+    const url = resolve(name);
+    if (url) return `[${inlineCode(name)}](${url})`;
+    const card = local ? null : libraryCall(e, name);
+    if (!card) return inlineCode(name);
+    return `<FortranRef${attr('href', card.href)}${attr('title', card.title)}${attr('detail', card.detail)}>`
+      + `${inlineCode(name)}</FortranRef>`;
+  }
+
+  /**
+   * The registry's card for a subroutine `e` calls, or null. The project wins: a procedure, generic interface or
+   * variable of the name anywhere in it (shown or not), or a dummy argument in scope, is no library routine, nor is a
+   * procedure pointer `e` declares (callee asks for none); an interface body that only describes the routine (a
+   * hidden explicit interface for dgesv) does not count. A use statement in scope that names it (only, or a rename)
+   * gives the routine's own name; an intrinsic's name that a module other than an intrinsic one gives is that
+   * module's procedure; a function's name is some other subroutine's.
+   */
+  function libraryCall(e, name) {
+    const key = lc(name);
+    if (ownNames().has(key) || dummiesOf(e).has(key)) return null;
+    const bound = useOf(e, key);
+    const own = bound ? lc(bound.item.name) : key;
+    if (own !== key && ownNames().has(own)) return null;
+    const fortran = !bound || bound.use.nature === 'intrinsic' || FORTRAN_MODULES.has(lc(bound.use.module));
+    return routineCard(own, { mkl: usesMkl(), intrinsic: fortran, called: true });
+  }
+
+  // the lower-case names of the project's procedures, generic interfaces and variables, whatever their access. An
+  // interface body other than a separate module procedure's only describes a procedure, which is outside the project
+  // unless the project defines one of that name (an explicit interface for LAPACK's dgesv), as the call graphs read it
+  function ownNames() {
+    if (!projectNames) {
+      projectNames = new Set();
+      const describes = (x) => x.kind === 'procedure' && x.scope === 'interface' && !x.separate;
+      for (const x of all) {
+        if (x.name && /^(procedure|interface|variable)$/.test(x.kind) && !describes(x)) projectNames.add(lc(x.name));
+      }
+    }
+    return projectNames;
+  }
+
+  // the dummy arguments and results of a procedure and its hosts: a dummy procedure called is no library routine
+  function dummiesOf(e) {
+    if (dummies.has(e.id)) return dummies.get(e.id);
+    const out = new Set();
+    for (const x of scopeChain(e)) {
+      if (x.kind !== 'procedure') continue;
+      const from = x.args ? x : x.scope === 'separate' ? findInterface(x) ?? x : x;
+      for (const a of [...(from.args ?? []), ...(from.result ? [from.result] : [])]) out.add(lc(a.name));
+    }
+    dummies.set(e.id, out);
+    return out;
+  }
+
+  // the nearest use statement in scope that names `key` in an only list or a rename: { use, item }, or null
+  function useOf(e, key) {
+    for (const x of scopeChain(e)) {
+      for (const u of x.uses ?? []) {
+        const item = [...(u.only ?? []), ...(u.renames ?? [])].find((i) => lc(i.local ?? i.name) === key);
+        if (item) return { use: u, item };
+      }
+    }
+    return null;
+  }
+
+  // whether the code uses one of Intel oneMKL's modules
+  function usesMkl() {
+    mkl ??= all.some((x) => (x.uses ?? []).some((u) => MKL_MODULE.test(u.module)));
+    return mkl;
   }
 }
 

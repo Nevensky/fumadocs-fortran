@@ -92,10 +92,19 @@ jobs:
             console.log('the packed package installs, imports and parses');
           "
           node --input-type=module -e "
-            const { lookup } = await import('./node_modules/fumadocs-fortran/registry/read.mjs');
+            const { lookup, libraryOf } = await import('./node_modules/fumadocs-fortran/registry/read.mjs');
             if (lookup('lapack', 'dgesv')?.family?.id !== 'gesv' || !lookup('mpi', 'MPI_Allreduce')?.links.openmpi) process.exit(1);
+            // a name from each file the pages read: LAPACK, ScaLAPACK, MPI, OpenMP, OpenACC and the intrinsics
+            const each = ['dgesv', 'pdgesv', 'MPI_Allreduce', 'omp_get_max_threads', 'acc_get_num_devices', 'co_sum'];
+            if (each.some((n) => !libraryOf(n))) process.exit(1);
             console.log('the packed HPC registry loads');
           "
+          # the pages read the registry when they are written, and without one of its files they are written without
+          # its cards and colours, with no error: so write some, and look for a library card and a ScaLAPACK node
+          npx fumadocs-fortran generate -DUSE_MPI modern_ford.F90 -o api
+          grep -q 'title="subroutine MPI_Allreduce (MPI)"' api/*.mdx
+          grep -q 'fdfScalapack' api/*.mdx
+          echo 'the packed package writes pages with library cards and graph colours'
           node --input-type=module -e "
             const { fortranLanguages, fortranRehypeCode } = await import('fumadocs-fortran/shiki');
             const { createRequire } = await import('node:module');

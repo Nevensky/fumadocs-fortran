@@ -16,7 +16,7 @@ Runs the kernels; distributed with ScaLAPACK `pdgesv` when built with MPI.
 
 **Uses:** `iso_fortran_env` (`dp => real64`); [`solver_kernels`](/docs/showcase/modern/solver_kernels)
 
-**Calls:** [`solve_dense`](/docs/showcase/modern/solver_kernels#solve_dense), `blacs_get`, `descinit`
+**Calls:** [`solve_dense`](/docs/showcase/modern/solver_kernels#solve_dense), <FortranRef href="https://www.netlib.org/scalapack/explore-html/d9/dc9/blacs__get___8c_a247d65d121f80bc444edc22e57a533a1.html#a247d65d121f80bc444edc22e57a533a1" title="subroutine blacs_get (BLACS)" detail="Gets an internal BLACS value, such as the default system context (what = 0).">`blacs_get`</FortranRef>, <FortranRef href="https://www.netlib.org/scalapack/explore-html/dd/d22/descinit_8f_ad14ddc74cad76a54ca9105121af950c1.html#ad14ddc74cad76a54ca9105121af950c1" title="subroutine descinit (ScaLAPACK)" detail="Initializes the descriptor vector with the 8 input arguments M, N, MB, NB, IRSRC, ICSRC, ICTXT, LLD.">`descinit`</FortranRef>
 
 <FortranSource file="examples/modern/src/modern_ford.F90" line={280} lineEnd={295} href="https://github.com/Nevensky/fumadocs-fortran/blob/main/examples/modern/src/modern_ford.F90#L280-L295" />
 
@@ -62,7 +62,8 @@ flowchart LR
   classDef fdfProgram fill:#80bfb6,stroke:#00736a,color:#111111
   classDef fdfProcedure fill:#98b6c8,stroke:#386a86,color:#111111
   classDef fdfGeneric fill:#b7b47e,stroke:#6d6600,color:#111111
-  classDef fdfExternal fill:#b1b1b1,stroke:#636363,color:#111111,stroke-dasharray:4 3
+  classDef fdfLapack fill:#e0a07d,stroke:#9c4700,color:#111111
+  classDef fdfScalapack fill:#eb9794,stroke:#af2934,color:#111111
   classDef fdfFocus stroke-width:3px
   n1(["demo"])
   n2{{"solve_dense"}}
@@ -84,13 +85,13 @@ flowchart LR
   class n1 fdfProgram
   class n1 fdfFocus
   class n2 fdfGeneric
-  class n3 fdfExternal
-  class n4 fdfExternal
+  class n3 fdfScalapack
+  class n4 fdfScalapack
   class n5 fdfProcedure
   class n6 fdfProcedure
   class n7 fdfProcedure
-  class n8 fdfExternal
-  class n9 fdfExternal
+  class n8 fdfLapack
+  class n9 fdfLapack
   click n1 href "/docs/showcase/modern/demo"
   click n2 href "/docs/showcase/modern/solver_kernels#solve_dense"
   click n5 href "/docs/showcase/modern/solver_kernels_lapack#solve_dense_real"

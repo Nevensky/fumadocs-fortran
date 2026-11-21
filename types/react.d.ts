@@ -6,8 +6,11 @@ import type { ReactElement, ReactNode } from 'react';
  *
  * On hover a badge, an attribute, an intent, a condition, a shape and the * or : of a character length say what they
  * mean, in a card: the components name the term (data-term, with data-arg for what goes with it, such as self in
- * pass(self)), and style.css has the meanings, once for the page. A term it has no meaning for shows no card; a site
- * gives one, in its own words or language, as `:where([data-term='hdf5']) { --fdf-mean: "HDF5: …"; }`.
+ * pass(self)), and style.css has the meanings, once for the page, which an opened row says too. A term it has no
+ * meaning for shows no card. A site gives a term a meaning, or rewords one in its own words or language, with a rule
+ * outside any @layer, as `[data-term='hdf5'] { --fdf-mean: "HDF5: …"; }`, which wins whichever stylesheet comes
+ * first: style.css's meanings are in :where(), with no specificity, and in no layer. A shape's words are the
+ * components' own, in English.
  */
 export type FortranBadgeKind =
   | 'module' | 'submodule' | 'program' | 'subroutine' | 'function' | 'type' | 'interface'
@@ -26,7 +29,11 @@ export interface FortranBadgeProps {
    * 'separate module procedure' for submodule, 'OpenMP parallel region', 'OpenACC routine', and 'conditional' for cpp.
    */
   label?: string;
-  /** A cpp condition, such as 'USE_MPI': the badge is dashed and adds "when USE_MPI", which its card explains. */
+  /**
+   * A cpp condition, such as 'USE_MPI': the badge is dashed and adds "when USE_MPI", which its card explains on a line
+   * under the meaning. That line is `--fdf-also`, which a site rewords as it does a meaning, as
+   * `[data-term='mpi'][data-arg] { --fdf-also: '\A …' attr(data-arg) '…'; }`.
+   */
   conditional?: string;
   /**
    * More about the badge, such as the routines or the constructs it stands for: shown in its card under the meaning,
@@ -66,7 +73,8 @@ export interface FortranArgProps {
   name: string;
   /**
    * The type, as declared: 'real(dp)', 'type(MPI_Comm)', 'character(*)'. The * or : of a character length has a card,
-   * and an opened row says the length: assumed, deferred, or as written.
+   * and an opened row says the length: assumed, deferred, or as written. The * of a `result` takes its length from
+   * where the function is called.
    */
   type?: string;
   /**
@@ -85,8 +93,8 @@ export interface FortranArgProps {
   value?: boolean;
   /**
    * Other attributes, comma-separated: 'allocatable, target'. Each is a flag with a card that says what it means, as
-   * an opened row does beside it; its term is its keyword (pass for pass(self)), and default, init and pointer-init
-   * for 'default dp', '= 0' and '=> null()'.
+   * an opened row does beside it; its term is its keyword (pass for pass(self), rank for rank(2)), and default, init
+   * and pointer-init for 'default dp', '= 0' and '=> null()'.
    */
   attrs?: string;
   /** The cpp condition the row exists under, shown dashed as "when <cond>" and in the panel as "Exists when". */
@@ -163,7 +171,8 @@ export declare function FortranBadge(props: FortranBadgeProps): ReactElement | n
 export declare function FortranArgs(props: FortranArgsProps): ReactElement;
 /**
  * One row (an argument, component, binding or result), which opens to its doc, declaration, intent and attributes in
- * words, shape, length and condition.
+ * words, shape, length and condition. A row with nothing more to say than its cells (no doc, declaration, shape,
+ * condition, * or : length, intent in, out or inout, or attribute with a term, as `attrs` says) does not open.
  */
 export declare function FortranArg(props: FortranArgProps): ReactElement;
 /** A name with a link and a hover card; nothing without a name. */

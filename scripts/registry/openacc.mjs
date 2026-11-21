@@ -3,7 +3,8 @@
 //
 //   node scripts/registry/openacc.mjs [--refresh]
 //
-// The names and one-liners are in data/openacc.mjs; only page numbers come from the PDF.
+// The names and one-liners are in data/openacc.mjs; from the PDF come page numbers, and whether each runtime routine
+// is a subroutine or a function, as its Fortran form there says.
 import {
   CLAUSE_HOMES,
   CLAUSE_SUMMARIES,
@@ -21,7 +22,7 @@ import { pdfOutline } from './pdf.mjs';
 export async function build() {
   const sources = await loadSources();
   const src = source(sources, 'openacc-spec');
-  const { pages, outline } = pdfOutline(await fetchPinned('openacc-spec', src.urls.pdf));
+  const { pages, outline, lines } = pdfOutline(await fetchPinned('openacc-spec', src.urls.pdf));
   const problems = [];
   // an outline entry's page is the one that prints its heading, which can be the page after its anchor's
   const checked = (o) => {
@@ -69,9 +70,29 @@ export async function build() {
       n = shorter;
     }
   };
+  // each routine's Fortran form, which opens a line of its section's Format: `subroutine acc_init(dev_type)`,
+  // `integer function acc_get_num_devices(dev_type)`, `function acc_get_device_type()`, `type(c_ptr) function
+  // acc_malloc(bytes)`. Only whether it is a subroutine or a function is kept; a deprecated name has the form of the
+  // routine it stands for (ROUTINE_HOMES)
+  const forms = new Map();
+  for (let p = 1; p <= pages; p++) {
+    for (const line of lines(p).split('\n')) {
+      const m = /^(?:[\w()]+\s+)?(subroutine|function)\s+(acc_\w+)\s*(?:\(|$)/.exec(line.trim());
+      if (m) forms.set(m[2], new Set([...(forms.get(m[2]) ?? []), m[1]]));
+    }
+  }
+  const formOf = (name) => {
+    const kinds = forms.get(name) ?? forms.get(ROUTINE_HOMES[name]);
+    if (!kinds) problems.push(`routine ${name}: no Fortran form`);
+    else if (kinds.size > 1) problems.push(`routine ${name}: both a subroutine and a function`);
+    else return [...kinds][0];
+    return null;
+  };
   const routines = {};
   for (const name of ROUTINES) {
     const e = {};
+    const k = formOf(name);
+    if (k) e.k = k;
     if (ROUTINE_SUMMARIES[name]) e.s = ROUTINE_SUMMARIES[name];
     if (DEPRECATED_ROUTINES.has(name)) e.t = ['dep'];
     const pg = routineSection(name);
@@ -81,6 +102,9 @@ export async function build() {
   }
   for (const o of outline) {
     for (const n of o.title.split(' and ')) if (/^acc_\w+$/.test(n) && !routines[n]) problems.push(`routine ${n}: in the outline, not in data/openacc.mjs`);
+  }
+  for (const n of forms.keys()) {
+    if (!routines[n]) problems.push(`routine ${n}: a Fortran form in the PDF, not in data/openacc.mjs`);
   }
 
   const env = {};
@@ -97,7 +121,12 @@ export async function build() {
     version: '3.4',
     sources: ['openacc-spec'],
     legend: {
-      kinds: { directive: 'directive or construct', combined: 'combined construct (c lists its parts)' },
+      kinds: {
+        directive: 'directive or construct',
+        combined: 'combined construct (c lists its parts)',
+        subroutine: 'runtime routine called with CALL, as its Fortran form says',
+        function: 'runtime routine that returns a value, as its Fortran form says',
+      },
       tags: {
         offload: 'runs on or moves data to a device (offloading)',
         par: 'starts parallel execution on the device',
@@ -134,6 +163,8 @@ export async function build() {
     directives: count(directives),
     clauses: count(clauses),
     routines: count(routines),
+    functions: Object.values(routines).filter((e) => e.k === 'function').length,
+    subroutines: Object.values(routines).filter((e) => e.k === 'subroutine').length,
     env: count(env),
     summaries: [directives, clauses, routines, env].reduce((n, o) => n + Object.values(o).filter((e) => e.s).length, 0),
     problems,

@@ -1,7 +1,7 @@
-// Reads the outline (bookmarks) of a PDF: each entry's title, depth and the page that prints its heading. Only what
-// the OpenACC specification needs: objects in plain `n 0 obj … endobj` form (no object streams), named or explicit
-// destinations, a page tree, and page contents in plain or Flate-compressed streams, whose text is read through the
-// fonts' simple encodings. The PDF is data; nothing in it is run.
+// Reads the outline (bookmarks) of a PDF: each entry's title, depth and the page that prints its heading; and the text
+// of its pages, as lines. Only what the OpenACC specification needs: objects in plain `n 0 obj … endobj` form (no
+// object streams), named or explicit destinations, a page tree, and page contents in plain or Flate-compressed
+// streams, whose text is read through the fonts' simple encodings. The PDF is data; nothing in it is run.
 import { inflateSync } from 'node:zlib';
 
 /** The bytes of a PDF string: a literal `(…)` with escapes, or `<hex>`. */
@@ -68,15 +68,32 @@ const SHOWN = new RegExp(
   'g',
 );
 
+// what places and shows text, for a page's lines: a font change (its size), a move (Td, TD), a text matrix (Tm, whose
+// last number is the line's height on the page), T*, an array shown with TJ, a string shown with Tj, ' or "
+const PLACED = new RegExp(
+  [
+    String.raw`\/([^\s/<>[\]()]+)\s+([-+\d.]+)\s+Tf\b`,
+    String.raw`([-+\d.]+)\s+([-+\d.]+)\s+T[dD]\b`,
+    String.raw`(?:[-+\d.]+\s+){5}([-+\d.]+)\s+Tm\b`,
+    String.raw`(T\*)`,
+    String.raw`\[((?:${STR}|[^\]()<])*)\]\s*TJ`,
+    String.raw`(${STR})\s*(?:Tj|'|")`,
+  ].join('|'),
+  'g',
+);
+// an item of a TJ array: a string, or a move in thousandths of an em (below -150, a gap between words)
+const ITEM = new RegExp(`${STR}|[-+]?(?:\\d+\\.?\\d*|\\.\\d+)`, 'g');
+
 const SECTION_DEST = /^(?:chapter|appendix|(?:sub)*section|(?:sub)*paragraph)\.([0-9A-Z][0-9A-Z.]*)$/;
 
 /**
- * The outline of a PDF: { pages, outline: [{ title, depth, page, anchor, printed }] }.
+ * The outline of a PDF: { pages, outline: [{ title, depth, page, anchor, printed }], lines }.
  * - `anchor` is the page of the entry's destination;
  * - `page` is the page that prints the entry's heading: hyperref can leave a section's anchor at the foot of the page
  *   before its heading (the copyin clause's anchor is at the foot of page 54, its heading "2.7.8 copyin clause" at the
  *   top of page 55), so the page after the anchor's counts when only it prints the section number and title;
- * - `printed` says whether either page prints them (null for an entry without a section number).
+ * - `printed` says whether either page prints them (null for an entry without a section number);
+ * - `lines(page)` is the text of a page (numbered from 1) as lines, as it is written there.
  */
 export function pdfOutline(buf) {
   const s = buf.toString('latin1');
@@ -172,10 +189,8 @@ export function pdfOutline(buf) {
     }
     return out;
   };
-  const texts = new Map();
-  /** A page's text, normalised: the shown strings joined, and the offsets where each starts. */
-  const pageText = (page) => {
-    if (texts.has(page)) return texts.get(page);
+  /** A page's fonts (name → encoding) and the data of its content streams. */
+  const pageData = (page) => {
     const b = objs.get(pageObj.get(page)) ?? '';
     const resources = dictOf(b, 'Resources') || b;
     const fontDict = dictOf(resources, 'Font') || dictOf(b, 'Font');
@@ -183,6 +198,13 @@ export function pdfOutline(buf) {
     for (const m of fontDict.matchAll(/\/([^\s/<>[\]()]+)\s+(\d+)\s+0\s+R/g)) fonts.set(m[1], encodingOf(Number(m[2])));
     const contents = /\/Contents\s*(\[[^\]]*\]|\d+\s+0\s+R)/.exec(b)?.[1] ?? '';
     const data = [...contents.matchAll(/(\d+)\s+0\s+R/g)].map((m) => streamOf(Number(m[1]))).join('\n');
+    return { fonts, data };
+  };
+  const texts = new Map();
+  /** A page's text, normalised: the shown strings joined, and the offsets where each starts. */
+  const pageText = (page) => {
+    if (texts.has(page)) return texts.get(page);
+    const { fonts, data } = pageData(page);
     let enc = new Map();
     let joined = '';
     const starts = new Set();
@@ -208,6 +230,50 @@ export function pdfOutline(buf) {
     const { joined, starts } = pageText(page);
     for (let i = joined.indexOf(key); i >= 0; i = joined.indexOf(key, i + 1)) if (starts.has(i)) return true;
     return false;
+  };
+  /**
+   * A page's text as lines, as written (not normalised): a blank where a TJ array leaves a gap between words or a
+   * move goes on along the line, a line break where a move or a new text matrix goes to another line. Text below 7
+   * points (the margin's line numbers, superscripts) is left out. '' for a page the PDF does not have.
+   */
+  const lines = (page) => {
+    if (!pageObj.has(page)) return '';
+    const { fonts, data } = pageData(page);
+    let enc = new Map();
+    let size = 12;
+    let y = null;
+    let out = '';
+    const gap = (c) => {
+      if (!out || out.endsWith('\n')) return;
+      if (c === '\n') out = `${out.trimEnd()}\n`;
+      else if (!out.endsWith(' ')) out += ' ';
+    };
+    const glyphs = (x) => [...pdfBytes(x)].map((c) => enc.get(c) ?? String.fromCharCode(c)).join('');
+    for (const m of data.matchAll(PLACED)) {
+      if (m[1]) {
+        enc = fonts.get(m[1]) ?? new Map();
+        size = Math.abs(Number(m[2]));
+      } else if (m[3] !== undefined) {
+        if (Number(m[4]) !== 0) {
+          gap('\n');
+          if (y !== null) y += Number(m[4]);
+        } else if (Number(m[3]) !== 0) gap(' ');
+      } else if (m[5] !== undefined) {
+        const f = Number(m[5]);
+        gap(y !== null && Math.abs(f - y) < 0.5 ? ' ' : '\n');
+        y = f;
+      } else if (m[6]) gap('\n');
+      else if (size >= 7) {
+        if (m[7] === undefined) out += glyphs(m[8]);
+        else {
+          for (const t of m[7].matchAll(ITEM)) {
+            if (/^[(<]/.test(t[0])) out += glyphs(t[0]);
+            else if (Number(t[0]) < -150) gap(' ');
+          }
+        }
+      }
+    }
+    return out.trimEnd();
   };
 
   const out = [];
@@ -250,5 +316,5 @@ export function pdfOutline(buf) {
     }
   };
   item(ref(objs.get(ref(catalog, 'Outlines')) ?? '', 'First'), 0);
-  return { pages: pageNo.size, outline: out };
+  return { pages: pageNo.size, outline: out, lines };
 }

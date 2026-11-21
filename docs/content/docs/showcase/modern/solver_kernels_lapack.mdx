@@ -73,7 +73,7 @@ LAPACK info code
 </FortranArg>
 </FortranArgs>
 
-**Calls:** [`check_length`](/docs/showcase/modern/solver_kernels#check_length), `dgesv`
+**Calls:** [`check_length`](/docs/showcase/modern/solver_kernels#check_length), <FortranRef href="https://www.netlib.org/lapack/explore-html/d8/da6/group__gesv_ga831ce6a40e7fd16295752d18aed2d541.html#ga831ce6a40e7fd16295752d18aed2d541" title="subroutine dgesv (LAPACK)" detail="Computes the solution to system of linear equations A * X = B for GE matrices">`dgesv`</FortranRef>
 
 <FortranGraph title="Call graph" collapsed>
 
@@ -82,7 +82,7 @@ flowchart LR
   classDef fdfProgram fill:#80bfb6,stroke:#00736a,color:#111111
   classDef fdfProcedure fill:#98b6c8,stroke:#386a86,color:#111111
   classDef fdfGeneric fill:#b7b47e,stroke:#6d6600,color:#111111
-  classDef fdfExternal fill:#b1b1b1,stroke:#636363,color:#111111,stroke-dasharray:4 3
+  classDef fdfLapack fill:#e0a07d,stroke:#9c4700,color:#111111
   classDef fdfFocus stroke-width:3px
   n1("solve_dense_real")
   n2("check_length")
@@ -96,7 +96,7 @@ flowchart LR
   class n1 fdfProcedure
   class n1 fdfFocus
   class n2 fdfProcedure
-  class n3 fdfExternal
+  class n3 fdfLapack
   class n4 fdfGeneric
   class n5 fdfProgram
   click n1 href "/docs/showcase/modern/solver_kernels_lapack#solve_dense_real"
@@ -145,7 +145,7 @@ Implements `solve_dense_complex`, declared in the interface [`solve_dense`](/doc
 <FortranArg name="info" type="integer" intent="out" optional decl="integer, intent(out), optional :: info" />
 </FortranArgs>
 
-**Calls:** `zgesv`
+**Calls:** <FortranRef href="https://www.netlib.org/lapack/explore-html/d8/da6/group__gesv_ga0850dc117a6c7ec3cb64905d5de1cd23.html#ga0850dc117a6c7ec3cb64905d5de1cd23" title="subroutine zgesv (LAPACK)" detail="Computes the solution to system of linear equations A * X = B for GE matrices (simple driver)">`zgesv`</FortranRef>
 
 <FortranGraph title="Call graph" collapsed>
 
@@ -154,7 +154,7 @@ flowchart LR
   classDef fdfProgram fill:#80bfb6,stroke:#00736a,color:#111111
   classDef fdfProcedure fill:#98b6c8,stroke:#386a86,color:#111111
   classDef fdfGeneric fill:#b7b47e,stroke:#6d6600,color:#111111
-  classDef fdfExternal fill:#b1b1b1,stroke:#636363,color:#111111,stroke-dasharray:4 3
+  classDef fdfLapack fill:#e0a07d,stroke:#9c4700,color:#111111
   classDef fdfFocus stroke-width:3px
   n1("solve_dense_complex")
   n2("zgesv")
@@ -165,7 +165,7 @@ flowchart LR
   n4 --> n3
   class n1 fdfProcedure
   class n1 fdfFocus
-  class n2 fdfExternal
+  class n2 fdfLapack
   class n3 fdfGeneric
   class n4 fdfProgram
   click n1 href "/docs/showcase/modern/solver_kernels_lapack#solve_dense_complex"

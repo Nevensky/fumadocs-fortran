@@ -9,6 +9,7 @@ import {
   FortranBadge,
   FortranBadges,
   FortranGraph,
+  FortranRef,
   FortranSource,
   type FortranRefTarget,
 } from 'fumadocs-fortran/react';
@@ -54,8 +55,8 @@ const CALLS = `flowchart LR
 
 /**
  * `function <name>` in a file of the repository, read when the page is rendered, so that the sample follows edits to
- * the example: its first and last lines, its code, and the line of the use statement before it that renames real64 to
- * dp. Undefined, with a warning in the log, when the function is missing.
+ * the example: its first and last lines, its code, and the lines of the use statements before it that rename real64
+ * to dp and take in mpi_f08. Undefined, with a warning in the log, when the function is missing.
  */
 function readFunction(file: string, name: string) {
   let lines: string[] = [];
@@ -73,11 +74,13 @@ function readFunction(file: string, name: string) {
     return undefined;
   }
   const renames = lines.slice(0, start).findLastIndex((l) => /^[^!]*\buse\b.*\bdp\s*=>\s*real64\b/i.test(l));
+  const mpi = lines.slice(0, start).findLastIndex((l) => /^[^!]*\buse\b.*\bmpi_f08\b/i.test(l));
   return {
     line: start + 1,
     lineEnd: end + 1,
     code: lines.slice(start, end + 1).join('\n'),
     renames: renames < 0 ? undefined : renames + 1,
+    mpi: mpi < 0 ? undefined : mpi + 1,
   };
 }
 
@@ -98,8 +101,8 @@ function codeBlock(code: string, line: number) {
 const FEATURES: [string, string][] = [
   ['Its own parser', 'Written in plain JavaScript with no dependencies, so it needs no Python, no compiler and no build of your code.'],
   ['The comments you have', 'FORD, Doxygen and LAPACK doc comments are read as they are, with Markdown and maths.'],
-  ['HPC aware', 'OpenMP and OpenACC directives, MPI, coarrays and CUDA Fortran show as badges, and what exists only under #ifdef USE_MPI says so, on the entity and on each argument.'],
-  ['Arguments in full', 'Arguments, results and components are rows that open to their docs in full Markdown and their declarations; kind names and types show a card on hover.'],
+  ['HPC aware', 'OpenMP and OpenACC directives, MPI, coarrays and CUDA Fortran show as badges, what exists only under #ifdef USE_MPI says so, on the entity and on each argument, and calls into BLAS, LAPACK, ScaLAPACK and MPI link to their documentation.'],
+  ['Arguments in full', 'Arguments, results and components are rows that open to their docs in full Markdown and their declarations; names show a card on hover, and every badge and attribute says what it means.'],
   ['Graphs and source', 'Dependency, inheritance and call graphs as Mermaid, and the code of each entry in a block that opens, numbered as in its file.'],
   ['Plain MDX pages', "fumadocs builds the reference like hand-written pages: search, a table of contents with each entry's kind, and static export included."],
 ];
@@ -115,6 +118,15 @@ export default async function HomePage() {
       title: 'dp ⇒ real64',
       detail: 'Real kind with a storage size of 64 bits: double precision',
       note: fn?.renames ? `Renamed in the use statement at ${FILE}:${fn.renames}` : undefined,
+    },
+  };
+  // the hover card of MPI_Comm, as the generator writes it, from the HPC registry, for a type that mpi_f08 gives
+  const comm: Record<string, FortranRefTarget> = {
+    MPI_Comm: {
+      href: 'https://www.mpi-forum.org/docs/mpi-5.0/mpi50-report/node35.htm',
+      title: 'MPI_Comm',
+      detail: 'Handle of a communicator: a group of processes and the context their messages are sent in.',
+      note: fn?.mpi ? `From the use of mpi_f08 at ${FILE}:${fn.mpi}` : undefined,
     },
   };
 
@@ -167,6 +179,7 @@ export default async function HomePage() {
                 intent="in"
                 cond="USE_MPI"
                 decl="type(MPI_Comm), intent(in) :: comm"
+                refs={comm}
               >
                 <p>communicator</p>
               </FortranArg>
@@ -177,7 +190,15 @@ export default async function HomePage() {
               </FortranArg>
             </FortranArgs>
             <p>
-              <strong>Calls:</strong> <code>MPI_Allreduce</code> when USE_MPI
+              <strong>Calls:</strong>{' '}
+              <FortranRef
+                href="https://docs.open-mpi.org/en/v5.0.x/man-openmpi/man3/MPI_Allreduce.3.html"
+                title="subroutine MPI_Allreduce (MPI)"
+                detail="Combines values from all processes and distributes the result back to all processes."
+              >
+                <code>MPI_Allreduce</code>
+              </FortranRef>{' '}
+              when USE_MPI
             </p>
             <FortranGraph title="Call graph" collapsed>
               <Mermaid chart={CALLS} />

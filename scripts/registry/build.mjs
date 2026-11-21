@@ -70,10 +70,10 @@ async function sourcesMd(sources, results) {
   lines.push('', '## Text not copied', '');
   lines.push(
     'No prose is taken from the GFDL manuals (gfortran, libgomp), the OpenMP, OpenACC or MPI specifications, Intel,',
-    'NVIDIA or FFTW. From the specifications and manuals the registry keeps names, page numbers and fragment IDs only. Its',
-    'OpenMP (kinds included), OpenACC, BLACS, MPI-callback, MPI-type and vendor one-liners are our own; the',
-    'summaries of LAPACK, ScaLAPACK, Open MPI and M_intrinsics come from those projects under their permissive',
-    'licences (see NOTICE).',
+    'NVIDIA or FFTW. From the specifications and manuals the registry keeps names, page numbers and fragment IDs only,',
+    'and from the OpenACC specification whether each routine is a subroutine or a function. Its OpenMP (kinds',
+    'included), OpenACC, BLACS, MPI-callback, MPI-type and vendor one-liners are our own; the summaries of LAPACK,',
+    'ScaLAPACK, Open MPI and M_intrinsics come from those projects under their permissive licences (see NOTICE).',
     '',
   );
   return lines.join('\n');

@@ -22,7 +22,7 @@ The registry is used at build time only: pages embed just the entries they refer
 | `scalapack.json` | 1,010 | 250,822 | ScaLAPACK 2.2.2 with TOOLS, PBLAS, REDIST and BLACS |
 | `mpi.json` | 475 | 150,976 | MPI 5.0 procedures callable from Fortran (4.1 alias), callbacks, the derived types of mpi_f08 |
 | `openmp.json` | 469 | 79,258 | OpenMP 6.1, 6.0 and 5.2: directives, clauses, routines, environment variables, kinds, constants |
-| `openacc.json` | 147 | 10,615 | OpenACC 3.4: directives, clauses, routines, environment variables |
+| `openacc.json` | 147 | 11,906 | OpenACC 3.4: directives, clauses, routines, environment variables |
 | `intrinsics.json` | 218 | 34,580 | Fortran intrinsic procedures |
 | `vendors.json` | 533 | 13,473 | oneMKL (lapack95, blas95), OpenBLAS and cuBLAS |
 
@@ -140,14 +140,14 @@ rules of its link providers. `read.mjs` expands entries and builds their links.
 - **Used for:** The Fortran interfaces of the omp_* runtime routines (arguments, their types and VALUE attributes, function results), and the kinds (omp_integer_kind and omp_logical_kind among them) and named constants of omp_lib.
 - **Copied:** Interface names, types and constant names only.
 
-### OpenACC Application Programming Interface 3.4 (PDF): outline and section headings
+### OpenACC Application Programming Interface 3.4 (PDF): outline, section headings and the routines' Fortran forms
 
 - **Version:** 3.4 (June 2025)
 - **Licence:** © OpenACC-Standard.org; not reproduced
 - **Homepage:** <https://www.openacc.org/specification>
 - **pdf:** <https://www.openacc.org/sites/default/files/inline-files/OpenACC_3.4.pdf> (sha256 `e8b06aa4f9c8fb81…`)
-- **Used for:** The page of the section that documents each directive, clause, routine and environment variable: the page that prints the heading of its entry in the PDF's outline (the outline and the text of the pages are read).
-- **Copied:** Page numbers only. The names are the API's; the one-liners are our own.
+- **Used for:** The page of the section that documents each directive, clause, routine and environment variable: the page that prints the heading of its entry in the PDF's outline (the outline and the text of the pages are read); and whether each runtime routine is a subroutine or a function, as its Fortran form says.
+- **Copied:** Page numbers, and the word subroutine or function for each routine, only. The names are the API's; the one-liners are our own.
 
 ### M_intrinsics (Fortran intrinsic procedure descriptions)
 
@@ -191,7 +191,7 @@ These sites are linked to; nothing is downloaded from them or copied.
 ## Text not copied
 
 No prose is taken from the GFDL manuals (gfortran, libgomp), the OpenMP, OpenACC or MPI specifications, Intel,
-NVIDIA or FFTW. From the specifications and manuals the registry keeps names, page numbers and fragment IDs only. Its
-OpenMP (kinds included), OpenACC, BLACS, MPI-callback, MPI-type and vendor one-liners are our own; the
-summaries of LAPACK, ScaLAPACK, Open MPI and M_intrinsics come from those projects under their permissive
-licences (see NOTICE).
+NVIDIA or FFTW. From the specifications and manuals the registry keeps names, page numbers and fragment IDs only,
+and from the OpenACC specification whether each routine is a subroutine or a function. Its OpenMP (kinds
+included), OpenACC, BLACS, MPI-callback, MPI-type and vendor one-liners are our own; the summaries of LAPACK,
+ScaLAPACK, Open MPI and M_intrinsics come from those projects under their permissive licences (see NOTICE).

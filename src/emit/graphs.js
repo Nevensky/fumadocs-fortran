@@ -2,7 +2,7 @@
 // another, a procedure's callers and callees, and an overview of the project's units. A pure function of the IR: no
 // file access, and no import of the page writer, which wires the graphs in and so may import this module.
 
-import { BLAS_ROUTINES, INTRINSIC_PROCEDURES } from './fortran-names.js';
+import { BLAS_ROUTINES, INTRINSIC_PROCEDURES, INTRINSIC_SUBROUTINES } from './fortran-names.js';
 
 const INTRINSIC_MODULES = new Set(['iso_fortran_env', 'iso_c_binding', 'ieee_arithmetic', 'ieee_exceptions',
   'ieee_features']);
@@ -500,10 +500,15 @@ export function buildGraphs(ir, options = {}) {
     if (COARRAY_COLLECTIVES.has(n)) return 'fdfCoarray';
     return BLAS_ROUTINES.has(n) ? 'fdfBlas' : null;
   };
-  /** The node of a routine a use statement names from a module outside the project, classed by name or module. */
+  /**
+   * The node of a routine a use statement names from a module outside the project, classed by name or module. The
+   * standard's intrinsic modules give intrinsic procedures, which are not drawn, as are those of another processor
+   * module (`use, intrinsic`) unless it is an HPC library's: gfortran keeps omp_lib and openacc with the intrinsic
+   * ones.
+   */
   const usedRoutine = (lv, written) => {
     const mod = lc(lv.ext.module);
-    if (INTRINSIC_MODULES.has(mod) || lv.ext.nature === 'intrinsic') return null;
+    if (INTRINSIC_MODULES.has(mod) || (lv.ext.nature === 'intrinsic' && !HPC_MODULES.has(mod))) return null;
     const cls = libraryClass(lv.name) ?? HPC_MODULES.get(mod);
     return { node: libraryNode(lv.written ?? written, cls ?? 'fdfExternal'), known: !!cls };
   };
@@ -569,9 +574,11 @@ export function buildGraphs(ir, options = {}) {
   };
 
   /**
-   * A call (`call f`, isCall) or function reference (`f(…)`) by name. Intrinsic procedures are not drawn. An unknown
-   * call is a library routine; an unknown reference may as well be an array (from a module outside the project, say,
-   * named in an only list), so it is drawn only when its name, or the module that names it, is a known library's.
+   * A call (`call f`, isCall) or function reference (`f(…)`) by name. Intrinsic procedures are not drawn; a CALL
+   * names a subroutine, so a CALL of a name only an intrinsic function has is another routine of that name
+   * (ScaLAPACK's RESHAPE, which its TOOLS write in C). An unknown call is a library routine; an unknown reference may
+   * as well be an array (from a module outside the project, say, named in an only list), so it is drawn only when its
+   * name, or the module that names it, is a known library's.
    */
   const nameTarget = (e, written, isCall) => {
     const n = lc(written);
@@ -582,7 +589,7 @@ export function buildGraphs(ir, options = {}) {
       const u = usedRoutine(r, written);
       return u && (u.known || isCall) ? u.node : null;
     }
-    if (INTRINSIC_PROCEDURES.has(n)) return null;
+    if ((isCall ? INTRINSIC_SUBROUTINES : INTRINSIC_PROCEDURES).has(n)) return null;
     const cls = libraryClass(n);
     return cls || isCall ? libraryNode(written, cls ?? 'fdfExternal') : null;
   };
@@ -633,12 +640,17 @@ export function buildGraphs(ir, options = {}) {
   };
 
   const calleeMemo = new Map();
-  /** What a procedure or program calls: one entry per call statement or reference, { node, cond }. */
+  /**
+   * What a procedure or program calls: one entry per call statement or reference, { node, cond }. A call through a
+   * procedure pointer the caller declares (`local`, which the parser marks) goes where the pointer points, which the
+   * IR does not know: nothing is drawn for it, as for a dummy procedure.
+   */
   const calleesOf = (e) => {
     let out = calleeMemo.get(e.id);
     if (out) return out;
     out = [];
     for (const c of e.calls ?? []) {
+      if (c.local) continue;
       const node = c.name.includes('%') ? boundTarget(e, lc(c.name)) : nameTarget(e, c.name, true);
       if (node) out.push({ node, cond: condText(c.cond, e.cond) });
     }

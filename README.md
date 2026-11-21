@@ -56,16 +56,22 @@ applyMdxPreset({
 
 A site without them can show the maths as code instead: `generate --math code`.
 
-Arguments, results and components are tables whose rows open to their documentation and declaration, and kind
-names and derived types in them link to their definitions, with a card on hover or keyboard focus. Each entry's
-source code is in a block that opens, with line numbers, read from the files parsed wherever they lie
-(`--source link` only links to the lines). Modules, types and procedures have dependency, inheritance and call
-graphs, written as ` ```mermaid ` blocks: add fumadocs' `remarkMdxMermaid` and a `Mermaid` component to the site, or
-leave them out with `--graphs none`. Calls into MPI, OpenMP, OpenACC, CUDA, the coarray collectives and BLAS are drawn
-in their library's colour; LAPACK and ScaLAPACK routines take theirs from the JavaScript option `graphs.classify`
-until the registry of library symbols arrives. Graphs drawn by [Pele](https://github.com/obsidianmd/pele) take the
-theme's colours from `fumadocs-fortran/style.css`. A page's front matter says what each heading is, for the letters
-(`t` type, `s` subroutine, `f` function, …) that `fortranToc()` puts in the table of contents.
+Arguments, results and components are tables whose rows open to their documentation and declaration. Kind names and
+derived types in them link to their definitions, with a card on hover or keyboard focus, and every badge, intent,
+attribute and shape says what it means in a card on hover; an opened row lists the meanings of its intent,
+attributes, shape and length, for the keyboard and screen readers, while a badge's meaning is for the pointer alone.
+The registry of HPC library names that the package ships (`registry/`) gives cards to the libraries' names: in a
+procedure's "Calls:" line, a BLAS, LAPACK, ScaLAPACK, MPI, OpenMP or OpenACC routine has a card with its library
+and, where the registry has them, its kind, a summary and a link to its documentation, and in the tables mpi_f08's
+types (`type(MPI_Comm)`) and omp_lib's kinds have theirs; a project's own names always win. Each entry's source code
+is in a block that opens, with line numbers, read from the files parsed wherever they lie (`--source link` only
+links to the lines). Modules, types and procedures have dependency, inheritance and call graphs, written as
+` ```mermaid ` blocks: add fumadocs' `remarkMdxMermaid` and a `Mermaid` component to the site, or leave them out with
+`--graphs none`. Calls into BLAS, LAPACK, ScaLAPACK, MPI, OpenMP, OpenACC, CUDA and the coarray collectives are drawn
+in their library's colour (the JavaScript option `graphs.classify` takes the registry's place). Graphs drawn by
+[Pele](https://github.com/obsidianmd/pele) take the theme's colours from `fumadocs-fortran/style.css`. A page's front
+matter says what each heading is, for the letters (`t` type, `s` subroutine, `f` function, …) that `fortranToc()`
+puts in the table of contents.
 [Components](https://nevensky.github.io/fumadocs-fortran/docs/reference/components) shows how to set these up.
 
 From JavaScript:

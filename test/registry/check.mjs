@@ -209,6 +209,19 @@ for (const id of ['lapack', 'scalapack']) {
   ok(/OpenACC_3\.4\.pdf#page=\d+$/.test(pl.links.spec), 'OpenACC parallel loop page');
   ok(lookup('openacc', 'acc_copyin', { section: 'routines' }).links.spec, 'acc_copyin page');
   ok(['directives', 'clauses', 'routines', 'env'].every((s) => Object.keys(openacc[s]).every((n) => openacc[s][n].pg)), 'every OpenACC entry has a page');
+  // each runtime routine is a subroutine or a function, as its Fortran form in the specification says; the
+  // deprecated names are those of the routines they stand for
+  const accKind = (n) => lookup('openacc', n, { section: 'routines' })?.kind;
+  const accNames = ['acc_init', 'acc_get_num_devices', 'acc_get_device_type', 'acc_get_property',
+    'acc_get_property_string', 'acc_wait_all', 'acc_async_test_all', 'acc_on_device', 'acc_malloc', 'acc_free',
+    'acc_delete', 'acc_is_present', 'acc_memcpy_d2d', 'acc_pcopyin', 'acc_present_or_create'];
+  eq(accNames.map(accKind), ['subroutine', 'function', 'function', 'function', 'subroutine', 'subroutine', 'function',
+    'function', 'function', 'subroutine', 'subroutine', 'function', 'subroutine', 'subroutine', 'subroutine'],
+  'OpenACC routines: subroutines and functions');
+  const accKinds = Object.values(openacc.routines).map((e) => e.k);
+  eq([accKinds.filter((k) => k === 'function').length, accKinds.filter((k) => k === 'subroutine').length,
+    accKinds.length], [16, 53, 69], 'every OpenACC routine is a subroutine or a function: 16 functions');
+  eq(libraryOf('ACC_IS_PRESENT')?.entry.kind, 'function', 'libraryOf gives the kind');
 
   const mm = lookup('intrinsics', 'MATMUL');
   eq(mm.kind, 'function', 'matmul kind');
@@ -294,7 +307,7 @@ for (const id of ['lapack', 'scalapack']) {
   // a PDF of two pages: section 2's anchor is at the foot of page 1, its heading ("2 Second final section", with the
   // fi ligature of the font's encoding) on page 2, in a Flate stream; section 3's heading is on neither page
   const text1 = 'BT /F1 10 Tf 72 700 Td [(1)-1000(First)-333(section)]TJ 0 -400 Td (See 2 Second final section.) Tj ET';
-  const text2 = 'BT /F1 10 Tf 72 750 Td [(2)-1000(Second)-333(\\002nal)-333(section)]TJ ET';
+  const text2 = 'BT /F1 10 Tf 72 750 Td [(2)-1000(Second)-333(\\002nal)-333(section)]TJ /F1 5 Tf 300 0 Td (42) Tj ET';
   const bytes = (s) => Buffer.from(s, 'latin1');
   const obj = (n, body) => bytes(`${n} 0 obj\n${body}\nendobj\n`);
   const stream = (n, data, filter = '') => {
@@ -321,8 +334,10 @@ for (const id of ['lapack', 'scalapack']) {
     obj(13, '<< /Title (Index) /Dest [6 0 R /XYZ 72 750 null] /Parent 3 0 R >>'),
     obj(14, '<< /Type /Encoding /BaseEncoding /WinAnsiEncoding /Differences [2 /fi] >>'),
   ]);
-  const { pages, outline } = pdfOutline(pdf);
+  const { pages, outline, lines } = pdfOutline(pdf);
   eq(pages, 2, 'pdfOutline: pages');
+  eq([lines?.(1), lines?.(2)], ['1 First section\nSee 2 Second final section.', '2 Second final section'],
+    'pdfOutline: a page\'s text as lines, with blanks where a TJ array leaves a gap and without text below 7 points');
   const want = [
     ['First section', 1, 1, true],
     ['Second final section', 1, 2, true],
@@ -544,6 +559,11 @@ for (const id of ['lapack', 'scalapack']) {
   // the OpenACC builder reads the text of the PDF's pages too, to find the page that prints each heading
   const acc = sources.sources.find((s) => s.id === 'openacc-spec')?.name;
   ok(!/outline only/.test(acc) && /heading/.test(acc), `the OpenACC source says what is read: ${acc}`);
+  // and whether each routine is a subroutine or a function, from its Fortran form
+  const accUses = sources.sources.find((s) => s.id === 'openacc-spec')?.uses ?? '';
+  ok(/Fortran form/.test(acc) && /subroutine or a function/.test(accUses)
+    && md.includes('whether each routine is a subroutine or a function'),
+  'the OpenACC source names the routines\' forms');
 }
 
 console.log(`${checks - failures}/${checks} registry checks passed`);

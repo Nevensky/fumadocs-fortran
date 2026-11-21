@@ -1,9 +1,10 @@
 # fumadocs-fortran: the plan
 
 Adopted on 19 November 2026, with every decision taken as recommended. Milestone M0 is done, v0.1 is under way, and
-the Shiki grammars (v0.2) and the HPC registry (the first part of v0.3) are built; the [CHANGELOG](CHANGELOG.md) says
-what exists. The plan rests on eight research reports, Docker experiments on public Fortran code, and three
-independent design proposals compared on risk, maintainability and user value ([§17](#17-evidence)).
+the Shiki grammars (v0.2) and the HPC registry (the first part of v0.3) are built, the registry already giving the
+pages their library cards and graph colours; the [CHANGELOG](CHANGELOG.md) says what exists. The plan rests on eight
+research reports, Docker experiments on public Fortran code, and three independent design proposals compared on
+risk, maintainability and user value ([§17](#17-evidence)).
 
 ## In one paragraph
 
@@ -60,11 +61,12 @@ Each decision was taken as recommended, and the rest of the plan assumes it. The
 - **Graphs:** dependency (uses and used by), inheritance and call graphs, written as ```` ```mermaid ```` blocks and on
   by default (`graphs: false`, or `--graphs none`, turns them off). Sites draw them with fumadocs' `remarkMdxMermaid`;
   the docs site uses Pele, which draws them at build time, and `style.css` gives Pele's graphs the theme's colours.
-  Library routines are coloured by name where the name tells (MPI, OpenMP, OpenACC, CUDA, coarray collectives, BLAS);
-  LAPACK and ScaLAPACK wait for the registry, with the `graphs.classify` option meanwhile. There is no Graphviz.
+  Library routines are coloured by library, from the registry and from what names tell (MPI, OpenMP, OpenACC, CUDA,
+  coarray collectives, BLAS); the `graphs.classify` option takes the registry's place. There is no Graphviz.
 - **Dependencies:** none at runtime, and no fumadocs peer dependency. The package works with fumadocs-core 16.18.4 and
   later, the version fumadocs-feynman's site uses.
-- **Hover cards** are HTML and CSS only: no script and no React UI library.
+- **Hover cards** are HTML and CSS only: no script and no React UI library. So are the cards in which badges and
+  pills say what they mean, from one meaning per term in `style.css`.
 - **Source code:** each entity's own lines sit in a collapsed "Source code in …" block, with their line numbers and a
   link to GitHub, read from the files parsed wherever they lie. Modules, programs and entities over 400 lines only link
   (`source: 'link'` links everything).
@@ -350,8 +352,9 @@ Entity sections contain no sub-headings, so fumadocs' own `<include>…#solve</i
   without our grammar pack;
 - its summary and body;
 - an argument table in the manner of fumadocs' TypeTable: name, type (kind and type names link and carry a hover
-  card), shape, intent and attributes in each row, and the full Markdown in the panel the row opens to, since table
-  cells cannot hold LAPACK's `\verbatim` argument docs, code or maths;
+  card), shape, intent and attributes in each row, each pill and shape saying what it means on hover, and the full
+  Markdown in the panel the row opens to, since table cells cannot hold LAPACK's `\verbatim` argument docs, code or
+  maths;
 - its result, callouts, external calls with their badges, a call graph, and its own lines in a collapsed block that
   links to GitHub.
 
@@ -373,8 +376,8 @@ linker. A FORD-compatible `modules.json` lets FORD sites link into ours.
   - `FortranBadges`/`FortranBadge` (`kind`, `label`, `conditional`, `via`);
   - `FortranVariants` (a precision family, with an anchor per variant);
   - `FortranArgs`/`FortranArg`, the argument, component and binding tables, whose rows open to the full docs;
-  - `FortranRef` (a name that links and carries a hover card: kind parameters and derived types now, library
-    symbols with the registry);
+  - `FortranRef` (a name that links and carries a hover card: kind parameters, derived types, and library routines,
+    types and kinds from the registry);
   - `FortranSource` (the collapsed source block) and `FortranGraph` (a titled Mermaid diagram);
   - `fortranToc()`, which adds the kind letters to fumadocs' table of contents;
   - `fortranComponents`, to spread into `getMDXComponents()`.
@@ -385,9 +388,18 @@ linker. A FORD-compatible `modules.json` lets FORD sites link into ours.
     shows on hover and on keyboard focus and hides when they leave; nothing needs JavaScript, so Escape cannot
     dismiss a card. The card describes its name to screen readers (`aria-describedby`), is placed against the screen
     where the browser has CSS anchor positioning, and is not printed.
-  - Kind parameters and derived types use it now; the registry's library symbols use the same `FortranRef` in v0.3.
+  - Kind parameters and derived types use it, and so, from the registry, do the library subroutines of "Calls:"
+    lines and the types of `mpi_f08` and kinds of `omp_lib` in the tables; a project's own names always win.
   - Cards are a few hundred bytes each, so one per occurrence is cheaper than the script that sharing one per page
     would need.
+  - Badges, intents, attributes, conditions, shapes and the `*` or `:` of a character length say what they mean in
+    a card of the same look, drawn by CSS on hover. The components name the term (`data-term`, and `data-arg` for
+    what goes with it), and `style.css` holds one meaning per term, which a site can reword or translate with a rule
+    outside any `@layer`, so that no meaning is written once per pill; a shape's words, the components' own English,
+    are the exception. The terms, and the fields an opened row has for the meanings, add about 2.5% to the largest
+    Showcase page. The pills take no keyboard stop: a row with an intent or an attribute opens, and lists the
+    meanings of its intent, attributes, shape and length, for the keyboard and screen readers; a badge's meaning is
+    for the pointer alone, and its title is text that screen readers read with it.
 - **`style.css`.** Plain `.fdf-*` classes on fumadocs' `--color-fd-*` variables, with `.dark` overrides, and Pele's
   `--pele-*` variables mapped to them for the graphs.
   - Library colour tokens (`--fdf-omp`, `--fdf-mpi`, …) can be overridden by sites.
@@ -421,9 +433,10 @@ committed with `SOURCES.md` and `NOTICE`.
   or FFTW.
 - **Summaries.** v1 writes its own one-liners for the 100 or so most used OpenMP and OpenACC items; the others get a name
   and a link.
-- **Graphs.** The call graphs colour a routine by its library. Until the registry exists they know MPI, OpenMP,
-  OpenACC, CUDA, the coarray collectives and BLAS by name, and LAPACK and ScaLAPACK only through `graphs.classify`;
-  the registry names them all.
+- **Graphs.** The call graphs colour a routine by its library: the registry names the BLAS (first), LAPACK,
+  ScaLAPACK, MPI, OpenMP and OpenACC routines; the names of MPI, OpenMP, OpenACC, CUDA, coarray-collective and BLAS
+  routines, and the HPC modules they come from, tell too, and are all that tells CUDA routines and the coarray
+  collectives; `graphs.classify` takes the registry's place.
 
 **Link providers** (`hpc.links`):
 - `netlib`: member pages from Doxygen's search index, with file pages computed from their hash as the fallback;
@@ -635,7 +648,8 @@ or less (the registry is about 1 MB). Distribution is decision 4.
 
   A lost program unit fails the run.
 - **Package** (every push, Node 18 to 26): tests, publint, `tsc` on the `.d.ts` files, and an `npm pack` consumer
-  smoke test that runs `generate` and renders each component.
+  smoke test that runs `generate`, whose pages must have a registry card and a ScaLAPACK node, and renders each
+  component (not yet: it needs React in that job).
 - **Site:** drift check, `check-pages` with rendering, static export and internal links. A weekly external link check
   tolerates 403 responses from intel.com and mpich.org.
 - **Canary** (weekly): the showcase built against fumadocs 16.18.4 and against the latest release.

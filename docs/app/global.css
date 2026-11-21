@@ -32,6 +32,23 @@ html {
   overflow-x: visible;
 }
 
+/* the meaning of a badge kind fumadocs-fortran does not know, for the HDF5 badge of the Components page: a site's own
+   terms, and its own wordings of the stylesheet's, take rules like this one, outside any @layer, which win over the
+   stylesheet's :where() rules whichever comes first (the stylesheet is in no layer, and its meanings beat a layered
+   rule's) */
+[data-term='hdf5'] {
+  --fdf-mean: "HDF5: a library and file format for large scientific data";
+}
+
+/* Without CSS anchor positioning a badge's card opens below its row of badges, and fumadocs' Tabs box hides what
+   overflows it: room under the row that ends a tab, such as the badges' preview on the Components page, for its
+   cards */
+@supports not ((anchor-scope: all) and (position-try-fallbacks: flip-inline)) {
+  [role='tabpanel'] > .fdf-badges:last-child {
+    margin-block-end: 7rem;
+  }
+}
+
 html > body[data-scroll-locked] {
   margin-right: 0px !important;
   --removed-body-scroll-bar-size: 0px !important;

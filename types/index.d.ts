@@ -146,7 +146,9 @@ export interface PageOptions {
   /**
    * The graphs, as ```` ```mermaid ```` blocks for fumadocs' `remarkMdxMermaid` (default on): each unit's
    * dependencies, each type's inheritance, each procedure's and generic's calls, and the overview's modules. `false`
-   * leaves them out; an object sets how far they go and names the libraries of routines called by name.
+   * leaves them out; an object sets how far they go and names the libraries of routines called by name. Without a
+   * `classify`, the HPC registry's is used: BLAS (first), LAPACK, ScaLAPACK (with PBLAS, BLACS, its tools and REDIST),
+   * MPI, OpenMP and OpenACC. A `classify` replaces it. A routine the project defines is the project's either way.
    */
   graphs?: boolean | Pick<GraphOptions, 'depth' | 'maxNodes' | 'classify'>;
 }
@@ -161,9 +163,10 @@ export interface GraphOptions {
   shown?: (entity: Entity) => boolean;
   /**
    * The library a routine called by name is from, by its lower-case name: a class such as `fdfLapack`, or a family
-   * word such as `lapack`, `scalapack`, `blas` or `mpi`; null when the name is not known. MPI, OpenMP, OpenACC, CUDA
-   * (names starting with cuda, cublas, cufft, curand, cusparse or cusolver), coarray collectives and BLAS are recognised
-   * without it.
+   * word such as `lapack`, `scalapack`, `blas` or `mpi`; null when the name is not known. It is asked only for names
+   * the project does not define. MPI, OpenMP, OpenACC, CUDA (names starting with cuda, cublas, cufft, curand, cusparse
+   * or cusolver), coarray collectives and BLAS are recognised without it; `buildPages` passes the HPC registry's, which
+   * knows LAPACK and ScaLAPACK too, unless its `graphs` option gives one.
    */
   classify?: (name: string) => string | null;
   /**
@@ -206,7 +209,34 @@ export interface FortranFrontmatter {
   toc: Record<string, 'type' | 'interface' | 'subroutine' | 'function' | 'variable' | 'parameter' | 'enum'>;
 }
 
-/** Builds the pages and sidebar files for an IR. */
+/**
+ * Builds the pages and sidebar files for an IR.
+ *
+ * Names from the HPC libraries carry hover cards from the package's registry (`registry/`, read the first time a
+ * page needs it; when it cannot be read, the names are shown without cards, and the graphs colour only what names
+ * tell, as `GraphOptions.classify` lists, leaving LAPACK and ScaLAPACK grey):
+ * - in "Calls:" lines, a library subroutine the project does not define (no procedure, generic interface or variable
+ *   of the name, shown or not, no dummy argument in scope, and no procedure pointer the caller declares through which
+ *   every call of the name goes, `Call.local`; an explicit interface that only describes the routine, when it has no
+ *   heading to link to, does not count) is a `FortranRef` with a title such as
+ *   `subroutine MPI_Allreduce (MPI)`, the registry's summary where it has one, and a link where there is one: Netlib
+ *   for BLAS, LAPACK and ScaLAPACK (Intel oneMKL's pages when the code uses MKL's modules: lapack95, blas95,
+ *   f95_precision, mkl_*), Open MPI 5.0's manual (its development manual for a procedure 5.0 lacks), the OpenMP 5.2
+ *   specification (a later one for a routine 5.2 lacks), the OpenACC 3.4 specification, and fortran-lang.org for an
+ *   intrinsic subroutine (gfortran's manual for random_init and split; tokenize and MPI's predefined callbacks have
+ *   no page, and their cards no href). A routine renamed by a use statement is looked up by its own name.
+ *   A CALL of a function's name, or of an intrinsic's name that another module's use statement gives, is some other
+ *   subroutine and has no card; the project's procedures keep their links;
+ * - in argument, result and component rows, mpi_f08's derived types (`type(MPI_Comm)`, `MPI_Status`, …) and omp_lib's
+ *   kinds (`integer(omp_lock_kind)`) have cards when the declaration's scope sees the module (use, only, renames, host
+ *   association, and through the project's modules; `use, intrinsic :: omp_lib` too, as gfortran keeps its OpenMP
+ *   modules with the intrinsic ones): the registry's line on the name, the MPI 5.0 standard or the
+ *   OpenMP specification, and the use statement it comes from. A project entity of the name wins; `use mpi`, whose
+ *   handles are integers, gives none.
+ *
+ * A type parameter's row reads as its declaration: the type `integer, kind` (or `integer, len`) and one attribute,
+ * `default dp`, for `integer, kind :: k = dp`.
+ */
 export declare function buildPages(ir: FortranIR, options?: PageOptions): { pages: GeneratedPage[]; metas: Array<{ path: string; data: { title: string; pages: string[] } }> };
 
 /** Writes pages into a content folder; a manifest lets later runs delete only their own stale files. */
@@ -280,11 +310,17 @@ export interface FortranType {
   base: string;
   /** The kind as written (`dp`, `c_int`, `8`), or the derived type, or the procedure's interface. */
   kind: string | null;
-  /** The character length (`*`, `:`, `10`). */
+  /** The character length (`*`, `:`, `10`), the one written after the name when there is one. */
   len: string | null;
   /** The type parameters of a parameterised derived type: `k=dp,kl=*` in `class(banded_matrix(k=dp,kl=*))`. */
   params?: string;
-  /** The type specification as written, without blanks: `real(dp)`, `character(len=*)`. */
+  /**
+   * The type specification as written, without blanks: `real(dp)`, `character(len=*)`. A length written after the
+   * name is the type's, written as Fortran would declare the entity alone: after the type for `character` and
+   * `character*…` (`character*(*)` for `character :: a*(*)`, `character*(n)`, `character*10`, and `character*16` for
+   * `character*8 :: e*16`), and in the selector, with its kind, for a type that has one (`character(len=20)` for
+   * `character(len=10) :: d*20`, `character(len=n,kind=ucs4)` for `character(kind=ucs4) :: d*(n)`).
+   */
   text: string;
   /** Typed by the implicit rules, not declared. */
   implicit?: boolean;
@@ -336,6 +372,13 @@ export interface Call {
   name: string;
   line: number;
   cond?: string[];
+  /**
+   * The call goes through a procedure pointer the caller declares: in a BLOCK construct, in its own specification part
+   * or in its host's (`procedure(i), pointer :: dgemm`, or POINTER with EXTERNAL, `procedure(i)` or an interface
+   * body). It calls the project's target, not the routine of that name, so it gets no library card and the call graph
+   * draws nothing for it.
+   */
+  local?: true;
 }
 
 export interface Directive {

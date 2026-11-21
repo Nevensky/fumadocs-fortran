@@ -81,21 +81,21 @@ LAPACK info code: 0 on success
 
 **Returns:** nothing; it is a subroutine
 
-**Calls:** `zheevd`
+**Calls:** <FortranRef href="https://www.netlib.org/lapack/explore-html/d8/d30/group__heevd_gae0a1270d44544514b5e0bf375dd83374.html#gae0a1270d44544514b5e0bf375dd83374" title="subroutine zheevd (LAPACK)" detail="Computes the eigenvalues and, optionally, the left and/or right eigenvectors for HE matrices">`zheevd`</FortranRef>
 
 <FortranGraph title="Call graph" collapsed>
 
 ```mermaid
 flowchart LR
   classDef fdfProcedure fill:#98b6c8,stroke:#386a86,color:#111111
-  classDef fdfExternal fill:#b1b1b1,stroke:#636363,color:#111111,stroke-dasharray:4 3
+  classDef fdfLapack fill:#e0a07d,stroke:#9c4700,color:#111111
   classDef fdfFocus stroke-width:3px
   n1("eigh")
   n2("zheevd")
   n1 --> n2
   class n1 fdfProcedure
   class n1 fdfFocus
-  class n2 fdfExternal
+  class n2 fdfLapack
   click n1 href "/docs/showcase/modern/eigen_wrappers#eigh"
 ```
 
@@ -163,7 +163,7 @@ accumulator
 </FortranArg>
 </FortranArgs>
 
-**Calls:** `dgemm`
+**Calls:** <FortranRef href="https://www.netlib.org/lapack/explore-html/dd/d09/group__gemm_ga1e899f8453bcbfde78e91a86a2dab984.html#ga1e899f8453bcbfde78e91a86a2dab984" title="subroutine dgemm (BLAS)" detail="Performs one of the matrix-matrix operations C := alpha*op( A )*op( B ) + beta*C, where op( X ) is one of op…">`dgemm`</FortranRef>
 
 <FortranGraph title="Call graph" collapsed>
 

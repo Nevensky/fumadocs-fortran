@@ -4,6 +4,9 @@
 import path from 'node:path';
 import { extract, extractFiles, parseSource } from '../src/index.js';
 import { buildGraphs, mermaidLabel } from '../src/emit/graphs.js';
+import { INTRINSIC_PROCEDURES, INTRINSIC_SUBROUTINES } from '../src/emit/fortran-names.js';
+import { classifyLibrary, libraryLookup } from '../src/emit/library.js';
+import { load } from '../registry/read.mjs';
 
 const DECODE = { quot: '"', lt: '<', gt: '>', amp: '&', 35: '#' };
 const decode = (s) => s.replace(/#(quot|lt|gt|amp|35);/g, (m, k) => DECODE[k]);
@@ -691,6 +694,85 @@ export default async function ({ ok, eq, here, out }) {
       'without classify, LAPACK is an external library');
     eq(read(buildGraphs(ir, { classify: () => 'fdfFocus' }).calls(find(ir, 'hpc_calls'))).node('foo_lib').classes,
       ['fdfExternal'], 'classify can only give a library class');
+
+    // the registry's classify, which the page writer gives buildGraphs: the same classes as the site's above, and an
+    // intrinsic (co_sum) is left to the graphs, which draw it as a coarray call
+    const registry = read(buildGraphs(ir, { classify: (n) => classifyLibrary(n) }).calls(find(ir, 'hpc_calls')));
+    eq(classed(registry), classed(h), 'the registry classes LAPACK and ScaLAPACK, and leaves intrinsics to the graphs');
+  }
+
+  // ---- a CALL names a subroutine: a name only an intrinsic function has is some other routine (ScaLAPACK's RESHAPE,
+  // in TOOLS/reshape.c), and is drawn; intrinsic subroutines (gfortran's too) and references of intrinsics are not
+  {
+    const ir = src([
+      'subroutine redist(a, b, n, s)',
+      '  integer :: n',
+      '  real :: a(n), b(n)',
+      '  character(8) :: s',
+      '  call RESHAPE(a, n, b)',
+      '  call random_number(a)',
+      '  call system_clock(n)',
+      '  call getarg(1, s)',
+      '  call exit(1)',
+      '  call c_f_pointer(a, b)',
+      '  call ieee_set_rounding_mode(n)',
+      '  b = reshape(a, [n]) + sum(a)',
+      'end subroutine',
+    ]);
+    const g = (opts) => classed(read(buildGraphs(ir, opts).calls(find(ir, 'redist')) ?? ''));
+    eq([g({}), g({ classify: (n) => classifyLibrary(n) })], [['redist fdfProcedure fdfFocus', 'RESHAPE fdfExternal'],
+      ['redist fdfProcedure fdfFocus', 'RESHAPE fdfExternal']],
+    'a CALL of an intrinsic function\'s name is an outside routine, with the registry\'s classify too');
+    // the intrinsic subroutines are intrinsic procedures, and the registry's are all among them (its functions none)
+    const reg = load('intrinsics').entries;
+    eq([[...INTRINSIC_SUBROUTINES].filter((n) => !INTRINSIC_PROCEDURES.has(n)),
+      Object.keys(reg).filter((n) => (reg[n].k === 's') !== INTRINSIC_SUBROUTINES.has(n) && !n.startsWith('co_'))],
+    [[], []], 'the intrinsic subroutines: a part of the intrinsic procedures, and the registry\'s subroutines');
+  }
+
+  // ---- use, intrinsic :: omp_lib (gfortran keeps its OpenMP and OpenACC modules with the intrinsic ones)
+  {
+    const ir = src([
+      'module dev',
+      '  use, intrinsic :: omp_lib, only: omp_set_num_threads',
+      '  use, intrinsic :: openacc, only: acc_init',
+      '  use, intrinsic :: iso_c_binding, only: c_f_pointer',
+      '  use, intrinsic :: vendor_mod, only: vendor_go',
+      'contains',
+      '  subroutine go(p)',
+      '    integer :: p',
+      '    call omp_set_num_threads(p)',
+      '    call acc_init(p)',
+      '    call c_f_pointer(p)',
+      '    call vendor_go(p)',
+      '  end subroutine',
+      'end module dev',
+    ]);
+    eq(classed(read(buildGraphs(ir).calls(find(ir, 'go')) ?? '')),
+      ['go fdfProcedure fdfFocus', 'omp_set_num_threads fdfOmp', 'acc_init fdfAcc'],
+      'an intrinsic use of an HPC module names its routines; the standard\'s and unknown intrinsic modules\' are not '
+        + 'drawn');
+  }
+
+  // ---- the registry's classes of library routines: BLAS first, then LAPACK, ScaLAPACK, MPI, OpenMP and OpenACC
+  {
+    const names = ['dgemm', 'DGEMV', 'saxpby', 'lsame', 'dgesv', 'zheevd', 'dlamch', 'pdgesv', 'pdgemm', 'blacs_get',
+      'descinit', 'MPI_Allreduce', 'omp_get_max_threads', 'acc_init', 'co_sum', 'sqrt', 'MPI_Comm', 'omp_lock_kind',
+      'omp_sched_static', 'foo_lib', 'constructor'];
+    eq(names.map((n) => classifyLibrary(n)), ['blas', 'blas', 'blas', 'blas', 'lapack', 'lapack', 'lapack', 'scalapack',
+      'scalapack', 'scalapack', 'scalapack', 'mpi', 'openmp', 'openacc', null, null, null, null, null, null, null],
+    'routines by library (PBLAS, BLACS and the tools are ScaLAPACK); intrinsics, types, kinds and constants have none');
+    const asLapack = () => ({ lib: 'lapack', library: 'lapack', section: 'entries', name: 'x', entry: {} });
+    eq([classifyLibrary('dgemm', asLapack), classifyLibrary('dfoo', () => ({ ...asLapack(), library: 'blas' }))],
+      ['blas', 'blas'], 'BLAS before LAPACK: a BLAS name, and the registry\'s BLAS mark');
+    let asked = 0;
+    const broken = libraryLookup(() => {
+      asked++;
+      throw new Error('ENOENT: registry/lapack.json');
+    });
+    eq([...names.slice(0, 5), 'MPI_Allreduce'].map((n) => classifyLibrary(n, broken)),
+      ['blas', 'blas', 'blas', 'blas', null, null], 'a registry that cannot be read: BLAS by name, as without it');
+    eq(asked, 1, 'and it is asked once');
   }
 
   // ---- what a use statement names in a module outside the project

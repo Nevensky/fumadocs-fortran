@@ -244,7 +244,7 @@ Extends [`abstract_matrix`](/docs/showcase/modern/solver_kernels#abstract_matrix
 the entries
 
 </FortranArg>
-<FortranArg name="comm" type="type(MPI_Comm)" cond="USE_MPI" decl="type(MPI_Comm) :: comm">
+<FortranArg name="comm" type="type(MPI_Comm)" cond="USE_MPI" decl="type(MPI_Comm) :: comm" refs={{"MPI_Comm":{"href":"https://www.mpi-forum.org/docs/mpi-5.0/mpi50-report/node35.htm","title":"MPI_Comm","detail":"Handle of a communicator: a group of processes and the context their messages are sent in.","note":"From the use of mpi_f08 at examples/modern/src/modern_ford.F90:27"}}}>
 
 communicator the matrix is distributed over
 
@@ -320,17 +320,17 @@ $a_{ij}$ is kept in `ab(ku+1+i-j, j)`.
 Extends [`abstract_matrix`](/docs/showcase/modern/solver_kernels#abstract_matrix).
 
 <FortranArgs title="Type parameters" columns="type attrs">
-<FortranArg name="k" type="integer" attrs="kind, default dp" decl="integer, kind :: k = dp">
+<FortranArg name="k" type="integer, kind" attrs="default dp" decl="integer, kind :: k = dp">
 
 real kind
 
 </FortranArg>
-<FortranArg name="kl" type="integer" attrs="len, default 1" decl="integer, len :: kl = 1">
+<FortranArg name="kl" type="integer, len" attrs="default 1" decl="integer, len :: kl = 1">
 
 sub-diagonals
 
 </FortranArg>
-<FortranArg name="ku" type="integer" attrs="len, default 1" decl="integer, len :: ku = 1">
+<FortranArg name="ku" type="integer, len" attrs="default 1" decl="integer, len :: ku = 1">
 
 super-diagonals
 
@@ -579,7 +579,7 @@ flowchart LR
   classDef fdfProgram fill:#80bfb6,stroke:#00736a,color:#111111
   classDef fdfProcedure fill:#98b6c8,stroke:#386a86,color:#111111
   classDef fdfGeneric fill:#b7b47e,stroke:#6d6600,color:#111111
-  classDef fdfExternal fill:#b1b1b1,stroke:#636363,color:#111111,stroke-dasharray:4 3
+  classDef fdfLapack fill:#e0a07d,stroke:#9c4700,color:#111111
   classDef fdfFocus stroke-width:3px
   n1{{"solve_dense"}}
   n2("solve_dense_real")
@@ -600,8 +600,8 @@ flowchart LR
   class n3 fdfProcedure
   class n4 fdfProgram
   class n5 fdfProcedure
-  class n6 fdfExternal
-  class n7 fdfExternal
+  class n6 fdfLapack
+  class n7 fdfLapack
   click n1 href "/docs/showcase/modern/solver_kernels#solve_dense"
   click n2 href "/docs/showcase/modern/solver_kernels_lapack#solve_dense_real"
   click n3 href "/docs/showcase/modern/solver_kernels_lapack#solve_dense_complex"
@@ -762,7 +762,7 @@ which computes $y \leftarrow \alpha A x + \beta y$ (here $\alpha = 1$, $\beta = 
 <FortranArg name="y" type="real(dp)" dims="(:)" intent="out" decl="real(dp), intent(out) :: y(:)" refs={{"dp":{"href":"https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fFORTRAN_005fENV.html","title":"dp ⇒ real64","detail":"Real kind with a storage size of 64 bits: double precision","note":"Renamed in the use statement at examples/modern/src/modern_ford.F90:21"}}} />
 </FortranArgs>
 
-**Calls:** [`check_length`](/docs/showcase/modern/solver_kernels#check_length), `dgemv`
+**Calls:** [`check_length`](/docs/showcase/modern/solver_kernels#check_length), <FortranRef href="https://www.netlib.org/lapack/explore-html/d7/dda/group__gemv_ga4ac1b675072d18f902db8a310784d802.html#ga4ac1b675072d18f902db8a310784d802" title="subroutine dgemv (BLAS)" detail="Performs one of the matrix-vector operations y := alpha*A*x + beta*y, or y := alpha*A**T*x + beta*y…">`dgemv`</FortranRef>
 
 <FortranGraph title="Call graph" collapsed>
 
@@ -825,7 +825,7 @@ subroutine banded_matvec(self, x, y)
 <FortranArg name="y" type="real(dp)" dims="(:)" intent="out" decl="real(dp), intent(out) :: y(:)" refs={{"dp":{"href":"https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fFORTRAN_005fENV.html","title":"dp ⇒ real64","detail":"Real kind with a storage size of 64 bits: double precision","note":"Renamed in the use statement at examples/modern/src/modern_ford.F90:21"}}} />
 </FortranArgs>
 
-**Calls:** [`check_length`](/docs/showcase/modern/solver_kernels#check_length), `dgbmv`
+**Calls:** [`check_length`](/docs/showcase/modern/solver_kernels#check_length), <FortranRef href="https://www.netlib.org/lapack/explore-html/dd/df4/group__gbmv_ga7001c2a185bcc8a3b6731f5d1ea7093e.html#ga7001c2a185bcc8a3b6731f5d1ea7093e" title="subroutine dgbmv (BLAS)" detail="Performs one of the matrix-vector operations y := alpha*A*x + beta*y, or y := alpha*A**T*x + beta*y…">`dgbmv`</FortranRef>
 
 <FortranGraph title="Call graph" collapsed>
 
@@ -1047,7 +1047,7 @@ $$
 local slice of the vector
 
 </FortranArg>
-<FortranArg name="comm" type="type(MPI_Comm)" intent="in" cond="USE_MPI" decl="type(MPI_Comm), intent(in) :: comm">
+<FortranArg name="comm" type="type(MPI_Comm)" intent="in" cond="USE_MPI" decl="type(MPI_Comm), intent(in) :: comm" refs={{"MPI_Comm":{"href":"https://www.mpi-forum.org/docs/mpi-5.0/mpi50-report/node35.htm","title":"MPI_Comm","detail":"Handle of a communicator: a group of processes and the context their messages are sent in.","note":"From the use of mpi_f08 at examples/modern/src/modern_ford.F90:27"}}}>
 
 communicator
 
@@ -1062,7 +1062,7 @@ the global 2-norm
 </FortranArg>
 </FortranArgs>
 
-**Calls:** `MPI_Allreduce` when USE\_MPI
+**Calls:** <FortranRef href="https://docs.open-mpi.org/en/v5.0.x/man-openmpi/man3/MPI_Allreduce.3.html" title="subroutine MPI_Allreduce (MPI)" detail="Combines values from all processes and distributes the result back to all processes.">`MPI_Allreduce`</FortranRef> when USE\_MPI
 
 <FortranGraph title="Call graph" collapsed>
 
@@ -1123,7 +1123,7 @@ pure real(dp) function axpy_elem(a, x, y)
 <FortranBadge kind="pure" />
 <FortranBadge kind="private" />
 <FortranBadge kind="offload" label="OpenMP offload" title="declare target" />
-<FortranBadge kind="acc" label="OpenACC routine" title="routine" />
+<FortranBadge kind="acc" label="OpenACC routine" />
 </FortranBadges>
 
 A device routine for OpenACC and OpenMP offload: one element of $a x + y$.
@@ -1170,7 +1170,7 @@ Rank-generic sum $s = \sum_{i} x_i$ with `select rank`, reduced over all images 
 <FortranArg name="total" type="real(dp)" codims="[*]" intent="out" decl="real(dp), intent(out) :: total[*]" refs={{"dp":{"href":"https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fFORTRAN_005fENV.html","title":"dp ⇒ real64","detail":"Real kind with a storage size of 64 bits: double precision","note":"Renamed in the use statement at examples/modern/src/modern_ford.F90:21"}}} />
 </FortranArgs>
 
-**Calls:** `co_sum`
+**Calls:** <FortranRef href="https://fortran-lang.org/learn/intrinsics/parallel/#co-sum" title="subroutine co_sum (intrinsic)" detail="Sum of values on the current set of images">`co_sum`</FortranRef>
 
 <FortranGraph title="Call graph" collapsed>
 

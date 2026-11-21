@@ -4,7 +4,8 @@
 
 /* Library, intent and kind colours, a mid tone each. Text mixes the tone with black (light) or white (dark), so one
    value serves both themes; set any of them on :root to change it. The defaults sit in :where(), which has no
-   specificity, so a site's own :root rule wins whichever stylesheet comes first. */
+   specificity, so a site's own :root rule, outside any @layer, wins whichever stylesheet comes first (this stylesheet
+   is in no layer, and a rule in one loses to it). */
 :where(:root) {
   --fdf-omp: oklch(0.6 0.17 258);
   --fdf-acc: oklch(0.62 0.1 215);
@@ -560,8 +561,9 @@
 /* The components name the term (data-term, and data-arg for what goes with it: self in pass(self)), and the meanings
    at the end of this section say it, once for the whole page. A card is the ::after of what it explains, drawn only
    while that is hovered, in the look of the hover cards above. It is out of the way: the pointer passes through it,
-   and screen readers leave it out of a row's name, as an opened row lists the same text beside each pill. A term
-   without a meaning (a site's own badge, an attribute the list lacks) shows no card. */
+   and screen readers leave it out of a row's name, as an opened row lists the same text beside each pill (a row with
+   an intent or an attribute opens for that). A term without a meaning (a site's own badge, an attribute the list
+   lacks) shows no card. */
 .fdf-badge, .fdf-intent, .fdf-flag, .fdf-cond, .fdf-col-shape, .fdf-len { position: relative; }
 
 .fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after, .fdf-intent[data-term]:hover::after,
@@ -665,18 +667,52 @@
   }
 }
 
-/* Without it, a card in the table's last columns opens towards the table, ending where its pill ends, rather than past
-   the table's edge; in a panel's field and in a plain row's line it starts at their edge, as a hover card does. */
+/* Without it (Firefox before 147, Safari before 26), a card in the table's last columns opens towards the table, ending
+   where its pill ends, rather than past the table's edge. One in a panel's field starts at the field's edge, as a hover
+   card does; a badge's at its row's, and a FortranRef's in running text, such as a "Calls:" line, at its paragraph's,
+   each kept to that width: from a badge or a name late in its line, a card ran past a phone's edge, where fumadocs'
+   layout cuts it off (overflow-x: clip). A card is then below the field, the row or the paragraph. */
 @supports not ((anchor-scope: all) and (position-try-fallbacks: flip-inline)) {
   .fdf-arg-row > :is(.fdf-col-intent, .fdf-col-attrs) > [data-term]:hover::after {
     inset-inline-start: auto;
     inset-inline-end: 0;
   }
 
-  .fdf-arg-field .fdf-len, .fdf-arg-alt :is(.fdf-flag, .fdf-len) { position: static; }
+  /* A flag is set left to right, its card with it, so that its inline end is its right: on a right-to-left page, whose
+     last columns are on the left, its card would open away from the table and off the screen. :dir() is the page's
+     direction, which the flag's own does not change. A site's CSS tools may lower it to :lang() of the right-to-left
+     languages (Lightning CSS does, in Tailwind v4): it then holds only where the page's lang, which the site sets
+     (fumadocs sets neither lang nor dir), is one of them, and not on a right-to-left page whose lang is, say, en. */
+  .fdf-arg-row > .fdf-col-attrs > .fdf-flag[data-term]:dir(rtl):hover::after {
+    inset-inline-start: 0;
+    inset-inline-end: auto;
+  }
 
-  .fdf-arg-field .fdf-len[data-term]:hover::after,
-  .fdf-arg-alt :is(.fdf-flag, .fdf-len)[data-term]:hover::after { max-width: min(18rem, 100%); }
+  .fdf-arg-field .fdf-len { position: static; }
+
+  .fdf-arg-field .fdf-len[data-term]:hover::after { max-width: min(18rem, 100%); }
+
+  .fdf-badges { position: relative; }
+
+  .fdf-badges > .fdf-badge { position: static; }
+
+  .fdf-badges > .fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after,
+  .fdf-badges > .fdf-badge:hover > .fdf-badge-note { max-width: min(18rem, 100%); }
+
+  /* The first is the stylesheet's one rule on the page's own markup: a paragraph that holds a FortranRef. All three
+     name :has(), so that a browser without it drops them together, and the name stays its card's containing block. */
+  p:has(> .fdf-ref) { position: relative; }
+
+  p:has(> .fdf-ref) > .fdf-ref { position: static; }
+
+  p:has(> .fdf-ref) > .fdf-ref .fdf-ref-card { max-width: min(18rem, 100%); }
+}
+
+/* A phone keeps what was tapped hovered. A tap on a pill in a row opens the row, whose panel says what the pill means,
+   and the card would stay over that panel; a badge, and a plain row's result pill, which open nothing, keep their
+   cards. */
+@media (hover: none) {
+  .fdf-arg > summary [data-term]:hover::after { display: none; }
 }
 
 /* the * or : of character(*): a dotted line, as under a name with a hover card, says there is more to it */
@@ -687,8 +723,8 @@
   cursor: help;
 }
 
-/* An opened row's intent, in words, and its attributes, each beside its meaning: the text of their cards, for the
-   keyboard and for screen readers, which read it here */
+/* An opened row's intent and the * or : of its length, in words, and its attributes, each beside its meaning: the
+   text of their cards, for the keyboard and for screen readers, which read it here */
 .fdf-arg-field > dd[data-term]::after, .fdf-arg-terms > dd::after { content: var(--fdf-mean); }
 
 .fdf-arg-terms {
@@ -714,8 +750,11 @@
   .fdf-arg-terms > dd:not(:last-child) { margin-bottom: 0.375rem; }
 }
 
-/* The meanings, by term. In :where(), which has no specificity, so that a site's own rule for a term, in its own
-   words or language, wins whichever stylesheet comes first, and a site's own badge can have one. */
+/* The meanings, by term. In :where(), which has no specificity, so that a site's own [data-term='…'] rule, in its own
+   words or language and outside any @layer, wins whichever stylesheet comes first, and a site's own badge can have
+   one. A :where() rule of the site's only ties with these, and wins only after them; a rule in a layer loses to them.
+   A shape's words are the components' own, in English: a site rewords a shape's card one data-arg at a time, and an
+   opened row's Shape line not at all. */
 :where([data-term='module']) {
   --fdf-mean: "A module: types, data and procedures that other program units take in with use";
 }
@@ -780,7 +819,9 @@
 :where([data-term='deferred']) {
   --fdf-mean: "A deferred binding: no procedure here. Each type that extends it, and is not abstract, must give one";
 }
-:where([data-term='private']) { --fdf-mean: "Private: accessible only within its module"; }
+:where([data-term='private']) {
+  --fdf-mean: "Private: not available where its module is used, only in the module and its submodules";
+}
 :where([data-term='public']) { --fdf-mean: "Public: accessible wherever its module is used"; }
 :where([data-term='deprecated']) {
   --fdf-mean: "Deprecated: kept for old code, and may be removed. Avoid it in new code";
@@ -789,7 +830,8 @@
   --fdf-mean: "Interoperable with C: it matches a C function, struct or variable";
 }
 :where([data-term='parameter']) { --fdf-mean: "A named constant: its value is fixed when the program is compiled"; }
-:where([data-term='conditional'], [data-term='when']) {
+:where([data-term='conditional']) { --fdf-mean: "Exists only when a preprocessor condition holds"; }
+:where([data-term='conditional'][data-arg], [data-term='when'][data-arg]) {
   --fdf-mean: "Exists only when the preprocessor condition " attr(data-arg) " holds";
 }
 :where([data-term='cpp']) { --fdf-mean: "Uses the C preprocessor: #if, #define and #include lines"; }
@@ -798,7 +840,7 @@
   --fdf-mean: "Starts an OpenMP parallel region: the code inside runs on a team of threads";
 }
 :where([data-term='offload']) {
-  --fdf-mean: "Offloads work to an accelerator such as a GPU, with OpenMP target directives";
+  --fdf-mean: "Uses OpenMP target directives, which put code and data on an accelerator such as a GPU";
 }
 :where([data-term='acc']) {
   --fdf-mean: "Uses OpenACC: !$acc directives, which run code on an accelerator such as a GPU";
@@ -834,7 +876,8 @@
 }
 :where([data-term='result']) { --fdf-mean: "The function's result: the value it returns"; }
 :where([data-term='allocatable']) {
-  --fdf-mean: "Allocated at run time, by allocate or on assignment, and freed automatically";
+  --fdf-mean: "Allocated at run time, by allocate or on assignment, and freed by deallocate (a local one also"
+    " on return)";
 }
 :where([data-term='pointer']) {
   --fdf-mean: "Points at a target (p => t) or at memory allocated through it, or at nothing (null)";
@@ -856,7 +899,8 @@
   --fdf-mean: "Used by asynchronous input/output or communication, such as MPI_Irecv, that may still be pending";
 }
 :where([data-term='protected']) {
-  --fdf-mean: "Read-only outside its module: only the module may change it (for a pointer, where it points)";
+  --fdf-mean: "Read-only outside its module and its submodules, which alone may change it (for a pointer, where it"
+    " points)";
 }
 :where([data-term='external']) { --fdf-mean: "An external or dummy procedure, not a variable"; }
 :where([data-term='intrinsic']) {
@@ -879,9 +923,13 @@
 :where([data-term='default'][data-arg]) {
   --fdf-mean: "Takes the value " attr(data-arg) " when a declaration of the type does not give one";
 }
-:where([data-term='init'][data-arg]) { --fdf-mean: "Initialized to " attr(data-arg) " where it is declared"; }
+:where([data-term='init'][data-arg]) { --fdf-mean: "Initialised to " attr(data-arg) " where it is declared"; }
 :where([data-term='pointer-init'][data-arg]) {
-  --fdf-mean: "Pointer initialization: it starts as " attr(data-arg);
+  --fdf-mean: "Pointer initialisation: it starts as " attr(data-arg);
+}
+:where([data-term='rank'][data-arg]) {
+  --fdf-mean: "The RANK clause (Fortran 2023): rank " attr(data-arg) ", assumed shape, or deferred if allocatable or"
+    " pointer. Rank 0 is a scalar";
 }
 :where([data-term='device']) { --fdf-mean: "CUDA Fortran: in the GPU's memory"; }
 :where([data-term='managed']) {
@@ -891,13 +939,17 @@
   --fdf-mean: "CUDA Fortran: page-locked host memory, for faster copies to and from the GPU";
 }
 :where([data-term='shape'][data-arg]) { --fdf-mean: attr(data-arg); }
-:where([data-term='assumed-length']) { --fdf-mean: "len=*: assumed length, taken from the actual argument"; }
+:where([data-term='assumed-length']) { --fdf-mean: "Assumed length (len=*): taken from the actual argument"; }
+:where([data-term='assumed-length-result']) {
+  --fdf-mean: "Assumed length (len=*), obsolescent: the length declared for the function's name where it is called";
+}
 :where([data-term='deferred-length']) {
-  --fdf-mean: "len=:: deferred length, set when the variable is allocated or assigned";
+  --fdf-mean: "Deferred length (len=:): set by allocate, assignment or pointer assignment, or from the actual argument";
 }
 
-/* a badge with a condition says it after what the badge means: the condition's own badge says nothing else */
-.fdf-badge-conditional[data-arg]:not([data-term='when'], [data-term='conditional']) {
+/* A badge with a condition says it after what the badge means, on a line of its own: the condition's own badge says
+   nothing else. In :where() too, so that a site's [data-term='…'][data-arg] rule rewords it. */
+:where(.fdf-badge-conditional[data-arg]:not([data-term='when'], [data-term='conditional'])) {
   --fdf-also: '\A Only when the preprocessor condition ' attr(data-arg) ' holds';
 }
 
@@ -1122,7 +1174,8 @@
 /* Pele takes its fonts and colours from --pele-* variables, and without them draws lines and edge labels for a light
    page: near-black arrows, which a dark theme hides, and labels in white boxes. These give a generated graph fumadocs'
    fonts and colours, which follow the theme; the fallbacks serve a page without fumadocs' variables. In :where(),
-   which has no specificity, so that a site's own .pele rule wins whichever stylesheet comes first. */
+   which has no specificity, so that a site's own .pele rule, outside any @layer, wins whichever stylesheet comes
+   first. */
 :where(.fdf-graph .pele) {
   --pele-font: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
   --pele-font-mono: var(--fdf-mono);

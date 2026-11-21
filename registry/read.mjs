@@ -369,7 +369,8 @@ function linkOf(entry) {
  * - name: the registry's spelling (MPI_Allreduce); section: the section of the file that holds it;
  * - entry: what lookup(lib, name, { section }) returns, a fresh object;
  * - link: the page a card links to, or null: Netlib (BLAS, LAPACK, ScaLAPACK), Open MPI's manual page (an MPI
- *   procedure), the MPI 5.0 standard (an MPI type), the OpenMP or OpenACC specification, fortran-lang.org.
+ *   procedure), the MPI 5.0 standard (an MPI type), the OpenMP or OpenACC specification, fortran-lang.org or
+ *   gfortran's manual (an intrinsic).
  * A project's own procedure or type of the same name wins: ask only for names the project does not define.
  */
 export function libraryOf(name) {

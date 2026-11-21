@@ -62,6 +62,29 @@ export const INTRINSIC_PROCEDURES = new Set(words(`
   imvbits jmvbits kmvbits bnot inot jnot knot bshft iishft jishft kishft bshftc iishftc jishftc kishftc
 `));
 
+/**
+ * The intrinsic procedures a CALL statement can name: the standard's intrinsic subroutines (Fortran 2023) and those of
+ * its intrinsic modules, gfortran's extensions that are subroutines (some of them functions as well: SECOND, SYSTEM),
+ * and the specific names -fdec gives MVBITS. A CALL of any other intrinsic's name, one only a function has (RESHAPE,
+ * ABS), calls an external subroutine of that name, as gfortran compiles it. Like INTRINSIC_PROCEDURES, of which it is
+ * part, it leaves out the coarray collectives.
+ */
+export const INTRINSIC_SUBROUTINES = new Set(words(`
+  atomic_add atomic_and atomic_cas atomic_define atomic_fetch_add atomic_fetch_and atomic_fetch_or atomic_fetch_xor
+  atomic_or atomic_ref atomic_xor cpu_time date_and_time event_query execute_command_line get_command
+  get_command_argument get_environment_variable move_alloc mvbits random_init random_number random_seed split
+  system_clock tokenize
+
+  c_f_pointer c_f_procpointer c_f_strpointer ieee_get_flag ieee_get_halting_mode ieee_get_modes
+  ieee_get_rounding_mode ieee_get_status ieee_get_underflow_mode ieee_set_flag ieee_set_halting_mode ieee_set_modes
+  ieee_set_rounding_mode ieee_set_status ieee_set_underflow_mode
+
+  abort alarm backtrace chdir chmod ctime dtime etime exit fdate fget fgetc flush fput fputc free fseek fstat ftell
+  gerror getarg getcwd getenv getlog gmtime hostnm idate itime kill link lstat ltime perror rename second signal sleep
+  srand stat symlnk system ttynam umask unlink
+  bmvbits imvbits jmvbits kmvbits
+`));
+
 // stem: the type prefixes it takes in the reference BLAS (s, d, c, z)
 const BLAS_STEMS = {
   // level 1

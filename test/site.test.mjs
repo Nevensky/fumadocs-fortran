@@ -1,9 +1,9 @@
-// The docs site: what its pages say about the package against the package and the generated pages, then its own code
-// (docs/lib/shared.ts, docs/components/mdx): the links next/link never sees, those of hover cards, source headers,
-// graph nodes and the llms files, get what it gives the others, the base path the site is served under and, in the
-// static export, a page's trailing slash, so that a link to an anchor of the page being read only scrolls. The site's
-// modules are bundled with esbuild, with one React; that part needs the site's node_modules (scripts/docs.sh keeps
-// them in a Docker volume) and is skipped without them.
+// The docs site: what its pages say about the package against the package, its stylesheet and the generated pages,
+// and the width of the docs' prose, then its own code (docs/lib/shared.ts, docs/components/mdx): the links next/link
+// never sees, those of hover cards, source headers, graph nodes and the llms files, get what it gives the others,
+// the base path the site is served under and, in the static export, a page's trailing slash, so that a link to an
+// anchor of the page being read only scrolls. The site's modules are bundled with esbuild, with one React; that part
+// needs the site's node_modules (scripts/docs.sh keeps them in a Docker volume) and is skipped without them.
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -21,9 +21,17 @@ export default async function ({ ok, eq, here, out }) {
     const ends = ['\n## ', '\n### '].map((h) => comp.indexOf(h, i + 1)).filter((j) => j > i);
     return i < 0 ? '' : comp.slice(i, Math.min(...ends, comp.length));
   };
+  // what the page draws: its text without the code blocks, whose MDX is only shown
+  const unfenced = (s) => s.replace(/^(`{3,})[^\n]*\n[\s\S]*?\n\1[ \t]*$/gm, '');
   const refSection = section('## FortranRef');
-  ok(refSection && !refSection.includes('<Tabs') && (refSection.match(/\{<><FortranRef /g) ?? []).length === 2,
-    'the live FortranRef examples stand outside Tabs, whose box clips a card, as expressions, which search leaves out');
+  // every FortranRef of the section outside its code blocks is in an expression: the three examples, the last a
+  // sentence that starts with text
+  const live = unfenced(refSection);
+  const refsIn = (s) => (s.match(/<FortranRef\b/g) ?? []).length;
+  const examples = [...live.matchAll(/\{<>([\s\S]*?)<\/>\}/g)].map((m) => m[1]).filter(refsIn);
+  ok(refSection && !refSection.includes('<Tabs') && examples.length === 3
+    && examples.reduce((n, e) => n + refsIn(e), 0) === refsIn(live),
+  'the live FortranRef examples stand outside Tabs, whose box clips a card, as expressions, which search leaves out');
   const snippet = /```tsx title="components\/mdx\/mermaid.tsx"\n([\s\S]*?)\n```/.exec(comp)?.[1] ?? '';
   ok(/\bcatch\b/.test(snippet) && /<CodeBlock\b/.test(snippet),
     'the Mermaid snippet shows a diagram Pele cannot parse as its code');
@@ -46,6 +54,45 @@ export default async function ({ ok, eq, here, out }) {
   eq([...said].filter((v) => v.startsWith('--fdf-k-') && !nodeVars.has(v)), [],
     'the Styling table says no kind variable colours graph nodes that does not');
 
+  // ---- the Meanings section against style.css: the terms it lists, the rule it shows, and what it quotes
+  const meanings = section('## Meanings');
+  // the terms of the stylesheet's meanings, :where([data-term='…'], …) { --fdf-mean: … }
+  const meaningRule = /:where\(((?:\[data-term='[^']+'\](?:\[data-arg\])?(?:,\s*)?)+)\)\s*\{\s*--fdf-mean:/g;
+  const terms = new Set([...css.matchAll(meaningRule)]
+    .flatMap((m) => [...m[1].matchAll(/\[data-term='([^']+)'\]/g)].map((t) => t[1])));
+  const listed = new Set([...meanings.matchAll(/`([a-z][\w-]*)`/g)].map((m) => m[1]));
+  const unlisted = [...terms].filter((t) => !listed.has(t));
+  ok(terms.size > 0 && !unlisted.length,
+    `the Meanings section names every term style.css has a meaning for: ${unlisted}`);
+  const hdf5 = /```css title="app\/global.css"\n(\[data-term='hdf5'\] \{[\s\S]*?\n\})\n```/.exec(comp)?.[1];
+  ok(!!hdf5 && read('docs/app/global.css').includes(hdf5) && /<FortranBadge kind="hdf5"/.test(unfenced(comp)),
+    "the HDF5 meaning the page shows is the site's own, for a badge the page draws");
+  // a quote follows its pill, with no other code between them: the stylesheet's own words, its strings run together
+  const flat = meanings.replace(/\s+/g, ' ');
+  const quote = (pill) => new RegExp(`\`${pill.replace(/[()*]/g, '\\$&')}\`[^\`"]*"([^"]*)"`).exec(flat)?.[1]
+    .replace(/\\(.)/g, '$1');
+  const meaning = (term) => {
+    const m = new RegExp(`:where\\(\\[data-term='${term}'\\]\\) \\{\\s*--fdf-mean: ((?:"[^"]*"\\s*)+);`).exec(css);
+    return m && [...m[1].matchAll(/"([^"]*)"/g)].map((s) => s[1]).join('');
+  };
+  const quoted = [quote('allocatable'), quote('character(*)')];
+  const meant = [meaning('allocatable'), meaning('assumed-length')];
+  ok(meant.every(Boolean) && quoted.every((q, i) => q === meant[i]),
+    `the Meanings section quotes style.css's meanings of allocatable and of the * of character(*): ${quoted}`);
+  const preview = /<Tab value="Preview">\s*<FortranArgs>([\s\S]*?)<\/FortranArgs>/
+    .exec(section('## FortranArgs and FortranArg'))?.[1] ?? '';
+  ok(/attrs="[^"]*\ballocatable\b/.test(preview) && preview.includes('dims="(lda,*)"')
+    && preview.includes('type="character(*)"'),
+  'the FortranArg preview has the allocatable, (lda,*) and character(*) whose meanings the Meanings section quotes');
+  // its type parameters' rows, drawn and shown as MDX, as the generator writes them: the type with kind or len, and a
+  // default as the one attribute
+  const paramRow = new RegExp('<FortranArg name="(\\w+)" type="([^"]*)"(?: attrs="([^"]*)")? '
+    + 'decl="integer, (kind|len) :: (\\w+)(?: = (\\w+))?"(?: /)?>', 'g');
+  const params = [...comp.matchAll(paramRow)];
+  ok(params.some((m) => m[4] === 'kind' && m[6]) && params.every((m) => m[1] === m[5] && m[2] === `integer, ${m[4]}`
+    && (m[3] ?? '') === (m[6] ? `default ${m[6]}` : '')),
+  "the Components page shows its type parameters' rows as the generator writes them");
+
   // ---- the home page's sample, against the generated entry of the same procedure
   const home = read('docs/app/(home)/page.tsx');
   const sk = read('docs/content/docs/showcase/modern/solver_kernels.mdx');
@@ -56,6 +103,29 @@ export default async function ({ ok, eq, here, out }) {
     "the home page's sample has the generated columns and declarations");
   ok(/name="nrm"[^>]*\sresult\s/.test(home), "the sample's result row is a result");
   ok(/refs=\{dp\}/.test(home) && home.includes("title: 'dp ⇒ real64'"), "the sample's dp has its hover card");
+  // its cards are the generated ones: those of the rows, MPI_Comm's from the registry among them, each row's in the
+  // object its refs name, whose notes the sample writes with the line it reads from the file, and that of the Calls
+  // line
+  const file = /^const FILE = '([^']+)';$/m.exec(home)?.[1] ?? '';
+  const noted = (r, text) => {
+    const at = r.note ? r.note.lastIndexOf(` ${file}:`) : -1;
+    return !r.note || (!!file && at > 0 && /^\d+$/.test(r.note.slice(at + file.length + 2))
+      && text.includes(`\`${r.note.slice(0, at)} \${FILE}:`));
+  };
+  const cards = [...generated.matchAll(/<FortranArg name="(\w+)"[^>]* refs=\{(\{.*?\})\}(?: \/)?>/g)]
+    .flatMap((m) => Object.entries(JSON.parse(m[2])).map(([n, r]) => [m[1], n, r]));
+  const uncarded = cards.filter(([row, n, r]) => {
+    const v = new RegExp(`name="${row}"[^>]*\\srefs=\\{(\\w+)\\}`).exec(home)?.[1];
+    const text = v && new RegExp(`\\n  const ${v}: Record<string, FortranRefTarget> = \\{(\\n[\\s\\S]*?)\\n  \\};`)
+      .exec(home)?.[1];
+    return !text?.includes(`\n    ${n}: {`) || !noted(r, text)
+      || !['href', 'title', 'detail'].every((k) => text.includes(`${k}: '${r[k]}'`));
+  }).map(([row, n]) => `${row}: ${n}`);
+  ok(cards.some(([, n]) => n === 'MPI_Comm') && !uncarded.length,
+    `the home page's sample has the cards of the generated rows, MPI_Comm's among them: ${uncarded}`);
+  const call = /\*\*Calls:\*\* <FortranRef href="([^"]+)" title="([^"]+)" detail="([^"]+)">/.exec(generated);
+  ok(!!call && [`href="${call[1]}"`, `title="${call[2]}"`, `detail="${call[3]}"`].every((a) => home.includes(a)),
+    "the home page's Calls line has the generated library card of MPI_Allreduce");
   const calls = '<FortranGraph title="Call graph" collapsed>';
   ok(generated.includes(calls) && home.includes(calls), 'the sample has the call graph, collapsed, as the generated entry');
   ok(/<FortranSource[^>]*>\s*\{code\}\s*<\/FortranSource>/.test(home),
@@ -63,6 +133,43 @@ export default async function ({ ok, eq, here, out }) {
   const intro = read('docs/content/docs/index.mdx');
   ok(['hover card', 'graphs', 'block that opens', 'table of contents'].every((w) => intro.includes(w)),
     "the Introduction's list of what a page holds names the rows' cards, the graphs, the source and the kind letters");
+
+  // ---- the prose of the docs keeps to 120 characters a line: the hand-written pages (the Showcase is generated) and
+  // the READMEs and CHANGELOG, outside code blocks, JSX lines, Markdown tables and TypeTable props, whose descriptions
+  // are a string each. PLAN.md is left out: some of its lines, older than this check, are longer.
+  const longLines = (name) => {
+    const out = [];
+    let fence = '';
+    let props = false;
+    read(name).split('\n').forEach((line, i) => {
+      const t = line.trim();
+      const open = /^(`{3,}|~{3,})/.exec(t)?.[1];
+      if (fence) {
+        if (open && open[0] === fence[0] && open.length >= fence.length && t === open) fence = '';
+        return;
+      }
+      if (open) {
+        fence = open;
+        return;
+      }
+      if (/^<TypeTable\b/.test(t)) props = true;
+      if (props) {
+        if (t === '/>') props = false;
+        return;
+      }
+      if (!/^[<{|]/.test(t) && line.length > 120) out.push(`${name}:${i + 1} (${line.length})`);
+    });
+    return out;
+  };
+  const mdx = (dir) => fs.readdirSync(path.join(repo, dir), { withFileTypes: true }).flatMap((d) => {
+    const p = `${dir}/${d.name}`;
+    if (d.isDirectory()) return p === 'docs/content/docs/showcase' ? [] : mdx(p);
+    return p.endsWith('.mdx') ? [p] : [];
+  });
+  const prose = [...mdx('docs/content/docs'), 'README.md', 'CHANGELOG.md', 'docs/README.md'];
+  const long = prose.flatMap(longLines);
+  ok(prose.includes('docs/content/docs/reference/components.mdx') && !long.length,
+    `the prose of the docs keeps to 120 characters a line: ${long}`);
 
   const need = createRequire(path.join(docs, 'package.json'));
   let esbuild;
@@ -159,6 +266,10 @@ export default async function ({ ok, eq, here, out }) {
     `a graph node links to the page with its trailing slash: ${JSON.stringify(graph)}`);
   ok(ex.html('Mermaid', { chart: 'sequenceDiagram\n  A->>B: hello\n  B-->>' }).includes('sequenceDiagram'),
     'a diagram Pele cannot draw is shown as its code');
+  // the shape's words the Meanings section quotes are the components' own
+  const lda = /data-term="shape" data-arg="([^"]*)"/
+    .exec(ex.html('FortranArg', { name: 'a', type: 'real(dp)', dims: '(lda,*)' }))?.[1];
+  ok(!!lda && quote('(lda,*)') === lda, `the Meanings section quotes the components' words for (lda,*): ${lda}`);
 
   // ---- the llms files and the Markdown copies
   const md = [

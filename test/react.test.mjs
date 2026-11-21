@@ -111,15 +111,16 @@ const listOf = (html) => [...(inner(html, '<dl class="fdf-arg-terms">') ?? '').m
 const said = (value) => [...value.matchAll(/"([^"]*)"|'([^']*)'|attr\(data-arg\)/g)].map((m) => m[1] ?? m[2] ?? '{arg}').join('');
 // The terms the components write, and so the meanings style.css has: the kinds of badge with a label of their own and
 // those the generator adds, the kinds its labels make, the intents, the attributes, the shape and the lengths
+// (a conditional badge without its condition, which a page may write by hand, has a meaning of its own)
 const BADGE_TERMS = ['module', 'submodule', 'program', 'subroutine', 'function', 'type', 'interface', 'omp', 'acc', 'offload',
   'mpi', 'coarray', 'cuda', 'blas', 'lapack', 'scalapack', 'cpp', 'bindc', 'pure', 'elemental', 'recursive', 'abstract',
   'deferred', 'private', 'public', 'deprecated', 'blockdata', 'impure', 'non-recursive', 'simple', 'parameter',
   'generic-interface', 'operator-interface', 'assignment-interface', 'dtio-interface', 'abstract-interface',
-  'module-interface', 'separate-procedure', 'omp-parallel', 'acc-routine', 'conditional', 'when'];
+  'module-interface', 'separate-procedure', 'omp-parallel', 'acc-routine', 'conditional', 'conditional+arg', 'when+arg'];
 const PILL_TERMS = ['intent-in', 'intent-out', 'intent-inout', 'result', 'allocatable', 'pointer', 'target', 'contiguous',
   'optional', 'value', 'save', 'volatile', 'asynchronous', 'protected', 'external', 'intrinsic', 'bind', 'nopass', 'pass',
   'pass+arg', 'non_overridable', 'kind', 'len', 'default+arg', 'init+arg', 'pointer-init+arg', 'device', 'managed', 'pinned',
-  'shape+arg', 'assumed-length', 'deferred-length'];
+  'rank+arg', 'shape+arg', 'assumed-length', 'assumed-length-result', 'deferred-length'];
 
 export default async function ({ ok, eq }) {
   // ---------------------------------------------------------------- source rules: one set for server and client
@@ -141,6 +142,13 @@ export default async function ({ ok, eq }) {
     ok(declared.length > 0, `${iface} is declared`);
     eq(declared, destructured, `${iface} has the props ${fn} reads`);
   }
+  // A site's rule for a term beats style.css's, whose meanings have no specificity, wherever the site's CSS comes, if it
+  // has some and is in no @layer: a :where() rule of the site's only ties with them, and a layered one loses.
+  ok(!/:where\(\[data-term/.test(dts) && /`\[data-term='hdf5'\] \{ --fdf-mean: "HDF5: …"; \}`/.test(dts) && /outside any @layer/.test(dts),
+    "types/react.d.ts shows a site's meaning as a [data-term] rule outside any @layer, which wins whichever stylesheet comes first");
+  // the meanings are written once, in style.css: an opened row's Length line takes the meaning of its * or : from there
+  eq([...src.matchAll(/(['"`])((?:(?!\1)[^\n\\])*(?:actual argument|allocated or assigned|preprocessor condition)(?:(?!\1)[^\n\\])*)\1/g)].map((m) => m[2]), [],
+    'react/index.js holds no meaning in its strings');
 
   // ---------------------------------------------------------------- style.css: nothing outside the components
   const css = read('../style.css');
@@ -158,8 +166,18 @@ export default async function ({ ok, eq }) {
   // words win: --fdf-mean and nothing else
   const MEANING = /^:where\((\[data-term='[\w-]+'\](?:\[data-arg\])?(?:, \[data-term='[\w-]+'\](?:\[data-arg\])?)*)\)$/;
   const meaningRule = (sel, decls) => MEANING.test(sel) && decls.length === 1 && decls[0].startsWith('--fdf-mean:');
-  eq(rules.flatMap(([sels, decls]) => sels.filter((s) => !s.startsWith('.fdf-') && !pele(s) && !tokens(s, decls) && !peleVars(s, decls) && !meaningRule(s, decls))), [],
-    'style.css styles only .fdf-* classes and the fdf classes of graph nodes, sets only --fdf-* variables on :where(:root) and :where(.dark), only --pele-* variables on the graphs\' diagrams, and only --fdf-mean on the terms');
+  // the line a badge with a condition adds to its meaning, in :where() too, so that a site's [data-term] rule rewords it
+  const ALSO = ":where(.fdf-badge-conditional[data-arg]:not([data-term='when'], [data-term='conditional']))";
+  const alsoRule = (sel, decls) => sel === ALSO && decls.length === 1 && decls[0].startsWith('--fdf-also:');
+  // Without anchor positioning the card of a FortranRef in running text, such as a "Calls:" line, is placed against its
+  // paragraph, which is the one thing of the page's own that the stylesheet styles: it positions it, and only there
+  const FALLBACK = '@supports not ((anchor-scope: all) and (position-try-fallbacks: flip-inline))';
+  const PARA = 'p:has(> .fdf-ref)';
+  const paraRule = (sel, decls, at) => at === FALLBACK
+    && ((sel === PARA && decls.join() === 'position: relative') || /^p:has\(> \.fdf-ref\) > \.fdf-ref(?: \.fdf-[\w-]+)*$/.test(sel));
+  eq(rules.flatMap(([sels, decls, at]) => sels.filter((s) => !s.startsWith('.fdf-') && !pele(s) && !tokens(s, decls) && !peleVars(s, decls) && !meaningRule(s, decls)
+    && !alsoRule(s, decls) && !paraRule(s, decls, at))), [],
+    'style.css styles only .fdf-* classes and the fdf classes of graph nodes, sets only --fdf-* variables on :where(:root) and :where(.dark), only --pele-* variables on the graphs\' diagrams, only --fdf-mean on the terms and --fdf-also on a conditional badge, and, without anchor positioning, positions a paragraph that holds a FortranRef');
   // Without these Pele draws its edges, arrowheads and edge labels for a light page whatever the theme: on a dark card
   // its #1f1f1f arrows were at 1.1:1, and its labels sat in white boxes. They are fumadocs' variables, as the docs site's
   // own mapping (docs/app/global.css) has them, through the shared values for the mono font and the border.
@@ -322,17 +340,43 @@ export default async function ({ ok, eq }) {
   // the subtle ones
   ok(/lost on entry/.test(mean('intent-out')) && /deallocated/.test(mean('intent-out')), "intent(out): the caller's value is lost on entry, and an allocatable is deallocated");
   ok(/binding/.test(mean('deferred')) && /not abstract/.test(mean('deferred')) && !/shape/.test(mean('deferred')), 'deferred: a binding that each extension that is not abstract implements, not a deferred shape');
-  eq([mean('assumed-length'), mean('deferred-length')], ['len=*: assumed length, taken from the actual argument', 'len=:: deferred length, set when the variable is allocated or assigned'],
-    'the * and the : of a character length');
+  // The * of a dummy argument takes its length from the actual argument; that of a function's result (obsolescent) from
+  // where the function is called, which declares the length of its name. A deferred length is set by allocate, by
+  // assignment or pointer assignment, or by argument association (F2023 7.2). The code comes in brackets: run into the
+  // colon, "len=:" read as "len=::", Fortran's separator.
+  eq([mean('assumed-length'), mean('assumed-length-result'), mean('deferred-length')], ['Assumed length (len=*): taken from the actual argument',
+    "Assumed length (len=*), obsolescent: the length declared for the function's name where it is called",
+    'Deferred length (len=:): set by allocate, assignment or pointer assignment, or from the actual argument'],
+  "the * and the : of a character length, and the * of a function's result, which no actual argument gives");
+  eq([...meanings].filter(([, m]) => /len=[*:]:/.test(m)).map(([t]) => t), [], 'no meaning runs code into its colon');
   eq([mean('pass+arg'), mean('default+arg'), mean('shape+arg')], ['The object it is invoked through is passed as its argument {arg}',
     'Takes the value {arg} when a declaration of the type does not give one', '{arg}'], 'pass(self) names self, default dp says dp, and a shape says its words');
-  ok(mean('when').includes('{arg}') && mean('conditional') === mean('when'), 'a condition says itself');
+  ok(mean('when+arg').includes('{arg}') && mean('conditional+arg') === mean('when+arg'), 'a condition says itself');
+  // a hand-written <FortranBadge kind="cpp" label="conditional" /> has no condition to name
+  ok(!meanings.has('when') && /preprocessor condition/.test(mean('conditional')) && !mean('conditional').includes('{arg}'),
+    'a conditional badge without its condition says so, rather than "the preprocessor condition  holds"');
   ok(/copy/.test(mean('value')) && /not reach the caller/.test(mean('value')), 'value: a copy, whose changes do not reach the caller');
   ok(/outside its module/.test(mean('protected')) && /where it points/.test(mean('protected')), 'protected: read-only outside its module, a pointer\'s association too');
+  // a submodule reaches its ancestor module's entities by host association (F2023 8.5.2, 8.5.15): private ones, and it
+  // may change a protected one
+  ok(['private', 'protected'].every((t) => /\bmodule and its submodules\b/.test(mean(t))), "private and protected: the module's submodules see and change it too");
+  // RANK(n) (Fortran 2023, 8.5.17): assumed shape, deferred with allocatable or pointer, and a scalar for 0; n may be a
+  // named constant
+  ok(/RANK clause/.test(mean('rank+arg')) && /Fortran 2023/.test(mean('rank+arg')) && /assumed shape/.test(mean('rank+arg'))
+    && /deferred/.test(mean('rank+arg')) && /0 is a scalar/.test(mean('rank+arg')), 'rank(2): the rank the RANK clause gives, assumed or deferred shape, and 0 a scalar');
+  // the project writes British -ise: normalised, factorisation, finalisers (size and its kin are not -ize words)
+  eq([...meanings].filter(([, m]) => /(?<!s)iz(?:e[ds]?|ing|ations?)\b/i.test(m)).map(([t]) => t), [], 'the meanings are spelt -ise: initialised, initialisation');
   ok(/element order/.test(mean('impure')) && /scalars/.test(mean('elemental')) && /pure/i.test(mean('elemental')), 'elemental: written for scalars, pure unless impure, which goes in element order');
   ok(/cannot override/.test(mean('non_overridable')) && /strides/.test(mean('contiguous')) && /pending/.test(mean('asynchronous')) && /C/.test(mean('bindc')),
     'non_overridable, contiguous, asynchronous and bind(C)');
   eq(['in', 'out', 'inout'].map((i) => mean(`intent-${i}`).split(':')[0]), ['intent(in)', 'intent(out)', 'intent(inout)'], 'an intent\'s meaning names it, so that an opened row can say it alone');
+  // the pill is on arguments and components: an allocatable argument is not freed when the procedure returns, only an
+  // unsaved local variable is, and deallocate frees any of them
+  ok(!/automatic/.test(mean('allocatable')) && /deallocate/.test(mean('allocatable')) && /local one/.test(mean('allocatable')),
+    'allocatable: freed by deallocate, and a local one on return too, not "automatically", which an argument is not');
+  // the badge stands for any OpenMP target directive: declare target and target data run no work on the device
+  ok(/target directives/.test(mean('offload')) && /code and data/.test(mean('offload')) && !/^Offloads work/.test(mean('offload')),
+    'offload: OpenMP target directives, for code and data on an accelerator');
 
   // the cards: the ::after of what they explain, drawn while it is hovered, in the look of a hover card
   const CARD_ON = ['.fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after', '.fdf-intent[data-term]:hover::after', '.fdf-flag[data-term]:hover::after',
@@ -356,7 +400,8 @@ export default async function ({ ok, eq }) {
   eq([...new Set(shows.filter((s) => !s.includes(':hover')))], ['.fdf-arg-field > dd[data-term]::after', '.fdf-arg-terms > dd::after'],
     'a card shows only on hover; an opened row says the meanings of its intent and its attributes always');
   eq(decl('.fdf-arg-terms > dd::after', 'content'), ['var(--fdf-mean)'], 'and there screen readers read them');
-  eq(decl('.fdf-badge-conditional[data-arg]:not([data-term=\'when\'], [data-term=\'conditional\'])', '--fdf-also').map(said), ['\\A Only when the preprocessor condition {arg} holds'],
+  // in :where(), as the meanings are: a site's [data-term='mpi'][data-arg] rule rewords it, whichever stylesheet comes first
+  eq(decl(ALSO, '--fdf-also').map(said), ['\\A Only when the preprocessor condition {arg} holds'],
     "a badge with a condition says it on a line of its own, unless the condition is the badge's own term");
   eq([decl('.fdf-badge-note', 'clip-path'), decl('.fdf-badge-note', 'display'), decl('.fdf-badge-note', 'visibility')], [['inset(50%)'], [], []],
     "a badge's note is hidden from the eye, not from screen readers, until its card shows");
@@ -365,10 +410,49 @@ export default async function ({ ok, eq }) {
   eq(['position', 'position-anchor', 'position-area'].map((p) => CARDS.map((s) => anchored(s, p)[0])),
     [CARDS.map(() => 'fixed'), CARDS.map(() => '--fdf-tip'), CARDS.map(() => 'block-end span-inline-end')], 'and a card is placed as a hover card is');
   ok(CARDS.every((s) => anchored(s, 'position-try-fallbacks')[0] === anchored(CARD_SEL, 'position-try-fallbacks')[0]), 'and flips as a hover card does');
-  const FALLBACK = '@supports not ((anchor-scope: all) and (position-try-fallbacks: flip-inline))';
   ok(rules.some(([sels, decls, at]) => at === FALLBACK && sels.includes('.fdf-arg-row > :is(.fdf-col-intent, .fdf-col-attrs) > [data-term]:hover::after')
     && decls.includes('inset-inline-start: auto') && decls.includes('inset-inline-end: 0')), 'without it, a card in the last columns opens towards the table');
+  // A flag is set left to right (its code reads so on any page), and its card with it, so that there inline-end is the
+  // right: on a right-to-left page, whose last columns are on the left, the card ran off the screen's left edge.
+  // :dir() reads the page's direction, which direction: ltr does not change.
+  ok(rules.some(([sels, decls, at]) => at === FALLBACK && sels.length === 1 && sels[0] === '.fdf-arg-row > .fdf-col-attrs > .fdf-flag[data-term]:dir(rtl):hover::after'
+    && decls.includes('inset-inline-start: 0') && decls.includes('inset-inline-end: auto')), "and a flag's card does so on a right-to-left page too");
+  const fallback = (sel, prop) => rules.filter(([sels, , at]) => at === FALLBACK && sels.includes(sel)).flatMap(([, decls]) => decls)
+    .filter((d) => d.split(':')[0].trim() === prop).map((d) => d.slice(d.indexOf(':') + 1).trim());
+  // a card in a panel's field starts at the field's edge, as a hover card there does
+  eq([fallback('.fdf-arg-field .fdf-len', 'position'), fallback('.fdf-arg-field .fdf-len[data-term]:hover::after', 'max-width')], [['static'], ['min(18rem, 100%)']],
+    "and a length's card in a panel's field starts at the field's edge and keeps to its width");
+  // A badge's card ran past a phone's edge from a badge late in its row (by 128px at 375px), and fumadocs' layout clips
+  // what runs past it (overflow-x: clip): it starts at the row's edge, and keeps to the row's width.
+  eq([fallback('.fdf-badges', 'position'), fallback('.fdf-badges > .fdf-badge', 'position'), fallback(`.fdf-badges > ${CARD_ON[0]}`, 'max-width'),
+    fallback(`.fdf-badges > ${NOTE}`, 'max-width')], [['relative'], ['static'], ['min(18rem, 100%)'], ['min(18rem, 100%)']],
+  "and a badge's card, its note's too, starts at its row's edge and keeps to the row's width");
+  // So does the card of a FortranRef in running text, as a "Calls:" line's dgemv (87px past the edge), at its
+  // paragraph's. All three rules name :has(), so that a browser without it keeps the name positioned.
+  eq([fallback(PARA, 'position'), fallback(`${PARA} > .fdf-ref`, 'position'), fallback(`${PARA} > .fdf-ref .fdf-ref-card`, 'max-width')],
+    [['relative'], ['static'], ['min(18rem, 100%)']], 'and a FortranRef\'s card in running text starts at its paragraph\'s edge and keeps to its width');
+  // The shown state, outside any at-rule (decl() reads print, hover: none and @supports too). The suite passed with each
+  // card, note or list hidden, a card one character wide, or the pills not positioned.
+  const screen = (sel, prop) => rules.filter(([sels, , at]) => !at && sels.includes(sel)).flatMap(([, decls]) => decls)
+    .filter((d) => d.split(':')[0].trim() === prop).map((d) => d.slice(d.indexOf(':') + 1).trim()).at(-1);
+  eq(CARD_ON.map((s) => ['display', 'width', 'white-space'].map((p) => screen(s, p))), CARD_ON.map(() => ['block', 'max-content', 'pre-line']),
+    'a card is drawn while what it explains is hovered, as wide as its text up to its width, and its \\A starts a line');
+  eq(['display', 'clip-path', 'height', 'overflow', 'width', 'white-space'].map((p) => screen(NOTE, p)), ['flex', 'none', 'auto', 'visible', 'max-content', 'pre-line'],
+    "a badge's note shows as its card while the badge is hovered: unclipped, as tall as its text");
+  eq(CARDS.map((s) => rules.filter(([sels, , at]) => at !== '@starting-style' && sels.includes(s)).flatMap(([, decls]) => decls).filter((d) => /^(?:visibility|opacity)\s*:/.test(d))),
+    CARDS.map(() => []), 'nothing makes a shown card invisible but its fade');
+  eq(['.fdf-badge', '.fdf-intent', '.fdf-flag', '.fdf-cond', '.fdf-col-shape', '.fdf-len'].map((s) => screen(s, 'position')), Array(6).fill('relative'),
+    "each pill, shape and length is its card's containing block");
+  eq(screen('.fdf-arg-terms', 'display'), 'grid', 'an opened row lists its attributes beside their meanings');
+  eq(rules.filter(([sels, decls, at]) => at !== '@media print' && sels.some((s) => /\.fdf-arg-terms(?: > d[td](?:::after)?)?$|\.fdf-arg-field > dd\[data-term\]::after$/.test(s))
+    && decls.some((d) => /^(?:display:\s*none|visibility:\s*hidden|opacity:\s*0|content-visibility:\s*hidden)\b/.test(d))).map(([sels]) => sels.join(', ')), [],
+  'and nothing hides the list, or the meanings in it and in the Intent and Length lines, which are what the keyboard and screen readers get');
   ok(print.some(([sels, decls]) => CARDS.every((s) => sels.includes(s)) && decls.includes('display: none')), 'paper has no cards');
+  // A phone keeps a tapped element hovered: a tap on a pill in a row opens the row, which lists what the pill means,
+  // and would leave the pill's card over the panel it opened. A badge, and a plain row's result pill, which open
+  // nothing, keep theirs.
+  ok(rules.some(([sels, decls, at]) => at === '@media (hover: none)' && sels.length === 1 && sels[0] === '.fdf-arg > summary [data-term]:hover::after'
+    && decls.includes('display: none')), 'a screen without hover draws no card for a pill in a row that opens');
   ok(rules.some(([sels, decls, at]) => at === '@media (prefers-reduced-motion: reduce)' && CARDS.every((s) => sels.includes(s)) && decls.includes('transition: none')),
     'and a card does not fade in for those who ask for less motion');
   eq([decl('.fdf-arg-row > .fdf-col-shape', 'justify-self'), decl('.fdf-len > code', 'font-family')], [['start'], ['var(--fdf-mono)']],
@@ -534,6 +618,8 @@ export default async function ({ ok, eq }) {
     eq(flagTerms("ALLOCATABLE, pass( self ), pass, nopass, non_overridable, default dp, = 0.5_dp, => null(), Contiguous, kind, len, rank(2), '&'"),
       ['allocatable', 'pass self', 'pass', 'nopass', 'non_overridable', 'default dp', 'init 0.5_dp', 'pointer-init null()', 'contiguous', 'kind', 'len', 'rank 2'],
       "a flag's term: its keyword in lower case and what its brackets hold, or the value of default, = and =>; other text has none");
+    // => alone is no initialisation to '>' ("Initialised to > where it is declared")
+    eq(['=>', '=0', '=>null()'].map((attrs) => flagTerms(attrs)), [[], ['init 0'], ['pointer-init null()']], 'a bare => has no term; = and => without a space do');
     eq(textOf(rowOf(arg({ name: 'n', optional: 'true', value: 'false' }))), 'n — optional', "MDX's 'true' and 'false' strings read as booleans");
 
     const comm = arg({ name: 'comm', type: 'type(MPI_Comm)', intent: 'in', cond: 'USE_MPI' }, h('p', null, 'communicator'));
@@ -576,26 +662,57 @@ export default async function ({ ok, eq }) {
     ok(!/<dt><span class="fdf-flag" data-term/.test(all), "a flag in the panel has no card: its meaning is beside it");
     eq(['in', 'out', 'inout', 'none'].map((i) => fieldsOf(arg({ name: 'a', intent: i, decl: 'd' })).find(([label]) => label === 'Intent')?.[3]),
       ['data-term="intent-in"', 'data-term="intent-out"', 'data-term="intent-inout"', undefined], 'each intent in words; another intent has none');
-    ok(!fieldsOf(arg({ name: 'r', result: true, decl: 'd' })).some(([label]) => label === 'Intent'), 'a result has no intent');
+    // only a page written by hand, or code that declares an intent for a result (which compilers reject), gives a result
+    // an intent: the intent column says result, and so does the panel
+    ok([arg({ name: 'r', result: true, intent: 'out', decl: 'd' }), arg({ name: 'r', result: 'true', intent: 'in', decl: 'd' })]
+      .every((out) => !fieldsOf(out).some(([label]) => label === 'Intent')), 'a result has no intent, even when given one');
     ok(inner(all, '<div class="fdf-arg-doc">') === 'doc', 'the doc first, unlabelled, as in TypeTable');
     eq(fieldsOf(arg({ name: 'd', decl: 'integer :: d = 1 ! "q" <&>' })), [['Declaration', '<code class="fdf-arg-decl">integer :: d = 1 ! &quot;q&quot; &lt;&amp;&gt;</code>', false, '']], 'a declaration alone opens a row; it is text');
 
     // ---- the length of a character type: its * or : has a card, and an opened row says it in words
-    const lengthOf = (type, refs) => fieldsOf(arg({ name: 'c', type, refs, decl: 'd' })).find(([label]) => label === 'Length')?.[1];
-    const ASSUMED = 'assumed, taken from the actual argument';
-    const DEFERRED = 'deferred, set when the variable is allocated or assigned';
+    // (the Length line's value, or, where style.css writes it in, the term it names)
+    const lengthOf = (type, refs) => {
+      const f = fieldsOf(arg({ name: 'c', type, refs, decl: 'd' })).find(([label]) => label === 'Length');
+      return f && (f[3] && !f[1] ? f[3] : f[1]);
+    };
+    // the words of the * and the :, which are their cards' meanings: style.css writes them in by the term, once
+    const ASSUMED = 'data-term="assumed-length"';
+    const DEFERRED = 'data-term="deferred-length"';
     eq(['character(*)', 'character(len=*)', 'CHARACTER*(*)', 'character * ( * )', 'character(kind=ck, len=*)', 'character(len=:, kind=ck)', 'character(:)',
       'character(10)', 'character*8', 'character(len=n_max)', 'character', 'character(kind=c_char)', 'character(ck)', 'character(10, kind=ck)'].map((t) => lengthOf(t)),
     [ASSUMED, ASSUMED, ASSUMED, ASSUMED, ASSUMED, DEFERRED, DEFERRED, '<span class="fdf-arg-type"><code>10</code></span>', '<span class="fdf-arg-type"><code>8</code></span>',
       '<span class="fdf-arg-type"><code>n_max</code></span>', '1, the default', '1, the default', '<span class="fdf-arg-type"><code>ck</code></span>',
       '<span class="fdf-arg-type"><code>10</code></span>'],
     'the length: assumed (*) and deferred (:) in words, any other as written, none 1; len=, or the first item without a keyword, or what follows character*');
+    // Fortran's keywords are in any case: QE writes CHARACTER(LEN=*), and a case-sensitive LEN= showed "LEN=*" as the
+    // length with no card, and an upper-case KIND= as the length
+    eq(['CHARACTER(LEN=*)', 'Character(Len=:)', 'CHARACTER(LEN=N)', 'CHARACTER(KIND=CK, LEN=*)', 'CHARACTER(KIND=C_CHAR)'].map((t) => lengthOf(t)),
+      [ASSUMED, DEFERRED, '<span class="fdf-arg-type"><code>N</code></span>', ASSUMED, '1, the default'], 'LEN= and KIND= in upper or mixed case');
     eq(['real(dp)', 'class(*)', 'type(character_t)', 'character_t', 'complex(kind=dp)'].map((t) => lengthOf(t)), Array(5).fill(undefined), 'only a character type has a length, and class(*) is not one');
     ok(/<a class="fdf-ref-name" href="\/x#n_max"/.test(lengthOf('character(len=n_max)', { n_max: { href: '/x#n_max', title: 'integer, parameter :: n_max = 64' } })), 'a name in the length links, as in the type');
+    eq(fieldsOf(arg({ name: 'c', type: 'character(*)', decl: 'd' })).find(([label]) => label === 'Length'), ['Length', '', false, ASSUMED],
+      "the Length line of a * or : is its card's meaning, which style.css writes in: one wording, which a site's rule for the term rewords in both");
     const glyph = (type) => termsOf(cellOf(arg({ name: 'c', type, decl: 'd' }), 'type'));
-    eq(['character(*)', 'character(len=:)', 'character*(*)', 'character(10)', 'class(*)', 'character(len=n)'].map(glyph),
-      [[['span.fdf-len', 'assumed-length', undefined]], [['span.fdf-len', 'deferred-length', undefined]], [['span.fdf-len', 'assumed-length', undefined]], [], [], []],
+    eq(['character(*)', 'character(len=:)', 'character*(*)', 'character(10)', 'class(*)', 'character(len=n)', 'CHARACTER(LEN=*)', 'Character(Len=:)'].map(glyph),
+      [[['span.fdf-len', 'assumed-length', undefined]], [['span.fdf-len', 'deferred-length', undefined]], [['span.fdf-len', 'assumed-length', undefined]], [], [], [],
+        [['span.fdf-len', 'assumed-length', undefined]], [['span.fdf-len', 'deferred-length', undefined]]],
       'the * or : of a length is a span with a card; nothing else in a type is');
+    // The * of a function's result (character(*) function f, obsolescent) takes the length that the caller declares for
+    // the function's name: no actual argument gives it. The : of a result is set as any deferred length is.
+    const resultLength = (type) => {
+      const out = arg({ name: 'f', type, result: true, decl: 'd' });
+      const f = fieldsOf(out);
+      return [termsOf(cellOf(out, 'type')).map(([, term]) => term), f.find(([label]) => label === 'Length')?.[3],
+        termsOf(f.find(([label]) => label === 'Type')?.[1] ?? '').map(([, term]) => term)];
+    };
+    const OF_RESULT = [['assumed-length-result'], 'data-term="assumed-length-result"', ['assumed-length-result']];
+    eq(['character(*)', 'CHARACTER*(*)', 'character(len=*)', 'character(kind=ck, len=*)', 'character(:)'].map(resultLength),
+      [OF_RESULT, OF_RESULT, OF_RESULT, OF_RESULT, [['deferred-length'], DEFERRED, ['deferred-length']]],
+      "a function's result of assumed length: its * (in the cell and in a narrow table's copy) and its Length line say where its length comes from");
+    // a length after the selector counts: character(len=10)*20 is read as 20 (the generator writes character(len=20))
+    eq([lengthOf('character(len=10)*20'), lengthOf('character(kind=ck) * (n)'), lengthOf('character(len=10)*(*)'), glyph('character(len=10)*(*)')],
+      ['<span class="fdf-arg-type"><code>20</code></span>', '<span class="fdf-arg-type"><code>n</code></span>', ASSUMED, [['span.fdf-len', 'assumed-length', undefined]]],
+      "a length written after the name, as the type's text has it, is the one that counts");
     const cut = unid(cellOf(arg({ name: 'c', type: 'character(kind=ck, len=*)', refs: { ck: DP }, decl: 'd' }), 'type'));
     eq(cut.replace(/<span class="fdf-ref">[\s\S]*?<\/a><\/span>/, 'REF'), '<span class="fdf-arg-type"><code>character(kind=</code>REF<code>, len=</code><span class="fdf-len" data-term="assumed-length"><code>*</code></span><code>)</code></span>',
       'the code is cut around the names that link and around the *, in order, the * code inside its span');
@@ -605,15 +722,33 @@ export default async function ({ ok, eq }) {
     eq([arg({ name: 'c', type: 'character(*)' }), arg({ name: 'c', type: 'character(:)' }), arg({ name: 'c', type: 'character(10)' })].map((out) => out.includes('fdf-arg-plain')),
       [false, false, true], 'an assumed or a deferred length opens a row, to say it in words; a length as written does not');
 
+    // ---- an intent and attributes open a row: its panel says what they mean for the keyboard and screen readers, who
+    // get no hover card (the docs' own <FortranArg name="info" type="integer" intent="out" /> said it to no one)
+    const info2 = arg({ name: 'info', type: 'integer', intent: 'out', optional: true });
+    eq([info2.startsWith('<details class="fdf-arg">'), fieldsOf(info2).map(([label, , narrow, props]) => [label, narrow, props]), listOf(info2)],
+      [true, [['Type', true, ''], ['Intent', false, 'data-term="intent-out"'], ['Attributes', false, '']], [['optional', 'optional', undefined]]],
+      'a type, an intent and a flag alone: a row that opens to the intent in words and the flag beside its meaning');
+    eq([arg({ name: 'x', intent: 'in' }), arg({ name: 'x', type: 'real', attrs: 'target' }), arg({ name: 'x', attrs: 'rank(2)' })].map((out) => fieldsOf(out).map(([label]) => label)),
+      [['Intent'], ['Type', 'Attributes'], ['Attributes']], 'an intent alone, or an attribute with a term, opens a row');
+    // a term is not only a keyword's: = 0, => null() and default dp have theirs (init, pointer-init, default), as
+    // types/react.d.ts says of the rows that open
+    eq(['= 0', '=> null()', 'default dp'].map((attrs) => listOf(arg({ name: 'x', attrs }))), [[['= 0', 'init', '0']], [['=&gt; null()', 'pointer-init', 'null()']], [['default dp', 'default', 'dp']]],
+      'an initial value or a default alone opens a row too, to say what it means');
+    eq(listOf(arg({ name: 'a', type: 'real', attrs: 'rank(2), allocatable' })), [['rank(2)', 'rank', '2'], ['allocatable', 'allocatable', undefined]],
+      'a RANK clause is a flag with its term and its rank, which its meaning says');
+
     // ---- plain rows: nothing to open to
     const p = arg({ name: 'p', type: '', dims: ' ', intent: '', attrs: '', cond: '', decl: ' ', optional: false });
     eq(p, '<div class="fdf-arg fdf-arg-plain"><div class="fdf-arg-row not-prose"><span class="fdf-col-name"><code class="fdf-arg-name">p</code></span> <span class="fdf-col-type"></span> <span class="fdf-col-shape"><span class="fdf-arg-none" aria-hidden="true">—</span></span> <span class="fdf-col-intent"></span> <span class="fdf-col-attrs"></span></div></div>',
       'a name alone: a plain row, its empty cells keeping their places, nothing for empty props');
     ok(!arg({ name: 'w' }, ' \n').includes('<details'), 'a doc of whitespace alone opens nothing');
-    const plain = arg({ name: 'info', type: 'integer', intent: 'out', optional: true });
-    ok(!plain.includes('<details') && !plain.includes('fdf-chevron') && !plain.includes('fdf-arg-panel'), 'a type, an intent and flags alone: no panel, no chevron');
-    eq(inner(plain, '<div class="fdf-arg-alt not-prose">'), '<span class="fdf-arg-type"><code>integer</code></span> <span class="fdf-flag" data-term="optional">optional</span>',
-      'and a line for a narrow table with the type and the flags, which have their cards');
+    const plain = arg({ name: 'n', type: 'integer', intent: 'none', attrs: "'&'" });
+    ok(!plain.includes('<details') && !plain.includes('fdf-chevron') && !plain.includes('fdf-arg-panel'), 'a type, an intent of its own and a flag without a term: no panel, no chevron');
+    eq(inner(plain, '<div class="fdf-arg-alt not-prose">'), '<span class="fdf-arg-type"><code>integer</code></span> <span class="fdf-flag">&#x27;&amp;&#x27;</span>',
+      'and a line for a narrow table with the type and the flag');
+    // the result pill's meaning is the table's title (Result), which an opened row would not add to
+    eq([arg({ name: 'r', type: 'real', result: true }), arg({ name: 'r', type: 'real', result: true, intent: 'out' }), arg({ name: 'n', type: 'integer' })]
+      .map((out) => out.startsWith('<div class="fdf-arg fdf-arg-plain">')), [true, true, true], 'a result, or a type, alone is a plain row');
     ok(arg({ name: 'w' }, h('em', null, 'a'), ' ', h('em', null, 'b')).includes('<div class="fdf-arg-doc"><em>a</em> <em>b</em></div>'), 'a space between words of the doc is kept');
     eq(rowOf(arg({ name: '<n>', type: 'character(len=*), "q"', attrs: "'&'", cond: 'A<B' })),
       '<span class="fdf-col-name"><code class="fdf-arg-name">&lt;n&gt;</code></span> <span class="fdf-col-type"><span class="fdf-arg-type"><code>character(len=</code>'
@@ -763,13 +898,14 @@ export default async function ({ ok, eq }) {
         ...['impure', 'non-recursive', 'simple', 'blockdata'].map((kind) => h(FortranBadge, { kind })), h(FortranBadge, { kind: 'parameter', label: 'parameter' }),
         ...['generic interface', 'operator', 'assignment', 'defined I/O', 'abstract interface', 'module interface'].map((label) => h(FortranBadge, { kind: 'interface', label })),
         h(FortranBadge, { kind: 'submodule', label: 'separate module procedure' }), h(FortranBadge, { kind: 'omp', label: 'OpenMP parallel region', title: 'parallel do' }),
-        h(FortranBadge, { kind: 'acc', label: 'OpenACC routine' }), h(FortranBadge, { kind: 'cpp', label: 'conditional', conditional: 'Y' }), h(FortranBadge, { conditional: 'Z' })),
+        h(FortranBadge, { kind: 'acc', label: 'OpenACC routine' }), h(FortranBadge, { kind: 'cpp', label: 'conditional', conditional: 'Y' }), h(FortranBadge, { conditional: 'Z' }),
+        h(FortranBadge, { kind: 'cpp', label: 'conditional' })),
       h(FortranArgs, null,
         ...['in', 'out', 'inout', 'other'].map((i) => h(FortranArg, { name: 'a', type: 'real(dp)', dims: ':', codims: '*', intent: i, optional: true, cond: 'X', decl: 'd', refs: { dp: DP } }, 'doc')),
-        h(FortranArg, { name: 'r', type: 'real', result: true }), h(FortranArg, { name: 'p' }),
+        h(FortranArg, { name: 'r', type: 'real', result: true }), h(FortranArg, { name: 'p' }), h(FortranArg, { name: 'f', type: 'character(*)', result: true }),
         h(FortranArg, {
           name: 's', type: 'character(len=*)', intent: 'in', decl: 'd',
-          attrs: 'allocatable, pointer, target, contiguous, value, save, volatile, asynchronous, protected, external, intrinsic, bind(c), nopass, pass, pass(self), non_overridable, kind, len, default dp, = 0, => null(), device, managed, pinned',
+          attrs: 'allocatable, pointer, target, contiguous, value, save, volatile, asynchronous, protected, external, intrinsic, bind(c), nopass, pass, pass(self), non_overridable, kind, len, default dp, = 0, => null(), device, managed, pinned, rank(2)',
         }),
         h(FortranArg, { name: 't', type: 'character(:)', attrs: 'deferred, private, public, parameter' })),
       h(FortranRef, { title: 't' }, 'n'),

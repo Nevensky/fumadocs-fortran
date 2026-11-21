@@ -150,15 +150,15 @@
     },
     {
       "id": "openacc-spec",
-      "name": "OpenACC Application Programming Interface 3.4 (PDF): outline and section headings",
+      "name": "OpenACC Application Programming Interface 3.4 (PDF): outline, section headings and the routines' Fortran forms",
       "version": "3.4 (June 2025)",
       "licence": "© OpenACC-Standard.org; not reproduced",
       "homepage": "https://www.openacc.org/specification",
       "urls": {
         "pdf": "https://www.openacc.org/sites/default/files/inline-files/OpenACC_3.4.pdf"
       },
-      "uses": "The page of the section that documents each directive, clause, routine and environment variable: the page that prints the heading of its entry in the PDF's outline (the outline and the text of the pages are read).",
-      "copied": "Page numbers only. The names are the API's; the one-liners are our own."
+      "uses": "The page of the section that documents each directive, clause, routine and environment variable: the page that prints the heading of its entry in the PDF's outline (the outline and the text of the pages are read); and whether each runtime routine is a subroutine or a function, as its Fortran form says.",
+      "copied": "Page numbers, and the word subroutine or function for each routine, only. The names are the API's; the one-liners are our own."
     },
     {
       "id": "m-intrinsics",

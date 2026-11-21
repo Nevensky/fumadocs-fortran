@@ -32,7 +32,9 @@ Restart the dev server after a change to the `exports` of the package's own `pac
   and fumadocs-ui's Tabs, Steps, TypeTable, Accordions and Files for MDX in `components/mdx.tsx`, adds remark-math,
   rehype-katex and the Fortran grammars of `fumadocs-fortran/shiki` in `lib/source.ts`, and imports KaTeX's
   stylesheet and `fumadocs-fortran/style.css` in `app/layout.tsx`, before `global.css`, so that `global.css` can
-  override their variables.
+  override their variables. `global.css` also gives the HDF5 badge of the Components page a meaning, as a site gives
+  its own badges one, and, where the browser lacks CSS anchor positioning, leaves room under a row of badges that
+  ends a tab, whose box would cut off their cards.
 - The graphs are ```` ```mermaid ```` blocks, which `remarkMdxMermaid` (in `lib/source.ts`) hands to
   `components/mdx/mermaid.tsx`; it draws them as SVG at build time with [Pele](https://github.com/obsidianmd/pele),
   and shows a diagram Pele cannot parse as its code. `fumadocs-fortran/style.css` maps Pele's colours to fumadocs'

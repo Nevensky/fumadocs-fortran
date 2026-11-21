@@ -532,6 +532,15 @@ class Parser {
       default: scope = 'internal';
     }
     const e = this.entity('procedure', h.name, ev, sc.entity, { proc: h.proc, scope });
+    // an interface body (not an abstract one) in a procedure, a program or a BLOCK gives its name the EXTERNAL
+    // attribute there, which a POINTER statement makes a procedure pointer
+    if (scope === 'interface' && sc.entity?.ikind !== 'abstract') {
+      const host = this.stack[this.stack.length - 2];
+      const key = h.name.toLowerCase();
+      if (host?.decls && /^(procedure|program|block)$/.test(host.kind) && !host.args?.has(key)) {
+        noteLocal(host.decls, key, { external: true });
+      }
+    }
     const prefix = h.prefix.filter((p) => p !== 'module' || scope === 'interface');
     if (prefix.length) e.prefix = prefix;
     if (h.bind !== null) e.bind = h.bind;
@@ -630,9 +639,13 @@ class Parser {
       sc = this.top;
     }
     const { type, attrs, entities } = d;
-    // what a local name's declaration tells the scan for function references
+    // what a local name's declaration tells the scan for function references, and the calls through a procedure
+    // pointer
     const character = type.base === 'character';
-    const local = (en) => ({ dims: en.dims ?? attrs.dims, character, external: attrs.external });
+    const proc = type.base === 'procedure';
+    const local = (en) => ({
+      dims: en.dims ?? attrs.dims, character, external: attrs.external, proc, pointer: attrs.pointer,
+    });
     const targets = [];
     switch (sc.kind) {
       case 'procedure': {
@@ -724,8 +737,9 @@ class Parser {
       if (sc.kind === 'procedure' || sc.kind === 'program' || sc.kind === 'block') {
         const v = sc.args?.get(key) ?? (key === sc.resultName ? sc.entity.result : null);
         if (v) { apply(v, en); targets.push(v); }
-        // `dimension a(n)`, `allocatable :: w(:)` and the like give a local array; `external f`, a procedure
-        else noteLocal(sc.decls, key, { dims: en.dims, external: word === 'external' });
+        // `dimension a(n)`, `allocatable :: w(:)` and the like give a local array; `external f`, a procedure; `pointer
+        // f`, a pointer (to a procedure, with EXTERNAL or procedure(…))
+        else noteLocal(sc.decls, key, { dims: en.dims, external: word === 'external', pointer: word === 'pointer' });
       } else if (sc.kind === 'module' || sc.kind === 'submodule') {
         const v = sc.decls.get(key);
         if (v) apply(v, en);
@@ -945,8 +959,10 @@ class Parser {
     if (parts.length && sc) {
       const call = { name: parts.map(([a, b]) => o.slice(a, b)).join('%'), line: ev.n };
       if (ev.c) call.cond = ev.c;
-      (sc.entity.calls ??= []).push(call);
       const [a, b] = parts[0];
+      // through a procedure pointer declared here: the project's target, whatever routine has the name
+      if (parts.length === 1 && this.localPointer(sc, s.slice(a, b))) call.local = true;
+      (sc.entity.calls ??= []).push(call);
       if (image || /^co_(sum|min|max|reduce|broadcast)$/.test(s.slice(a, b))) (sc.entity.hpc ??= {}).coarray = true;
     }
     // what follows the first name, subscripts included, may hold function references
@@ -995,6 +1011,8 @@ class Parser {
       if (NOT_REF.has(name) || sc.args?.has(name) || sc.stmtFns?.has(name)) continue;
       const d = this.localDecl(sc, name);
       if (d && !d.external && (d.dims || d.character)) continue;
+      // a function pointer declared here references the project's target
+      if (this.localPointer(sc, name)) continue;
       sc.refs.add(name);
     }
     return EXEC;
@@ -1008,6 +1026,29 @@ class Parser {
       if (d || x === sc) return d;
     }
     return undefined;
+  }
+
+  /**
+   * Whether `name` (lower case), referenced from the executable scope sc, is a procedure pointer declared there: in a
+   * BLOCK construct, in the procedure's or program's specification part, or in the host of an internal procedure
+   * (whose names it sees by host association). One is declared `procedure(…), pointer`, or both POINTER and EXTERNAL,
+   * procedure(…) or an interface body, in any statements and order. The innermost declaration decides, and a dummy
+   * argument or a function result is none. Module variables are entities of the IR, which the pages and graphs look
+   * up themselves.
+   */
+  localPointer(sc, name) {
+    let scope = sc;
+    for (let i = this.stack.length - 1; i > 0; i--) {
+      const x = this.stack[i];
+      if (x.args?.has(name) || (x.resultName && x.resultName === name)) return false;
+      const d = x.decls?.get(name);
+      if (d) return !!d.pointer && !!(d.proc || d.external);
+      if (x === scope) {
+        if (x.kind !== 'procedure' || x.entity.scope !== 'internal') return false;
+        scope = this.stack[i - 1];
+      }
+    }
+    return false;
   }
 }
 
@@ -1139,7 +1180,19 @@ function rename(item) {
 }
 
 function fillVar(v, type, attrs, en) {
-  v.type = en.len !== undefined && type.base === 'character' ? { ...type, len: en.len, text: `${type.text}*${en.len}` } : type;
+  // an entity's own length is its type's, which reads as Fortran would declare the entity alone: after the type for
+  // character and character*… (character*10, character*(*), character*(n); character*8 :: a*16 is character*16), and
+  // in the selector, with its kind, for a type that has one (character(len=10) :: d*20 is character(len=20),
+  // character(kind=ucs4) :: e*(n) is character(len=n, kind=ucs4)): character(len=10)*20 is no Fortran
+  if (en.len !== undefined && type.base === 'character') {
+    const word = type.text.slice(0, 9);
+    let text;
+    if (type.text[9] === '(') {
+      const [len, kind] = word === 'CHARACTER' ? ['LEN', 'KIND'] : ['len', 'kind'];
+      text = `${word}(${len}=${en.len}${type.kind ? `,${kind}=${type.kind}` : ''})`;
+    } else text = `${word}*${/^\d+$/.test(en.len) ? en.len : `(${en.len})`}`;
+    v.type = { ...type, len: en.len, text };
+  } else v.type = type;
   if (attrs.intent) v.intent = attrs.intent;
   if (attrs.optional) v.optional = true;
   if (attrs.value) v.value = true;
@@ -1158,14 +1211,17 @@ function fillVar(v, type, attrs, en) {
 
 /**
  * Notes what a procedure or program learns of one of its local names, in whatever order the statements say it: its
- * dims (from a type declaration, DIMENSION, COMMON, …), that it is character, that it is EXTERNAL.
+ * dims (from a type declaration, DIMENSION, COMMON, …), that it is character, that it is EXTERNAL, that it is
+ * declared with procedure(…), that it is a POINTER.
  */
-function noteLocal(decls, key, { dims, character, external }) {
+function noteLocal(decls, key, { dims, character, external, proc, pointer }) {
   let d = decls.get(key);
   if (!d) decls.set(key, (d = {}));
   if (dims) d.dims = dims;
   if (character) d.character = true;
   if (external) d.external = true;
+  if (proc) d.proc = true;
+  if (pointer) d.pointer = true;
 }
 
 function addDoc(t, b) {

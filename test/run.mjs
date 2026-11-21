@@ -244,6 +244,142 @@ const parse = (text, opts = {}) => parseSource(text, { root: OUT, ...opts });
   ]), ['tag', 'title'], 'a character function declared EXTERNAL, in a statement or an attribute, is a reference');
 }
 
+// ---------------------------------------------------------------- a character length after the name
+{
+  const lens = byName(parse([
+    'subroutine lens(n, a, b, d, e, g, h)',
+    '  integer, intent(in) :: n',
+    '  character :: a*(*), b*10',
+    '  character(len=10) :: d*20',
+    '  character :: e*(5), g*(n)',
+    '  character*(*) :: h',
+    'end subroutine',
+  ].join('\n')), 'lens');
+  eq(lens.args.slice(1).map((a) => a.type.text), ['character*(*)', 'character*10', 'character(len=20)',
+    'character*5', 'character*(n)', 'character*(*)'],
+  'an entity\'s length is written as Fortran declares the entity alone: after the type (in brackets unless a '
+    + 'number), or in its selector');
+  eq(lens.args.slice(1).map((a) => a.type.len), ['*', '10', '20', '5', 'n', '*'], 'and is the length of the type');
+  // F77 code may give a length to the type and another to an entity: the entity's is its length
+  const f77 = ['SUBROUTINE OLD(J, K, L)', 'CHARACTER*8 J*16, L', 'CHARACTER*(*) K*4', 'END', ''];
+  const old = byName(parse(f77.map((l) => (l ? `      ${l}` : l)).join('\n'), { path: 'old.f' }), 'old');
+  eq(old.args.map((a) => [a.type.text, a.type.len]),
+    [['CHARACTER*16', '16'], ['CHARACTER*4', '4'], ['CHARACTER*8', '8']],
+    'an entity\'s length replaces a length written after the type');
+  // a selector keeps its kind, and the entity's length goes into it: character(len=10)*20 is no Fortran
+  const sel = byName(parse([
+    'subroutine sel(n, d, e, f, g, h)',
+    "  integer, parameter :: ucs4 = selected_char_kind('ISO_10646')",
+    '  integer, intent(in) :: n',
+    '  character(kind=ucs4) :: d*20',
+    '  character(10, ucs4) :: e*(*)',
+    '  character(len=10, kind=ucs4) :: f*(n)',
+    '  CHARACTER(LEN=10) :: G*20',
+    '  character(kind=ucs4, len=3) :: h',
+    'end subroutine',
+  ].join('\n')), 'sel');
+  eq(sel.args.slice(1).map((a) => [a.type.text, a.type.len, a.type.kind]), [
+    ['character(len=20,kind=ucs4)', '20', 'ucs4'], ['character(len=*,kind=ucs4)', '*', 'ucs4'],
+    ['character(len=n,kind=ucs4)', 'n', 'ucs4'], ['CHARACTER(LEN=20)', '20', null],
+    ['character(kind=ucs4,len=3)', '3', 'ucs4']],
+  'a length after the name, in a type with a selector: len= in the selector, with the kind, in the type\'s case');
+}
+
+// ---------------------------------------------------------------- calls through a local procedure pointer
+{
+  // the IR keeps no local declarations, so a call through a procedure pointer the caller declares (in a BLOCK, its
+  // own specification part, or its host's) is marked: it calls the project's target, not the routine of that name
+  const ir = parse([
+    'module ptr_m',
+    '  abstract interface',
+    '    subroutine gemm_i()',
+    '    end subroutine',
+    '  end interface',
+    'contains',
+    '  subroutine p1()',
+    '    procedure(gemm_i), pointer :: dgemm',
+    '    call dgemm()',
+    '  end subroutine',
+    '  subroutine p2()',
+    '    block',
+    '      procedure(gemm_i), pointer :: zgemm',
+    '      call zgemm()',
+    '    end block',
+    '    call zgemm()',
+    '  end subroutine',
+    '  subroutine p4()',
+    '    procedure(gemm_i) :: zgesv',
+    '    pointer :: zgesv',
+    '    call zgesv()',
+    '  end subroutine',
+    '  subroutine p5()',
+    '    pointer :: dgetrf',
+    '    external :: dgetrf',
+    '    call dgetrf()',
+    '    if (.true.) call dgetrf()',
+    '  end subroutine',
+    '  subroutine host()',
+    '    procedure(gemm_i), pointer :: dgesv',
+    '    call inner()',
+    '  contains',
+    '    subroutine inner()',
+    '      call dgesv()',
+    '    end subroutine',
+    '    subroutine own()',
+    '      external :: dgesv',
+    '      call dgesv()',
+    '    end subroutine',
+    '    subroutine dum(dgesv)',
+    '      procedure(gemm_i) :: dgesv',
+    '      call dgesv()',
+    '    end subroutine',
+    '  end subroutine',
+    '  subroutine p6()',
+    '    interface',
+    '      subroutine dsyrk()',
+    '      end subroutine',
+    '    end interface',
+    '    pointer :: dsyrk',
+    '    call dsyrk()',
+    '  end subroutine',
+    '  subroutine p7()',
+    '    interface',
+    '      subroutine dtrsm()',
+    '      end subroutine',
+    '    end interface',
+    '    call dtrsm()',
+    '  end subroutine',
+    '  subroutine c2(dsysv)',
+    '    procedure(gemm_i), pointer :: dsysv',
+    '    procedure(gemm_i) :: dposv',
+    '    real, pointer :: v(:)',
+    '    call dposv()',
+    '    call dsysv()',
+    '  end subroutine',
+    '  subroutine fn(x)',
+    '    real :: x',
+    '    procedure(real), pointer :: dnrm2',
+    '    x = dnrm2(1, x, 1) + snrm2(1, x, 1)',
+    '  end subroutine',
+    'end module ptr_m',
+    'program main',
+    '  procedure(), pointer :: dpotrf => null()',
+    '  call dpotrf()',
+    'end program',
+  ].join('\n'), { path: 'ptr.f90' });
+  const calls = (name) => byName(ir, name).calls.map((c) => `${c.name}${c.local ? ' local' : ''}`);
+  eq(['p1', 'p2', 'p4', 'p5', 'inner', 'own', 'main'].map(calls), [['dgemm local'], ['zgemm local', 'zgemm'],
+    ['zgesv local'], ['dgetrf local', 'dgetrf local'], ['dgesv local'], ['dgesv'], ['dpotrf local']],
+  'a procedure pointer the caller, a BLOCK of it or its host declares: procedure(…), pointer, or POINTER with '
+    + 'procedure(…) or EXTERNAL, in either order; a BLOCK\'s ends with it, and an internal procedure\'s own '
+    + 'EXTERNAL wins');
+  eq(calls('c2'), ['dposv', 'dsysv'], 'procedure(…) without POINTER is the external routine; a dummy is a dummy');
+  eq(['p6', 'p7', 'dum'].map(calls), [['dsyrk local'], ['dtrsm'], ['dgesv']],
+    'an interface body that a POINTER statement makes a procedure pointer is one; an interface body alone is the '
+      + 'external routine; an internal procedure\'s dummy with the name of its host\'s pointer is a dummy');
+  eq(byName(ir, 'fn').refs, ['snrm2'], 'a function pointer the procedure declares is no function reference');
+}
+
 // ---------------------------------------------------------------- the reader
 {
   const ev = readEvents([
