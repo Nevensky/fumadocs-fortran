@@ -50,6 +50,9 @@ const ENTRIES = {
   'no-layout': { from: 'site-setup' },
   // the index under its name, and as npm start sends it (gzipped, application/json): the github-pages phase
   'slow-search': { from: 'github-pages' },
+  // GitHub's own Jekyll build, which runs only on GitHub with Pages set to deploy from a branch
+  liquid: { message: true, outside: 'GitHub\'s pages build and deployment run on this repository, with Pages set to '
+    + 'deploy from a branch: Liquid syntax error (line 104) on reference/components.mdx' },
   'pages-404': {},
   'off-site': { from: 'github-pages' },
   reload: { from: 'github-pages' },

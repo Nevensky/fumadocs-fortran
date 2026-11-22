@@ -114,6 +114,10 @@ const site = path.join(project, 'docs');
 const logs = path.join(work, 'logs');
 fs.mkdirSync(logs, { recursive: true });
 const env = { ...process.env, NEXT_TELEMETRY_DISABLED: '1' };
+// A reader's terminal sets no CI variable, and under one the commands act otherwise: on GitHub's runners
+// (CI and GITHUB_ACTIONS set), create-fumadocs-app goes on over a docs/ that holds files instead of stopping, so
+// Troubleshooting's "directory docs already exists" could not be shown. The page's commands run without them.
+for (const k of ['CI', 'GITHUB_ACTIONS']) delete env[k];
 
 // ---- the report
 const report = [];

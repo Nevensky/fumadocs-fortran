@@ -236,6 +236,15 @@ there the index's size is the cause. The Fortran components' text in place of th
 
 ## On GitHub Pages [#on-github-pages]
 
+### Liquid syntax error, was not properly terminated [#liquid]
+
+The repository's Actions tab shows a failed run named pages build and deployment, whose build step prints Jekyll's
+log and stops on one of the `.mdx` files. That run is GitHub's own build for Pages set to deploy from a branch: it
+reads the repository's Markdown and MDX files as a Jekyll site, and the `{{` of a code sample ends it. The docs
+workflow builds the site instead. In the repository's Settings, under Pages, set Build and deployment's Source to
+GitHub Actions, as [Turn on GitHub Pages](/docs/guides/github-pages#turn-on) says, then run the docs workflow again
+from the Actions tab.
+
 ### The whole site answers GitHub's 404 page [#pages-404]
 
 GitHub Pages is not turned on for the repository with GitHub Actions as its source, the workflow has not deployed
