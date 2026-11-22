@@ -11,6 +11,7 @@ import { CALLBACKS, COLLECTIVE, COLLECTIVE_IO, DEPRECATED, TYPES } from './data/
 import { statements } from './fortran.mjs';
 import {
   clip,
+  correct,
   fetchPinned,
   formatRegistry,
   isMain,
@@ -21,11 +22,25 @@ import {
   saveLock,
   source,
   squash,
+  SUMMARY_MAX,
   writeRegistry,
 } from './lib.mjs';
 
-const SUMMARY_MAX = 120;
 const MPICH_VERSION = 'v5.0.2';
+// Open MPI's Sphinx configuration, whose rst_prolog defines the substitutions its man pages use (|mdash|, …)
+const DOCS_CONF = 'docs/conf.py';
+
+/**
+ * Slips in Open MPI's man-page summaries (as rstSummary gives them), corrected here: procedure → [[text, replacement],
+ * …] (see correct in lib.mjs; registry/SOURCES.md lists them). The pages of 5.0.11 and of the main branch say "for use
+ * in in", and the main branch's leave out a blank before the parenthesis.
+ */
+export const CORRECTIONS = {
+  MPI_Buffer_detach: [['for use in in', 'for use in']],
+  MPI_Comm_detach_buffer: [['communicator(for use in in', 'communicator (for use in']],
+  MPI_Session_detach_buffer: [['session(for use in in', 'session (for use in']],
+};
+
 // Open MPI's definitions of the mpi_f08 types, and its named constants of them (the null handles among them)
 const F08_TYPES = 'ompi/mpi/fortran/use-mpi/mpi-types.F90.in';
 const F08_HANDLES = 'ompi/mpi/fortran/use-mpi-f08/mod/mpi-f08-types.F90';
@@ -72,15 +87,42 @@ export function parseBinding(signature) {
   return { result: head[1] ? fortranType(head[1]) : null, names: splitTop(head[3]).map((n) => n.toLowerCase()) };
 }
 
-/** The summary of an Open MPI man page (`:ref:`MPI_Send` |mdash| Performs …` or `… - Combines …`). */
-export function rstSummary(text) {
+/**
+ * The substitutions of a Sphinx rst_prolog (`.. |mdash| unicode:: U+02014`, `.. |deprecated_favor| replace:: this
+ * routine is deprecated in favor of`): name → text. Those whose text comes from the configuration's variables
+ * ({ompi_ver}) are left out. The configuration is read as text, never run.
+ */
+export function rstSubstitutions(conf) {
+  const out = new Map();
+  for (const m of conf.matchAll(/^\.\.\s+\|(\w+)\|\s+(unicode|replace)::\s+(.*?)\s*$/gm)) {
+    if (m[2] === 'unicode') {
+      const code = /^U\+([0-9A-Fa-f]{4,6})\b/.exec(m[3]);
+      if (code) out.set(m[1], String.fromCodePoint(parseInt(code[1], 16)));
+    } else if (!/[{}]/.test(m[3])) out.set(m[1], m[3]);
+  }
+  return out;
+}
+
+/**
+ * The summary of an Open MPI man page (`:ref:`MPI_Send` |mdash| Performs …` or `… - Combines …`), as plain text: with
+ * the roles, literals and emphasis of RST taken off, the substitutions `subs` expanded (|mdash|, |deprecated_favor|)
+ * and its escapes undone (`*n*\ th` is "nth": an escaped blank is no blank).
+ */
+export function rstSummary(text, subs = new Map()) {
   const body = text.split('.. include_body')[1] ?? '';
   // `:ref:`MPI_Send` |mdash| …`, or a literal block `::` with `MPI_Lookup_name - …`
   const para = body.split(/\n\s*\n/).map((p) => p.trim()).find((p) => /^(?::ref:`|MPI_\w+\s+-\s)/.test(p));
   if (!para) return null;
   const m = /^(?:(?::ref:`[^`]+`|MPI_\w+)[\s,]*)+(?:\|mdash\||-|—)\s*([\s\S]*)$/.exec(para);
   if (!m) return null;
-  return squash(m[1].replace(/:ref:`([^`<]+?)(?:\s*<[^>]+>)?`/g, '$1').replace(/``([^`]+)``/g, '$1').replace(/\*([^*]+)\*/g, '$1'));
+  const plain = m[1]
+    .replace(/:ref:`([^`<]+?)(?:\s*<[^>]+>)?`/g, '$1')
+    .replace(/``([^`]+)``/g, '$1')
+    .replace(/(?<!\\)\*\*([^*]+)\*\*/g, '$1')
+    .replace(/(?<!\\)\*([^*]+)\*/g, '$1')
+    .replace(/\|(\w+)\|/g, (all, name) => subs.get(name) ?? all)
+    .replace(/\\(\s|.)/g, (all, c) => (/\s/.test(c) ? '' : c));
+  return squash(plain);
 }
 
 /** The page an Open MPI man page includes, when it is a stub (`.. include:: ../man3/MPI_Allreduce.3.rst`). */
@@ -262,6 +304,7 @@ export async function build() {
     p === 'ompi/mpi/fortran/base/attr-fn-int-callback-interfaces.h' ||
     p === F08_TYPES ||
     p === F08_HANDLES ||
+    p === DOCS_CONF ||
     p === 'LICENSE',
   );
   const pages = new Map();
@@ -269,12 +312,14 @@ export async function build() {
     const m = /^docs\/man-openmpi\/man3\/(\w+)\.3\.rst$/.exec(p);
     if (m) pages.set(m[1], b.toString('utf8'));
   }
+  // the substitutions of 5.0.11's pages, which the main branch's use too
+  const subs = rstSubstitutions(tar.get(DOCS_CONF).toString('utf8'));
   const summaryOf = (name, seen = new Set()) => {
     const text = pages.get(name);
     if (!text || seen.has(name)) return null;
     seen.add(name);
     const inc = rstInclude(text);
-    return inc && inc !== name ? summaryOf(inc, seen) : rstSummary(text);
+    return inc && inc !== name ? summaryOf(inc, seen) : rstSummary(text, subs);
   };
 
   // MPI 5.0 as the ABI stubs declare it: every Fortran-callable procedure of the catalogue should be there
@@ -300,7 +345,7 @@ export async function build() {
     let text = await get(name);
     const inc = rstInclude(text);
     if (inc && inc !== name) text = await get(inc);
-    const s = rstSummary(text);
+    const s = rstSummary(text, subs);
     if (s) mainSummaries.set(name, s);
   });
 
@@ -342,7 +387,7 @@ export async function build() {
     }
     e.c = r.category;
     const summary = summaryOf(r.name) ?? mainSummaries.get(r.name);
-    if (summary) e.s = clip(summary, SUMMARY_MAX);
+    if (summary) e.s = clip(correct(CORRECTIONS, r.name, summary, problems), SUMMARY_MAX);
     else problems.push(`${r.name}: no summary`);
     e.a = args;
     if (tags.length) e.t = tags;

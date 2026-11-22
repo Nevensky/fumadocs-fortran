@@ -5,11 +5,27 @@ import { fileURLToPath } from 'node:url';
 import { extractFiles, parseSource, detectForm, evaluate, parseDirective, readEvents } from '../src/index.js';
 import { canon, lower, splitTop, scanComment, matchClose } from '../src/parse/text.js';
 import { macroTable, preprocess, CondTable } from '../src/source/cpp.js';
+import { parseDeclaration } from '../src/parse/decl.js';
 import { formatArg } from '../scripts/oracle/format.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const OUT = path.join(HERE, 'out');
-fs.mkdirSync(OUT, { recursive: true });
+// The run's scratch files go in a folder of its own, test/out/run-XXXXXX, as other runs may be writing theirs at the
+// same time; in Docker, each container's node has the same process ID, so the folder has a random name. It is removed
+// when every check passed, and kept, with its path printed, when one failed or the run stopped with an error.
+fs.mkdirSync(path.join(HERE, 'out'), { recursive: true });
+const OUT = fs.mkdtempSync(path.join(HERE, 'out', 'run-'));
+process.on('exit', (code) => {
+  const where = path.relative(process.cwd(), OUT);
+  if (code) {
+    console.error(`the scratch files of this run are kept in ${where}`);
+    return;
+  }
+  try {
+    fs.rmSync(OUT, { recursive: true, force: true });
+  } catch (e) {
+    console.error(`the scratch files in ${where} could not be removed: ${e.message}`);
+  }
+});
 
 let failures = 0, checks = 0;
 const ok = (cond, msg) => {
@@ -232,7 +248,7 @@ const parse = (text, opts = {}) => parseSource(text, { root: OUT, ...opts });
     '      ALLOCATABLE :: W(:)',
     '      B(2) = A(1) + W(1) + F(N)',
     '      END',
-  ], { path: 'work.f' }), ['f'], 'arrays dimensioned by COMMON, DIMENSION or ALLOCATABLE, before or after their type');
+  ], { path: 'work.f' }), ['F'], 'arrays dimensioned by COMMON, DIMENSION or ALLOCATABLE, before or after their type');
   eq(refs('names', [
     'subroutine names(k)',
     '  integer :: k',
@@ -242,6 +258,18 @@ const parse = (text, opts = {}) => parseSource(text, { root: OUT, ...opts });
     '  print *, label(k:k), title(k), tag(k)',
     'end subroutine',
   ]), ['tag', 'title'], 'a character function declared EXTERNAL, in a statement or an attribute, is a reference');
+  eq(refs('spelled', [
+    '      SUBROUTINE SPELLED( X, N )',
+    '      CHARACTER*1 TRANS',
+    '      DOUBLE PRECISION X( * ), S',
+    "      S = DLAMCH( 'S' ) + Dlamch( 'E' ) + dlamch( 'P' )",
+    "      IF( LSAME( TRANS, 'N' ) .AND. DISNAN( S ) ) N = 0",
+    '      CALL DSCAL( N, 1.0D0 / DNRM2( N, X, 1 ), X, 1 )',
+    '      S = OBJ%Norm( 1 )',
+    '      END',
+  ], { path: 'spelled.f' }), ['DISNAN', 'DLAMCH', 'DNRM2', 'LSAME', 'OBJ%Norm'],
+  'a reference keeps the spelling the source writes, the first of each name, after a string and in a CALL\'s '
+    + 'arguments, as a call does; they are in the order of their lower-case names');
 }
 
 // ---------------------------------------------------------------- a character length after the name
@@ -283,6 +311,67 @@ const parse = (text, opts = {}) => parseSource(text, { root: OUT, ...opts });
     ['character(len=n,kind=ucs4)', 'n', 'ucs4'], ['CHARACTER(LEN=20)', '20', null],
     ['character(kind=ucs4,len=3)', '3', 'ucs4']],
   'a length after the name, in a type with a selector: len= in the selector, with the kind, in the type\'s case');
+}
+
+// ---------------------------------------------------------------- the comma after a star length
+{
+  // without ::, a length written after a star may end in a comma (an obsolescent form, which gfortran compiles with
+  // -std=f2018), in free and fixed form, across continuation lines, and before entities with lengths of their own
+  const types = (unit) => unit.args.map((a) => [a.name, a.type?.text, a.type?.len, !!a.type?.implicit]);
+  const free = byName(parse([
+    'subroutine commas(a, b, c, d, e, f, n)',
+    '  integer :: n',
+    '  character*8, a',
+    '  character*(*), b',
+    '  character*8, c, d*4',
+    '  character*(*), &',
+    '    e, f*(n)',
+    'end subroutine',
+  ].join('\n')), 'commas');
+  eq(types(free), [['a', 'character*8', '8', false], ['b', 'character*(*)', '*', false],
+    ['c', 'character*8', '8', false], ['d', 'character*4', '4', false], ['e', 'character*(*)', '*', false],
+    ['f', 'character*(n)', 'n', false], ['n', 'integer', null, false]],
+  'character*8, a and character*(*), b declare their entities, in free form');
+  const fixed = byName(parse([
+    '      SUBROUTINE OLDC(A, B, C, D, E, F, N)',
+    '      INTEGER N',
+    '      CHARACTER*8, A',
+    '      CHARACTER*(*), B',
+    '      CHARACTER*8, C, D*4',
+    '      CHARACTER*(N),',
+    '     $   E',
+    '      CHARACTER * 6 , F',
+    '      END',
+  ].join('\n'), { path: 'oldc.f' }), 'oldc');
+  eq(types(fixed), [['A', 'CHARACTER*8', '8', false], ['B', 'CHARACTER*(*)', '*', false],
+    ['C', 'CHARACTER*8', '8', false], ['D', 'CHARACTER*4', '4', false], ['E', 'CHARACTER*(N)', 'N', false],
+    ['F', 'CHARACTER*6', '6', false], ['N', 'INTEGER', null, false]], 'and in fixed form, blanks and all');
+  const mod = parse([
+    'module cm',
+    '  character*10, title',
+    '  type t',
+    '    character*8, name, code*3',
+    '  end type',
+    'end module',
+  ].join('\n'));
+  eq([byName(mod, 'title', 'variable'), byName(mod, 'name', 'component'), byName(mod, 'code', 'component')]
+    .map((x) => x?.type.text), ['character*10', 'character*8', 'character*3'], 'a module variable and components too');
+  // the :: before the entities is not one in a string (GNU's old-style initialisation) or in brackets
+  const seps = parse([
+    'module seps',
+    "  character*8, sep /'x::y'/",
+    '  integer, dimension(size([integer :: 1, 2])) :: pair',
+    'end module',
+  ].join('\n'));
+  eq([byName(seps, 'sep', 'variable')?.init, byName(seps, 'pair', 'variable')?.dims],
+    ["/'x::y'/", ['size([integer::1,2])']], 'a :: in a string or in brackets is not the one before the entities');
+  // not after another type, a length in brackets, or with a word after the name: gfortran rejects each
+  const decl = (x) => {
+    const o = canon(x);
+    return parseDeclaration(lower(o), o);
+  };
+  eq(['real*8, x', 'character(len=8), y', 'character(8), y', 'character*8, function f()'].map(decl),
+    [null, null, null, null], 'no other comma without :: is a declaration');
 }
 
 // ---------------------------------------------------------------- calls through a local procedure pointer
@@ -475,7 +564,8 @@ const parse = (text, opts = {}) => parseSource(text, { root: OUT, ...opts });
 }
 
 // ---------------------------------------------------------------- the other test files
-// Each test/*.test.mjs exports a default function that receives { ok, eq, here, out } and may be async.
+// Each test/*.test.mjs exports a default function that receives { ok, eq, here, out } and may be async; out is the
+// run's own scratch folder.
 // `node test/run.mjs react graphs` runs only the test files whose names contain one of the words given.
 const only = process.argv.slice(2);
 const chosen = (x) => x.endsWith('.test.mjs') && (!only.length || only.some((w) => x.includes(w)));

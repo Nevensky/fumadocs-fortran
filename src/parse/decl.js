@@ -1,7 +1,7 @@
 // Type specifications, attribute lists and entity declarations. Every function takes the canonical lower-case text `s`
 // and its original-case twin `o` (same offsets; see canon() and lower() in text.js).
 
-import { matchClose, splitRanges, nameAt } from './text.js';
+import { matchClose, splitRanges, indexTop, nameAt } from './text.js';
 
 const INTRINSIC = /^(integer|real|complex|logical|character|byte|double ?precision|double ?complex)(?![a-z0-9_])/;
 const DERIVED = /^(type|class|procedure|typeof|classof)\(/;
@@ -176,11 +176,20 @@ export function parseDeclaration(s, o) {
   if (!t) return null;
   let i = t.end;
   let attrs = { list: [] };
-  const dc = s.indexOf('::', i);
   if (s[i] === ',') {
-    if (dc < 0) return null;
-    attrs = parseAttrs(s.slice(i + 1, dc), o.slice(i + 1, dc));
-    i = dc + 2;
+    // the :: before the entities, outside strings and brackets (not the one in 'a::b' or [integer :: 1, 2])
+    const dc = indexTop(s, '::', i);
+    if (dc >= 0) {
+      attrs = parseAttrs(s.slice(i + 1, dc), o.slice(i + 1, dc));
+      i = dc + 2;
+    } else {
+      // without ::, a comma may only end a length written after a star (character*8, a and character*(*), b: an
+      // obsolescent form), and the entities follow it. A word after the first name is no entity: character*8,
+      // function f() declares nothing (gfortran rejects it).
+      if (!s.startsWith('character*')) return null;
+      i++;
+      if (/^[a-z_]\w* [a-z_]/.test(s.slice(i))) return null;
+    }
   } else if (s.startsWith('::', i)) i += 2;
   else if (s[i] === ' ') i++;
   else if (!/[a-z_]/.test(s[i] ?? '')) return null; // `real(dp)x`: canon() drops the blank after a bracket

@@ -29,6 +29,11 @@ const docs = defineDocs({
       // and marked, and fumadocs' [!code …] notations work in ! comments. fumadocs' own options are the base, since
       // rehypeCode replaces its default transformers with the ones it is given.
       rehypeCodeOptions: fortranRehypeCode(rehypeCodeDefaultOptions),
+      // Search: fumadocs keeps the element of a component (a capitalised name) in a page's records as an HTML tag with
+      // its attributes, which the static index then ships to every reader, and gives other elements their content.
+      // The generated pages' components (FortranArg, FortranBadge, FortranRef, …) give their content too: an
+      // argument's docs, the names on a Calls line. The elements of other components stay tags, as by default.
+      remarkStructureOptions: { filterElement: (node) => /^(?!Fortran[A-Z])[A-Z][\w$]*$/.test(node.name ?? '') },
     }),
     // generated API pages say what each heading is (fortran.toc), for the kind letters in the table of contents
     schema: pageSchema.extend({

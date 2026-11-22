@@ -151,6 +151,44 @@ export interface PageOptions {
    * MPI, OpenMP and OpenACC. A `classify` replaces it. A routine the project defines is the project's either way.
    */
   graphs?: boolean | Pick<GraphOptions, 'depth' | 'maxNodes' | 'classify'>;
+  /** The HPC registry in the pages: where library names' cards link to, and whether they have cards at all. */
+  hpc?: HpcPageOptions;
+}
+
+export interface HpcPageOptions {
+  /**
+   * The page a library name's card links to, by library. A name the chosen provider has no page for links where it
+   * would by default (BLACS and the ScaLAPACK tools have no MKL pages, MPI's types no MPICH pages, OpenMP's kinds no
+   * libgomp pages). A library or provider not listed here throws.
+   */
+  links?: LinkProviders;
+  /**
+   * `false` leaves library names as code: the library routines of "Calls:" lines, mpi_f08's types and omp_lib's kinds
+   * get no cards (`--library-cards none`). The graphs keep their colours. Default: `true`.
+   */
+  cards?: boolean;
+}
+
+/** The link providers of `hpc.links` (`--links lapack=mkl,mpi=mpich`); a library left out keeps its default. */
+export interface LinkProviders {
+  /**
+   * BLAS and LAPACK: Netlib's pages, or Intel oneMKL's. Default: `mkl` when the code uses one of MKL's modules
+   * (`lapack95`, `blas95`, `f95_precision`, `mkl_*`), else `netlib`.
+   */
+  lapack?: 'netlib' | 'mkl';
+  /** ScaLAPACK, with PBLAS, BLACS, its tools and REDIST: as `lapack`, with the same default. */
+  scalapack?: 'netlib' | 'mkl';
+  /** MPI: Open MPI 5.0's manual (the default), MPICH's, or the MPI 5.0 standard (where MPI's types always link). */
+  mpi?: 'openmpi' | 'mpich' | 'standard';
+  /**
+   * OpenMP: the specification of one version (default 5.2), or GCC's libgomp manual (for routines and environment
+   * variables). What a version lacks links as by default: to 5.2's, else to the newest version that has it.
+   */
+  openmp?: '5.2' | '6.0' | '6.1' | 'libgomp';
+  /** OpenACC: the OpenACC 3.4 specification (the default), or GCC's libgomp manual. */
+  openacc?: 'spec' | 'libgomp';
+  /** Intrinsic procedures: fortran-lang.org (the default), or gfortran's manual. */
+  intrinsics?: 'fortran-lang' | 'gfortran';
 }
 
 export interface GraphOptions {
@@ -164,14 +202,17 @@ export interface GraphOptions {
   /**
    * The library a routine called by name is from, by its lower-case name: a class such as `fdfLapack`, or a family
    * word such as `lapack`, `scalapack`, `blas` or `mpi`; null when the name is not known. It is asked only for names
-   * the project does not define. MPI, OpenMP, OpenACC, CUDA (names starting with cuda, cublas, cufft, curand, cusparse
-   * or cusolver), coarray collectives and BLAS are recognised without it; `buildPages` passes the HPC registry's, which
-   * knows LAPACK and ScaLAPACK too, unless its `graphs` option gives one.
+   * the project does not define. `how.subroutine` says that a `CALL` names it, or an interface body declares it a
+   * subroutine: a name can be a library's subroutine and an intrinsic function (ScaLAPACK's `reshape`). MPI, OpenMP,
+   * OpenACC, CUDA (names starting with cuda, cublas, cufft, curand, cusparse or cusolver), coarray collectives and
+   * BLAS are recognised without it; `buildPages` passes the HPC registry's, which knows LAPACK and ScaLAPACK too,
+   * unless its `graphs` option gives one.
    */
-  classify?: (name: string) => string | null;
+  classify?: (name: string, how: { subroutine: boolean }) => string | null;
   /**
    * The most nodes a graph draws, the "… N more" node included (default 40; below 2 counts as 2, the subject and
-   * "… N more"); for the overview, the most units (default 80).
+   * "… N more"); for the overview, the most units (default 80). Past it, the routines from outside the project are
+   * left out first (however many callers they have), the farthest first, then the farthest of the rest.
    */
   maxNodes?: number;
   /** How far uses and callees are followed (default 2). */
@@ -226,13 +267,16 @@ export interface FortranFrontmatter {
  *   intrinsic subroutine (gfortran's manual for random_init and split; tokenize and MPI's predefined callbacks have
  *   no page, and their cards no href). A routine renamed by a use statement is looked up by its own name.
  *   A CALL of a function's name, or of an intrinsic's name that another module's use statement gives, is some other
- *   subroutine and has no card; the project's procedures keep their links;
+ *   subroutine and has no card, unless the registry has a subroutine of that name (`call reshape` is ScaLAPACK's, not
+ *   the intrinsic function); the project's procedures keep their links;
  * - in argument, result and component rows, mpi_f08's derived types (`type(MPI_Comm)`, `MPI_Status`, …) and omp_lib's
  *   kinds (`integer(omp_lock_kind)`) have cards when the declaration's scope sees the module (use, only, renames, host
  *   association, and through the project's modules; `use, intrinsic :: omp_lib` too, as gfortran keeps its OpenMP
  *   modules with the intrinsic ones): the registry's line on the name, the MPI 5.0 standard or the
  *   OpenMP specification, and the use statement it comes from. A project entity of the name wins; `use mpi`, whose
  *   handles are integers, gives none.
+ *
+ * `hpc.links` chooses other pages for the cards to link to, and `hpc.cards: false` leaves the names as code.
  *
  * A type parameter's row reads as its declaration: the type `integer, kind` (or `integer, len`) and one attribute,
  * `default dp`, for `integer, kind :: k = dp`.

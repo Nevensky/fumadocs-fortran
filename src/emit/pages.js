@@ -7,7 +7,7 @@ import { renderDoc } from '../docs/index.js';
 import { splitTop } from '../parse/text.js';
 import { buildGraphs } from './graphs.js';
 import { INTRINSIC_MODULES } from './kinds.js';
-import { classifyLibrary, moduleName, routineCard } from './library.js';
+import { classifyLibrary, linkProviders, moduleName, routineCard } from './library.js';
 import { attr, decodeText, escapeText, inlineCode, plainText, yamlString } from './mdx.js';
 
 /**
@@ -35,6 +35,19 @@ import { attr, decodeText, escapeText, inlineCode, plainText, yamlString } from 
  * @property {boolean | GraphPageOptions} [graphs] the graphs, as ```mermaid blocks for remarkMdxMermaid (default on):
  *   each unit's dependencies, each type's inheritance, each procedure's and generic's calls, and the overview's
  *   modules; false leaves them out
+ * @property {HpcPageOptions} [hpc] the HPC registry in the pages: where library names link to, and whether they have
+ *   cards at all
+ */
+
+/**
+ * @typedef {object} HpcPageOptions
+ * @property {Record<string, string>} [links] the page a library name's card links to, by library (library.js's
+ *   LINK_PROVIDERS): lapack and scalapack netlib or mkl (default: mkl when the code uses MKL's modules, else netlib),
+ *   mpi openmpi (default), mpich or standard, openmp 5.2 (default), 6.0, 6.1 or libgomp, openacc spec (default) or
+ *   libgomp, intrinsics fortran-lang (default) or gfortran. A name the chosen provider has no page for links where it
+ *   would by default; a library or provider not listed throws
+ * @property {boolean} [cards] false leaves library names as code: no cards for the library routines of "Calls:"
+ *   lines, mpi_f08's types or omp_lib's kinds (default true). The graphs' colours stay
  */
 
 /**
@@ -42,10 +55,10 @@ import { attr, decodeText, escapeText, inlineCode, plainText, yamlString } from 
  * @property {number} [depth] how far uses and callees are followed (default 2)
  * @property {number} [maxNodes] the most nodes a graph draws (default 40; below 2 counts as 2), and the most units
  *   the overview draws (default 80)
- * @property {(name: string) => string|null} [classify] the library a routine called by name is from, by its
- *   lower-case name: 'blas', 'lapack', 'scalapack', 'mpi' and so on, or null when unknown. Without it, the HPC
- *   registry's: BLAS, LAPACK, ScaLAPACK (PBLAS, BLACS and its tools too), MPI, OpenMP and OpenACC. A routine the
- *   project defines is always the project's
+ * @property {(name: string, how: { subroutine: boolean }) => string|null} [classify] the library a routine called
+ *   by name is from, by its lower-case name (`subroutine`: a CALL names it): 'blas', 'lapack', 'scalapack', 'mpi'
+ *   and so on, or null when unknown. Without it, the HPC registry's: BLAS, LAPACK, ScaLAPACK (PBLAS, BLACS and its
+ *   tools too), MPI, OpenMP and OpenACC. A routine the project defines is always the project's
  */
 
 const OPS = { '+': 'plus', '-': 'minus', '*': 'times', '/': 'divide', '**': 'power', '//': 'concat', '==': 'eq', '/=': 'ne', '<': 'lt', '<=': 'le', '>': 'gt', '>=': 'ge' };
@@ -99,6 +112,13 @@ export function buildPages(ir, opts = {}) {
   let projectNames = null;
   let mkl = null;
   const dummies = new Map();
+  // the registry in the pages: the link providers the site chose (checked first, so that a wrong one throws before any
+  // work), and whether library names have cards
+  const links = linkProviders(opts.hpc?.links);
+  if (opts.hpc?.cards !== undefined && typeof opts.hpc.cards !== 'boolean') {
+    throw new TypeError(`hpc.cards takes true or false, not ${JSON.stringify(opts.hpc.cards)}`);
+  }
+  const cards = opts.hpc?.cards !== false;
   // a separate module procedure has the access of the interface body that declares it
   const accessOf = (e) => e.access ?? (e.scope === 'separate' ? findInterface(e)?.access : undefined);
   const shown = (e) => {
@@ -112,12 +132,19 @@ export function buildPages(ir, opts = {}) {
   // ---- pages and where each entity lives
   const plan = [];
   const used = new Set();
+  // a unit's slug: its name; the second of a name takes its kind (miniweather-program), and the later ones a number
+  // after that, behind an underscore (miniweather-program_2, miniweather-program_3), never one number after another.
+  // A slug that has its kind already takes only the number: a unit named index takes its kind first, as index is the
+  // folder's own page (module-index, module-index_2), and an unnamed block data is named by its kind (blockdata,
+  // blockdata_2). No slug ends in -<number>, which a group's name can (a file fft-2.f90): fumadocs' search gives a
+  // page's records the ids <url>-0, <url>-1, …, so such a page could share its id with another page's record, and the
+  // site's build would stop. Such a name takes its kind too (fft-2-procedures).
   const slug = (name, kind) => {
     let s = (name || kind).toLowerCase().replace(/[^a-z0-9_]+/g, '-');
     if (s === 'index') s = `${kind}-index`;
-    if (used.has(s)) s = `${s}-${kind}`;
-    let k = 2;
-    while (used.has(s)) s = `${s}-${k++}`;
+    else if ((used.has(s) || /-\d+$/.test(s)) && s !== kind) s = `${s}-${kind}`;
+    const base = s;
+    for (let k = 2; used.has(s); k++) s = `${base}_${k}`;
     used.add(s);
     return s;
   };
@@ -228,8 +255,10 @@ export function buildPages(ir, opts = {}) {
   };
   const graphOpts = opts.graphs && typeof opts.graphs === 'object' ? opts.graphs : {};
   // the libraries of routines called by name: the site's classify, else the registry's (a project's own routine of
-  // that name is the project's either way: buildGraphs asks only for names the project does not define)
-  const classify = typeof graphOpts.classify === 'function' ? graphOpts.classify : (n) => classifyLibrary(n);
+  // that name is the project's either way: buildGraphs asks only for names the project does not define). A CALL names
+  // a subroutine: `call reshape` is ScaLAPACK's, a function reference of reshape the intrinsic
+  const classify = typeof graphOpts.classify === 'function' ? graphOpts.classify
+    : (n, how) => classifyLibrary(n, { subroutine: !!how?.subroutine });
   const graphs = opts.graphs === false ? null : buildGraphs(ir, {
     url: graphUrl, shown, classify, depth: graphOpts.depth, maxNodes: graphOpts.maxNodes,
   });
@@ -303,7 +332,7 @@ export function buildPages(ir, opts = {}) {
       } else {
         // a plain use of mpi_f08 or omp_lib gives the names the registry lists for it, as an only list does; so does
         // `use, intrinsic :: omp_lib`, as gfortran keeps its OpenMP modules with the intrinsic ones
-        const library = moduleName(mod, remote, want);
+        const library = cards ? moduleName(mod, remote, want, { links }) : null;
         if (library) return { library, renamed: !!item?.local, use: u, at: x };
         if (item) return { outside: mod };
       }
@@ -987,7 +1016,7 @@ export function buildPages(ir, opts = {}) {
   function callee(e, name, local = false) {
     const url = resolve(name);
     if (url) return `[${inlineCode(name)}](${url})`;
-    const card = local ? null : libraryCall(e, name);
+    const card = local || !cards ? null : libraryCall(e, name);
     if (!card) return inlineCode(name);
     return `<FortranRef${attr('href', card.href)}${attr('title', card.title)}${attr('detail', card.detail)}>`
       + `${inlineCode(name)}</FortranRef>`;
@@ -999,7 +1028,8 @@ export function buildPages(ir, opts = {}) {
    * procedure pointer `e` declares (callee asks for none); an interface body that only describes the routine (a
    * hidden explicit interface for dgesv) does not count. A use statement in scope that names it (only, or a rename)
    * gives the routine's own name; an intrinsic's name that a module other than an intrinsic one gives is that
-   * module's procedure; a function's name is some other subroutine's.
+   * module's procedure; a function's name is some other subroutine's. Both hold unless the registry has a subroutine
+   * of the name, which a CALL names: `call reshape` is ScaLAPACK's reshape, a use statement's reshape too.
    */
   function libraryCall(e, name) {
     const key = lc(name);
@@ -1008,7 +1038,7 @@ export function buildPages(ir, opts = {}) {
     const own = bound ? lc(bound.item.name) : key;
     if (own !== key && ownNames().has(own)) return null;
     const fortran = !bound || bound.use.nature === 'intrinsic' || FORTRAN_MODULES.has(lc(bound.use.module));
-    return routineCard(own, { mkl: usesMkl(), intrinsic: fortran, called: true });
+    return routineCard(own, { mkl: usesMkl(), links, intrinsic: fortran, called: true });
   }
 
   // the lower-case names of the project's procedures, generic interfaces and variables, whatever their access. An
@@ -1118,12 +1148,24 @@ function declOf(a, extra = []) {
     a.optional && 'optional', a.value && 'value', ...(a.attrs ?? []), ...extra,
   ].filter(Boolean);
   if (!parts.length) return '';
-  return `${parts.join(', ')} :: ${entityText(a)}${implicit ? ' ! implicitly typed' : ''}`;
+  return `${declaration(parts, a)}${implicit ? ' ! implicitly typed' : ''}`;
 }
 
-/** A declared name with its dimensions, codimensions and initial value: `x(:,:)[*] = 0`. */
+/**
+ * The type and attributes, then the entity. An initial value in the old style of F77 and GNU Fortran (`x /0/`) is
+ * Fortran only in a declaration without `::`: it is written so where the declaration has only its type, and left out
+ * where an attribute needs `::`.
+ */
+function declaration(parts, v) {
+  const old = v.init !== undefined && !v.pointerInit && v.init.startsWith('/');
+  if (old && parts.length === 1 && /^\/[\s\S]*\/$/.test(v.init)) return `${parts[0]} ${entityText(v)}`;
+  return `${parts.join(', ')} :: ${entityText(old ? { ...v, init: undefined } : v)}`;
+}
+
+/** A declared name with its dimensions, codimensions and initial value: `x(:,:)[*] = 0`, or `x /0/` in the old style. */
 function entityText(v) {
-  const init = v.init !== undefined ? ` ${v.pointerInit ? '=>' : '='} ${v.init}` : '';
+  const init = v.init === undefined ? '' : v.pointerInit ? ` => ${v.init}` : v.init.startsWith('/') ? ` ${v.init}`
+    : ` = ${v.init}`;
   return `${v.name}${v.dims ? `(${v.dims.join(',')})` : ''}${v.codims ? `[${v.codims.join(',')}]` : ''}${init}`;
 }
 
@@ -1143,7 +1185,7 @@ function typeDecl(t) {
 /** A module variable's declaration: `integer, parameter :: max_order = 64`. */
 function varDecl(v) {
   const attrs = [prettyType(v.type) ?? 'real', v.parameter && 'parameter', attrsText(v, true)].filter(Boolean);
-  return `${attrs.join(', ')} :: ${entityText(v)}`;
+  return declaration(attrs, v);
 }
 
 /** One FortranArg: the props as today, then result, decl and refs (an object, as a JS expression). */

@@ -4,6 +4,7 @@
 //
 //   lookup('lapack', 'dgesv') → { lib, name, kind, args: [['n', 'in', 'integer'], …], family, summary, tags, links }
 //   libraryOf('MPI_Comm')     → { lib: 'mpi', library: 'mpi', name: 'MPI_Comm', section: 'types', entry, link }
+//   libraryOf('reshape', { subroutine: true }) → ScaLAPACK's reshape, not the intrinsic RESHAPE (for a CALL)
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
@@ -314,7 +315,8 @@ export function names(id, section) {
 
 /**
  * The sections of names a program writes (procedures, types, kinds, constants), in the order they are tried; the
- * directives, clauses and environment variables of OpenMP and OpenACC are left out. No name is in two of them.
+ * directives, clauses and environment variables of OpenMP and OpenACC are left out. One name is in two of them:
+ * reshape, a subroutine of ScaLAPACK's TOOLS and an intrinsic function (see libraryOf).
  */
 export const LIBRARY_SECTIONS = [
   ['lapack', 'entries'],
@@ -328,14 +330,22 @@ export const LIBRARY_SECTIONS = [
   ['intrinsics', 'entries'],
 ];
 
-/** Lower-case name → [id, section, key] over LIBRARY_SECTIONS; the first section that has a name keeps it. */
+/**
+ * Lower-case name → its hits [id, section, key] over LIBRARY_SECTIONS, at most one a section (the first key of that
+ * spelling), in their order but with the intrinsics' first: in Fortran, an intrinsic procedure's name means the
+ * intrinsic unless the program says otherwise.
+ */
 const libraryIndex = () =>
   once('library', () => {
     const out = new Map();
     for (const [id, section] of LIBRARY_SECTIONS) {
       for (const key of Object.keys(load(id)[section] ?? {})) {
         const k = key.toLowerCase();
-        if (!out.has(k)) out.set(k, [id, section, key]);
+        const hits = out.get(k) ?? [];
+        if (hits.some(([i, s]) => i === id && s === section)) continue;
+        if (id === 'intrinsics') hits.unshift([id, section, key]);
+        else hits.push([id, section, key]);
+        out.set(k, hits);
       }
     }
     return out;
@@ -372,11 +382,25 @@ function linkOf(entry) {
  *   procedure), the MPI 5.0 standard (an MPI type), the OpenMP or OpenACC specification, fortran-lang.org or
  *   gfortran's manual (an intrinsic).
  * A project's own procedure or type of the same name wins: ask only for names the project does not define.
+ *
+ * A name can be in two libraries: reshape is ScaLAPACK's TOOLS subroutine and the intrinsic function RESHAPE. The
+ * intrinsic wins, as in Fortran, unless `subroutine` is true: for the name a CALL statement names, a subroutine wins
+ * over a function, so libraryOf('reshape', { subroutine: true }) gives ScaLAPACK's reshape. When no library has the
+ * name as a subroutine, or only one has the name, the option changes nothing (a CALL of dlamch still gets LAPACK's
+ * function, which the caller can tell by its kind).
  */
-export function libraryOf(name) {
-  const hit = libraryIndex().get(String(name ?? '').toLowerCase());
-  if (!hit) return null;
-  const [id, section, key] = hit;
-  const entry = lookup(id, key, { section });
-  return { lib: id, library: entry.library ?? id, name: entry.name, section, entry, link: linkOf(entry) };
+export function libraryOf(name, { subroutine = false } = {}) {
+  const hits = libraryIndex().get(String(name ?? '').toLowerCase());
+  if (!hits) return null;
+  const answer = ([id, section, key]) => {
+    const entry = lookup(id, key, { section });
+    return { lib: id, library: entry.library ?? id, name: entry.name, section, entry, link: linkOf(entry) };
+  };
+  if (subroutine && hits.length > 1) {
+    for (const hit of hits) {
+      const r = answer(hit);
+      if (r.entry.kind === 'subroutine') return r;
+    }
+  }
+  return answer(hits[0]);
 }

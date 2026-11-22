@@ -9,6 +9,8 @@ import { units, typeCode } from './fortran.mjs';
 import {
   capitalise,
   clip,
+  correct,
+  dehyphenate,
   doxygenDir,
   doxygenEscape,
   fetchPinned,
@@ -23,10 +25,10 @@ import {
   searchSections,
   source,
   squash,
+  SUMMARY_MAX,
+  wordsOf,
   writeRegistry,
 } from './lib.mjs';
-
-export const SUMMARY_MAX = 110;
 
 /** Library folders read, in order; a name seen earlier wins (lsame.f is both in BLAS/SRC and INSTALL). */
 const FOLDERS = [
@@ -37,6 +39,18 @@ const FOLDERS = [
 ];
 // INSTALL/ holds test programs and timer variants too; these are the files the library is built from.
 const INSTALL_FILES = new Set(['dlamch.f', 'slamch.f', 'ilaver.f', 'lsame.f', 'droundup_lwork.f', 'sroundup_lwork.f', 'dsecnd_INT_ETIME.f', 'second_INT_ETIME.f']);
+
+/**
+ * Slips in the briefs and Purpose sentences of Reference-LAPACK, corrected before the routine's own name is taken off
+ * them: routine → [[text, replacement], …] (see correct in lib.mjs; registry/SOURCES.md lists them).
+ */
+export const CORRECTIONS = {
+  // SRC/dlasyf_rook.f: the brief repeats the name after a stray "*>"
+  dlasyf_rook: [['DLASYF_ROOK *> DLASYF_ROOK', 'DLASYF_ROOK']],
+  // BLAS/SRC/?rotmg.f: a stray "*>" in the middle of the Purpose's vector
+  drotmg: [['DSQRT(DD2)*> DY2', 'DSQRT(DD2)*DY2']],
+  srotmg: [['SQRT(SD2)*> SY2', 'SQRT(SD2)*SY2']],
+};
 
 const INTENT = { in: 'i', out: 'o', 'in,out': 'b', inout: 'b' };
 export const PREC_T = { s: 'r', d: 'd', c: 'c', z: 'z' };
@@ -76,15 +90,19 @@ const decode = (s) =>
 const plain = (s) =>
   squash(decode(s.replace(/<\/?[a-z][^>]*>?/gi, ' ').replace(/\\[bec]\s+/g, '').replace(/\\f[$[\]()]/g, '')));
 
-/** Parses the `*>` / `!>` documentation lines that precede a unit. */
-export function parseDoc(lines) {
+/**
+ * Parses the `*>` / `!>` documentation lines that precede a unit. With `words` (see wordsOf), the words its brief and
+ * Purpose break at the end of a line are joined (dehyphenate).
+ */
+export function parseDoc(lines, words = null) {
   const text = lines.join('\n');
+  const joined = (s) => (words ? dehyphenate(s, words) : s);
   const doc = { brief: '', group: null, purpose: '', params: new Map() };
   const brief = /\\brief\s+([\s\S]*?)(?=\n\s*\n|\n\s*\\|$)/.exec(text);
-  if (brief) doc.brief = plain(brief[1]);
+  if (brief) doc.brief = plain(joined(brief[1]));
   doc.group = /\\ingroup\s+(\w+)/.exec(text)?.[1] ?? /\\addtogroup\s+(\w+)/.exec(text)?.[1] ?? null;
   const purpose = /\\par\s+Purpose:?[\s\S]*?\\verbatim([\s\S]*?)\\endverbatim/.exec(text);
-  if (purpose) doc.purpose = purpose[1];
+  if (purpose) doc.purpose = joined(purpose[1]);
   const re = /\\param\[([a-z, ]+)\]\s+(\w+)\s*\n(?:\s*\n)*\s*\\verbatim\s*\n([\s\S]*?)\\endverbatim/g;
   for (const m of text.matchAll(re)) {
     doc.params.set(m[2].toLowerCase(), { intent: INTENT[m[1].replace(/\s+/g, '')] ?? '', body: m[3] });
@@ -124,8 +142,8 @@ const LD_RE = />=\s*(max\s*\((?:[^()]|\([^()]*\))*\)|\d+)/i;
 const INFO_RE = /<\s*0\s*:?[\s\S]{0,80}?illegal\s+value/i;
 const WSQ_RE = /\bL\w*\s*=\s*-1\b[\s\S]{0,200}?workspace\s+query/i;
 
-/** One routine's record, before families are factored out. */
-function routine(u, doc, folder, file) {
+/** One routine's record, before families are factored out; a correction that no longer applies goes to `problems`. */
+function routine(u, doc, folder, file, problems) {
   // types stay literal here; the T and R templates are applied once the families are known
   const tags = [];
   const ld = {};
@@ -152,6 +170,7 @@ function routine(u, doc, folder, file) {
   let summary = doc.brief;
   const bare = summary.replace(/[^\w]/g, '').toLowerCase();
   if (!summary || bare === u.name || bare.length < 3) summary = firstSentence(doc.purpose);
+  summary = correct(CORRECTIONS, u.name, summary, problems);
   // "DGESV computes …" → "Computes …"; "ILAENV is called …" keeps its subject
   summary = summary.replace(new RegExp(`^(?:the\\s+)?${u.name}\\b(?![\\s:,-]*(?:is|are|has)\\b)[\\s:,-]*`, 'i'), '');
   summary = clip(capitalise(squash(summary)), SUMMARY_MAX);
@@ -190,7 +209,8 @@ export async function netlibAnchors(sources, srcId) {
       for (const [href] of targets) {
         const rel = String(href).replace(/^\.\.\//, '');
         const g = /^(d[0-9a-f]\/d[0-9a-f]{2})\/group__(\w+?)_ga([0-9a-f]{32})\.html#ga\3$/.exec(rel);
-        const f = /^(d[0-9a-f]\/d[0-9a-f]{2})\/(\w+?_8(?:f|f90|F|F90|c))_a([0-9a-f]{32})\.html#a\3$/.exec(rel);
+        // a C header too: ScaLAPACK's ?lamov are lamov.h's LAMOV
+        const f = /^(d[0-9a-f]\/d[0-9a-f]{2})\/(\w+?_8(?:f|f90|F|F90|c|h))_a([0-9a-f]{32})\.html#a\3$/.exec(rel);
         if (g && !rec.group) rec.group = { dir: g[1], group: g[2], hash: g[3] };
         if (f) rec.files.push({ dir: f[1], base: f[2], hash: f[3] });
       }
@@ -219,25 +239,37 @@ export async function build() {
   );
   const titles = groupTitles(tar.get('DOCS/groups-usr.dox').toString('utf8'));
 
+  // UTF-8: a few summaries have λ, α or ≤, which latin1 would garble (λ became Î»)
+  const textOf = (path) => tar.get(path).toString('utf8');
+  const DOC_LINE = /^\s*[*cC!]>\s?(.*)$/;
+  // the words of all the documentation, to join the words it breaks at the end of a line (dehyphenate)
+  const words = new Set();
+  for (const path of tar.keys()) {
+    if (!/\.(f|F|f90|F90)$/.test(path)) continue;
+    const doc = textOf(path).split(/\r?\n/).map((l) => DOC_LINE.exec(l)?.[1]).filter((l) => l != null);
+    for (const w of wordsOf(doc.join('\n'))) words.add(w);
+  }
+
   const routines = new Map();
   const dropped = [];
+  const problems = [];
   for (const [prefix, folder] of FOLDERS) {
     const files = [...tar.keys()].filter((p) => p.startsWith(prefix) && !p.slice(prefix.length).includes('/')).sort();
     for (const path of files) {
       const file = path.slice(prefix.length);
       if (folder === 'install' && !INSTALL_FILES.has(file)) continue;
-      const text = tar.get(path).toString('latin1');
+      const text = textOf(path);
       const free = /\.f90$/i.test(file);
       const lines = text.split(/\r?\n/);
       let from = 0;
       for (const u of units(text, { free })) {
         const docLines = [];
         for (let i = from; i < u.start - 1; i++) {
-          const m = /^\s*[*cC!]>\s?(.*)$/.exec(lines[i]);
+          const m = DOC_LINE.exec(lines[i]);
           if (m) docLines.push(m[1]);
         }
         from = u.end;
-        const doc = parseDoc(docLines);
+        const doc = parseDoc(docLines, words);
         if (routines.has(u.name)) {
           dropped.push(`${path} (${u.name} already read)`);
           continue;
@@ -246,7 +278,7 @@ export async function build() {
           dropped.push(`${path} (${u.name}: no documentation)`);
           continue;
         }
-        routines.set(u.name, routine(u, doc, folder, file));
+        routines.set(u.name, routine(u, doc, folder, file, problems));
       }
     }
   }
@@ -405,7 +437,8 @@ export async function build() {
     },
     links: {
       netlib: {
-        base: 'https://www.netlib.org/lapack/explore-html/',
+        // netlib.org: www.netlib.org answers every page with a redirect to it
+        base: 'https://netlib.org/lapack/explore-html/',
         member: '{dir}/group__{group}_ga{u}.html#ga{u}',
         fileMember: '{dir}/{file}_a{v}.html#a{v}',
         file: '{dir}/{file}.html',
@@ -434,6 +467,8 @@ export async function build() {
     unknownTypes: [...routines.values()].filter((r) => r.args.some((a) => a[2].startsWith('?'))).map((r) => r.name),
     noIntent: [...routines.values()].filter((r) => r.args.some((a) => !a[1])).map((r) => r.name),
     dropped,
+    cut: [...routines.values()].filter((r) => r.summary.endsWith('…')).length,
+    problems,
     bytes,
   };
   return { file: 'lapack.json', bytes, stats, licence: tar.get('LICENSE').toString('utf8') };

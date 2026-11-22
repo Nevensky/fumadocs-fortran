@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { extract, generate } from '../src/index.js';
+import { linkProviders } from '../src/emit/library.js';
 
 const HELP = `Usage: fumadocs-fortran <command> [options]
 
@@ -35,6 +36,17 @@ Options for generate (and -D, -I, --all-branches, --form, --exclude as for dump)
                        they include) wherever they lie; link: only a link to them
   --graphs MODE        mermaid (default): dependency, inheritance and call graphs as Mermaid blocks, for a site
                        with remarkMdxMermaid; none: no graphs
+  --library-cards MODE registry (default): the library routines in Calls lines, and mpi_f08's types and omp_lib's
+                       kinds in the tables, have hover cards from the HPC registry; none: they are plain code (the
+                       graphs keep their colours)
+  --links LIST         where those cards link, as library=provider pairs, comma-separated (mpi=mpich,openmp=6.0):
+                         lapack (BLAS and LAPACK) and scalapack (with PBLAS, BLACS, its tools and REDIST): netlib
+                           or mkl (default: mkl when the code uses Intel oneMKL's modules, else netlib)
+                         mpi: openmpi (default), mpich or standard
+                         openmp: 5.2 (default), 6.0, 6.1 or libgomp
+                         openacc: spec (default) or libgomp
+                         intrinsics: fortran-lang (default) or gfortran
+                       a name the provider has no page for links as it would by default
   -h, --help           show this help
   -v, --version        print the version
 
@@ -80,11 +92,34 @@ function parse(argv) {
       o.graphs = val();
       if (!['mermaid', 'none'].includes(o.graphs)) fail('--graphs takes mermaid or none');
     }
+    else if (a === '--library-cards') {
+      o.cards = val();
+      if (!['registry', 'none'].includes(o.cards)) fail('--library-cards takes registry or none');
+    }
+    else if (a === '--links') o.links = { ...o.links, ...links(val()) };
     else if (a.startsWith('-')) fail(`unknown option ${a}`);
     else if (!o.cmd) o.cmd = a;
     else o.paths.push(a);
   }
   return o;
+}
+
+/** --links lapack=mkl,mpi=mpich: library → provider, checked as the hpc.links option is. */
+function links(list) {
+  // without a prototype, so that every name given is a key of its own: `__proto__=mkl` fails as an unknown library
+  const out = Object.create(null);
+  for (const item of list.split(',').map((x) => x.trim()).filter(Boolean)) {
+    const eq = item.indexOf('=');
+    if (eq <= 0 || eq === item.length - 1) {
+      fail(`--links takes library=provider pairs, comma-separated, such as mpi=mpich, not ${item}`);
+    }
+    out[item.slice(0, eq).trim()] = item.slice(eq + 1).trim();
+  }
+  try {
+    return linkProviders(out, '--links');
+  } catch (e) {
+    return fail(e.message);
+  }
 }
 
 function fail(msg) {
@@ -137,6 +172,7 @@ if (opts.cmd === 'dump') {
     math: opts.math,
     source: opts.source,
     graphs: opts.graphs !== 'none',
+    hpc: { links: opts.links, cards: opts.cards !== 'none' },
   });
   const warn = r.ir.diagnostics.length;
   process.stdout.write(`${r.written.length} files (${r.changed.length} changed, ${r.removed.length} removed) from ${r.ir.files.length} sources in ${(performance.now() - t0).toFixed(0)} ms${warn ? `; ${warn} diagnostics` : ''}\n`);

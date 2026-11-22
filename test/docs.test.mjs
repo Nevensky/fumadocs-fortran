@@ -18,6 +18,10 @@ const nodesOf = (tree, test) => {
 export default async function ({ ok, eq, out }) {
   // ---- escaping
   eq(escapeText('B(LDB,*) and A * X = B'), 'B(LDB,\\*) and A \\* X = B', 'LAPACK text is not emphasis');
+  eq(escapeText('norm2_parallel, x_1, _OPENMP, a__b and USE_MPI_ (n_é)'),
+    'norm2_parallel, x_1, \\_OPENMP, a\\_\\_b and USE_MPI\\_ (n\\_é)',
+    'an underscore between two ASCII letters or digits stays as written, as Markdown never reads it as emphasis, so '
+      + 'that search finds the name whole; the others are escaped');
   eq(escapeText('N >= 0 and x < {y}'), 'N &gt;= 0 and x &lt; \\{y\\}', 'comparisons and braces');
   eq(escapeText('# not a heading\n- not a list\n1. not a list'), '\\# not a heading\n\\- not a list\n1\\. not a list', 'line starts');
   eq(escapeText('import x from y'), '&#105;mport x from y', 'an ES import is neutralised');
@@ -245,6 +249,12 @@ export default async function ({ ok, eq, out }) {
         return e.message;
       }
     };
+    // escaped text reads back as written, with no emphasis: underscores inside a word or not, stars, brackets
+    const words = 'norm2_parallel and x_local, _OPENMP_, a__b, c_ d, _e and *f* or [g] DGETRF_2 dense_matrix_t_';
+    const read = mdx.createProcessor().parse(escapeText(words));
+    eq([nodesOf(read, (n) => n.type === 'emphasis' || n.type === 'strong').length,
+      nodesOf(read, (n) => n.type === 'text').map((n) => n.value).join('')], [0, words],
+    'text with underscores inside words and around them reads back as written, with no emphasis');
     const body = bodyOf(src, 'fences.f90');
     eq(rowsOf(body), [['a', 'a = 1'], ['b', 'b = 2'], ['c']],
       'a fence a doc leaves open closes in its own row, in a list item or not');

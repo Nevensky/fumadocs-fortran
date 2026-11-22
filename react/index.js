@@ -6,11 +6,12 @@
 // them. The look is in style.css (.fdf-* classes, on fumadocs' colour variables); the parts outside Markdown carry
 // fumadocs' not-prose class.
 //
-// What a pill, a badge or the * of character(*) means is written once, in style.css: the components name the term
-// (data-term, and data-arg for what goes with it, as self in pass(self)), and CSS says it, in a card on hover and in
-// the lines of an opened row (its intent, its attributes and its length). A page of thousands of pills holds no meaning
-// twice. A shape's words ("rank 2, assumed shape") are the one exception: the components make them from the
-// dimensions, in English, as the argument of the shape's term and as the text of an opened row's Shape line.
+// What a pill, a badge, the * of character(*) or the kind or len of a type parameter's type (integer, kind) means is
+// written once, in style.css: the components name the term (data-term, and data-arg for what goes with it, as self in
+// pass(self)), and CSS says it, in a card on hover and in the lines of an opened row (its intent, its type parameter,
+// its attributes and its length). A page of thousands of pills holds no meaning twice. A shape's words ("rank 2,
+// assumed shape") are the one exception: the components make them from the dimensions, in English, as the argument of
+// the shape's term and as the text of an opened row's Shape line.
 
 import { Children, createElement as h, useId } from 'react';
 
@@ -186,6 +187,20 @@ function lengthOf(t) {
 }
 
 /**
+ * The kind or len of a type parameter's type, as its declaration has it and the generator writes it: `integer, kind`,
+ * `integer(int8), len`. Its term (kind or len), the word as written and where it stands, or null for any other type: a
+ * type parameter is an integer, and its one attribute follows the type, after the comma.
+ */
+function typeParamOf(t) {
+  if (!/^\s*integer\b/i.test(t)) return null;
+  const items = itemsOf(t);
+  if (items.length !== 2) return null;
+  const [a, b] = items[1];
+  const m = /^(\s*)(kind|len)\s*$/i.exec(t.slice(a, b));
+  return m ? { term: m[2].toLowerCase(), word: m[2], at: a + m[1].length } : null;
+}
+
+/**
  * What an attribute pill stands for, for its card (the meanings are in style.css, by term): [term, what goes with it].
  * The keyword in lower case and what its brackets hold, as pass and self for pass(self); `default dp` is default and
  * dp, `= 0` init and 0, `=> null()` pointer-init and null(). Nothing for text that is none of these, such as => alone,
@@ -307,10 +322,11 @@ function refsOf(refs) {
 }
 
 // The type as code, with each whole-word name that `refs` knows as a FortranRef, and the * or : of a character length
-// in a span of its own, which has a card that says what it means. The code is cut around these rather than wrapping
-// them, so that a card, which sits inside its name or its glyph, takes the page's font and not the code's. A long type
-// breaks where it must (overflow-wrap in style.css): break opportunities written into it would split the names that
-// screen readers read. `result`: the type is a function result's, whose * has a meaning of its own.
+// and the kind or len of a type parameter's type each in a span of its own, which has a card that says what it means.
+// The code is cut around these rather than wrapping them, so that a card, which sits inside its name, its glyph or its
+// word, takes the page's font and not the code's. A long type breaks where it must (overflow-wrap in style.css): break
+// opportunities written into it would split the names that screen readers read. `result`: the type is a function
+// result's, whose * has a meaning of its own.
 function typeRuns(t, refs, result = false) {
   const code = (s) => h('code', null, s);
   // what is cut out of the code: [where, how long, the element]
@@ -318,10 +334,16 @@ function typeRuns(t, refs, result = false) {
   const len = lengthOf(t);
   const term = len ? lengthTerm(len.spec, result) : '';
   if (term) cuts.push([len.at, 1, () => h('span', { className: 'fdf-len', 'data-term': term }, code(len.spec))]);
+  const param = typeParamOf(t);
+  if (param) {
+    cuts.push([param.at, param.word.length,
+      () => h('span', { className: 'fdf-type-param', 'data-term': param.term }, code(param.word))]);
+  }
   if (refs) {
     for (const m of t.matchAll(/[A-Za-z_][\w$]*/g)) {
-      // the tail of a longer word (the dp of 2dp) is not a name
+      // the tail of a longer word (the dp of 2dp) is not a name, nor is the type parameter's kind or len
       if (m.index > 0 && /[\w$]/.test(t[m.index - 1])) continue;
+      if (param && m.index === param.at) continue;
       const ref = refs.get(m[0].toLowerCase());
       if (!ref) continue;
       cuts.push([m.index, m[0].length,
@@ -367,15 +389,16 @@ function shapeWords(dims, codims, attrs) {
 /**
  * One row of a FortranArgs table: the name, the type (names in `refs` link and carry a hover card), the shape
  * (dimensions and codimensions), the intent marker (or "result"), and the attributes with the cpp condition the row
- * exists under. Each pill, the shape and the * or : of a character length have a card that says what they mean (the
- * meanings are in style.css). The row opens, as fumadocs' TypeTable rows do, to a panel with the doc (the children,
- * Markdown), the declaration, the intent in words and the attributes each beside its meaning (the text of their
- * cards, for the keyboard and screen readers), the shape in words, a character type's length (that of a * or a : in
- * words, from style.css) and the condition. A row with nothing for its panel to say (no doc, declaration, shape,
- * condition, * or : length, intent in words, or attribute with a term) is a plain row, which does not open: a type, a
- * result, an intent of its own and attributes without a term are all in its cells. In a narrow table the row keeps
- * the name and the intent, and the panel shows the type and the shape too: both are drawn, and the stylesheet shows
- * the one that fits.
+ * exists under. Each pill, the shape, the * or : of a character length and the kind or len of a type parameter's type
+ * (integer, kind) have a card that says what they mean (the meanings are in style.css). The row opens, as fumadocs'
+ * TypeTable rows do, to a panel with the doc (the children, Markdown), the declaration, the intent in words, what the
+ * type parameter's kind or len means and the attributes each beside its meaning (the text of their cards, for the
+ * keyboard and screen readers), the shape in words, a character type's length (that of a * or a : in words, from
+ * style.css) and the condition. A row with nothing for its panel to say (no doc, declaration, shape, condition, * or :
+ * length, kind or len of a type parameter, intent in words, or attribute with a term) is a plain row, which does not
+ * open: a type, a result, an intent of its own and attributes without a term are all in its cells. In a narrow table
+ * the row keeps the name and the intent, and the panel shows the type and the shape too: both are drawn, and the
+ * stylesheet shows the one that fits.
  */
 export function FortranArg({
   name, type, dims, codims, intent, optional, value, attrs, cond, result, decl, refs, children,
@@ -425,6 +448,8 @@ export function FortranArg({
   // other as written, none the default of 1
   const len = lengthOf(t);
   const lenTerm = len ? lengthTerm(len.spec, res) : '';
+  // a type parameter's kind or len, whose meaning style.css writes in as it does a * or : length's
+  const param = typeParamOf(t);
   const dc = text(decl);
   const doc = filled(children) ? children : null;
 
@@ -438,9 +463,9 @@ export function FortranArg({
     h('span', { className: 'fdf-col-attrs' }, ...spaced([...flags.map((x) => flag(x, true)), condEl])),
   ]);
 
-  // An intent, or an attribute with a term, is said in words in the panel: without it, the keyboard and screen readers,
-  // which get no hover card, would never hear what the pill means.
-  if (!doc && !dc && !words && !c && !lenTerm && !(known && !res) && !flags.some((x) => x.term)) {
+  // An intent, an attribute with a term, or a type parameter's kind or len, is said in words in the panel: without it,
+  // the keyboard and screen readers, which get no hover card, would never hear what the pill or the word means.
+  if (!doc && !dc && !words && !c && !lenTerm && !param && !(known && !res) && !flags.some((x) => x.term)) {
     // nothing to open to: a plain row, and for a narrow table a line with what its hidden cells hold
     const alt = spaced([typeEl(), shapeEl(), ...flags.map((x) => flag(x, true))]);
     return h('div', { className: 'fdf-arg fdf-arg-plain' },
@@ -455,13 +480,15 @@ export function FortranArg({
   const length = !len || lenTerm ? null : len.spec
     ? h('span', { className: 'fdf-arg-type' }, ...typeRuns(len.spec, r))
     : '1, the default';
-  // What the intent, the attributes and a * or : length mean, which style.css writes in by the term: the intent's
-  // meaning and the length's name them, an attribute's stands beside its pill
+  // What the intent, a type parameter's kind or len, the attributes and a * or : length mean, which style.css writes in
+  // by the term: the meanings of the intent, the type parameter and the length name them, an attribute's stands beside
+  // its pill
   const fields = [
     // the type, which a narrow table hides
     t && field('Type', [typeEl()], true),
     dc && field('Declaration', [h('code', { className: 'fdf-arg-decl' }, dc)]),
     known && !res && field('Intent', [], false, { 'data-term': `intent-${key}` }),
+    param && field('Type parameter', [], false, { 'data-term': param.term }),
     flags.length && field('Attributes', [h('dl', { className: 'fdf-arg-terms' },
       ...flags.flatMap((x) => [h('dt', null, flag(x, false)), h('dd', termed(x.term, x.arg))]))]),
     (d || cd) && field('Shape', spaced([h('span', { className: 'fdf-arg-narrow' }, shapeEl()), words]), !words),

@@ -415,7 +415,7 @@ class Parser {
       while (this.stack.length > 1) this.close(this.stack.pop(), ev);
     }
     const e = this.entity(kind, name, ev, null, extra);
-    this.push({ kind, entity: e, contains: false, imp: null, decls: new Map(), access: new Map(), defaultAccess: null, pendingAttrs: new Map(), refs: new Set() });
+    this.push({ kind, entity: e, contains: false, imp: null, decls: new Map(), access: new Map(), defaultAccess: null, pendingAttrs: new Map(), refs: new Map() });
     return { targets: [e] };
   }
 
@@ -471,7 +471,8 @@ class Parser {
     if (e.result && !e.result.type) e.result.type = typeOf(e.result.name);
     if (sc.refs?.size) {
       sc.refs.delete(e.name.toLowerCase());
-      if (sc.refs.size) e.refs = [...sc.refs].sort();
+      // in the order of their lower-case names, each as first written
+      if (sc.refs.size) e.refs = [...sc.refs.keys()].sort().map((k) => sc.refs.get(k));
     }
   }
 
@@ -503,7 +504,8 @@ class Parser {
   // ---------------------------------------------------------------- program units and procedures
 
   moduleStmt(s, o, ev) {
-    if (s.startsWith('module procedure')) {
+    // `module procedure` as a whole word: `module procedures_m` and `module procedure2` start modules
+    if (/^module procedure(?!\w)/.test(s)) {
       if (this.top.kind === 'interface') return this.specifics(s, o, 16);
       const m = /^module procedure ([a-z_]\w*)$/.exec(s);
       if (m) return this.procStart({ proc: 'procedure', name: o.slice(17), args: null, prefix: ['module'], rtype: null, result: null, bind: null }, ev);
@@ -553,7 +555,7 @@ class Parser {
     if (scope === 'interface' && h.prefix.includes('module')) e.separate = true;
     const args = new Map();
     if (e.args) for (const a of e.args) args.set(a.name.toLowerCase(), a);
-    this.push({ kind: 'procedure', entity: e, args, resultName: e.result ? e.result.name.toLowerCase() : null, contains: false, imp: null, decls: new Map(), pendingAttrs: new Map(), refs: new Set() });
+    this.push({ kind: 'procedure', entity: e, args, resultName: e.result ? e.result.name.toLowerCase() : null, contains: false, imp: null, decls: new Map(), pendingAttrs: new Map(), refs: new Map() });
     return { targets: [e] };
   }
 
@@ -966,7 +968,8 @@ class Parser {
       if (image || /^co_(sum|min|max|reduce|broadcast)$/.test(s.slice(a, b))) (sc.entity.hpc ??= {}).coarray = true;
     }
     // what follows the first name, subscripts included, may hold function references
-    return this.exec(s.slice(parts.length ? parts[0][1] : at), o, ev);
+    const rest = parts.length ? parts[0][1] : at;
+    return this.exec(s.slice(rest), o.slice(rest), ev);
   }
 
   exec(s, o, ev) {
@@ -993,8 +996,17 @@ class Parser {
     // named as calls are: `x(1)[2]%c%f(3)` is x%c%f. Parentheses holding a top-level `:` are a section or a substring,
     // `x(1)[2]` is an element of a coarray, `s(k)(1:1)` a substring of an element, and parentheses followed by `::` a
     // type (`allocate(character(len=n) :: s)`, `[integer(int8) :: …]`, `do concurrent (integer(int64) :: i = …)`):
-    // none is a reference.
+    // none is a reference. A reference keeps the spelling the source writes, the first one of each name, as calls do:
+    // `ot` is the statement as written with its strings emptied as in `t`, so that the two line up (where they do not,
+    // as when lower case is longer, the name stays in lower case).
     const re = /(?<![%\w])[a-z_]\w*(?=[(%[])/g;
+    let ot = null;
+    const ref = (key, at) => {
+      if (sc.refs.has(key)) return;
+      ot ??= blankStrings(o);
+      const written = at.map(([a, b]) => ot.slice(a, b)).join('%');
+      sc.refs.set(key, written.toLowerCase() === key ? written : key);
+    };
     let m;
     while ((m = re.exec(t))) {
       const { parts } = pathAt(t, m.index);
@@ -1004,7 +1016,7 @@ class Parser {
       if (k >= 0 && (t[k + 1] === '[' || t[k + 1] === '(' || t.startsWith('::', k + 1)
         || indexTop(t.slice(last + 1, k), ':') >= 0)) continue;
       if (parts.length > 1) {
-        sc.refs.add(parts.map(([a, b]) => t.slice(a, b)).join('%'));
+        ref(parts.map(([a, b]) => t.slice(a, b)).join('%'), parts);
         continue;
       }
       const name = m[0];
@@ -1013,7 +1025,7 @@ class Parser {
       if (d && !d.external && (d.dims || d.character)) continue;
       // a function pointer declared here references the project's target
       if (this.localPointer(sc, name)) continue;
-      sc.refs.add(name);
+      ref(name, parts);
     }
     return EXEC;
   }

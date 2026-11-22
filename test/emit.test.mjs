@@ -4,7 +4,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { extract, buildPages, writePages, anchorOf, parseSource, generate } from '../src/index.js';
-import { libraryOf } from '../registry/read.mjs';
+import { libraryOf, load } from '../registry/read.mjs';
+import * as library from '../src/emit/library.js';
 
 const FORTRAN_ENV = 'https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fFORTRAN_005fENV.html';
 const C_BINDING = 'https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fC_005fBINDING.html';
@@ -122,6 +123,31 @@ export default async function ({ ok, eq, here, out }) {
       '<FortranArg name="m" type="integer, len" attrs="default 2" decl="integer, len :: m = 2" />',
     ], 'a kind or len parameter: no pill without a default, and the kind of its type still has its card');
     eq(Object.keys(refsOf(pdt, 'n') ?? {}), ['int64'], 'the card of int64 in integer(int64), len');
+    // the components give the word kind or len of each such type its card and the opened row its Type parameter line
+    // (where React can be imported: it is not a dependency)
+    let react = null;
+    try {
+      react = [await import('react'), await import('react-dom/server'), await import('../react/index.js')];
+    } catch {
+      // checked where React can be imported
+    }
+    if (react) {
+      const [R, server, { FortranArg }] = react;
+      const render = server.renderToStaticMarkup ?? server.default.renderToStaticMarkup;
+      const h = R.createElement ?? R.default.createElement;
+      const props = (l) => ({
+        ...Object.fromEntries([...l.replace(/ refs=\{.*\}/, '').matchAll(/(\w+)="([^"]*)"/g)].map((m) => [m[1], m[2]])),
+        refs: refsOf(pdt, /name="(\w+)"/.exec(l)[1]),
+      });
+      const html = pdt.split('\n').filter((l) => /^<FortranArg name="[knm]" /.test(l))
+        .map((l) => render(h(FortranArg, props(l))));
+      const word = /<span class="fdf-type-param" data-term="(\w+)">/;
+      eq(html.map((x) => [(x.match(new RegExp(word.source, 'g')) ?? []).length, word.exec(x)?.[1],
+        /<dt>Type parameter<\/dt><dd data-term="(\w+)">/.exec(x)?.[1]]),
+      [[2, 'kind', 'kind'], [2, 'len', 'len'], [2, 'len', 'len']],
+      "each generated type parameter's kind or len has its card, in the cell and the narrow copy, and its Type "
+        + 'parameter line');
+    }
   }
   {
     // a length after the name is written as Fortran, so that the Length line and the card of * read it
@@ -172,6 +198,22 @@ export default async function ({ ok, eq, here, out }) {
     ok(sel.includes("```f90\ncharacter(len=20) :: v = 'x'\n```")
       && sel.includes("```f90\ncharacter(len=3, kind=ucs4), parameter :: w = ucs4_'abc'\n```"),
     'a module variable\'s declaration under its heading');
+    // an initial value in the old style of F77 and GNU Fortran (character*8 plain /'hi'/) is no Fortran after :: and
+    // =, and needs a declaration without ::. So it is written as the source has it where the declaration has only
+    // its type, and left out where an attribute needs ::
+    const gnu = buildPages(parseSource([
+      'module gnu_m',
+      "  character*8 plain /'hi'/",
+      "  character*8, sep /'x::y'/",
+      "  character*4 kept /'ab'/",
+      '  save kept',
+      '  integer :: modern = 4',
+      'end module gnu_m',
+    ].join('\n'), { root: out, path: 'gnu.f90' }), { display: ['public', 'private'] }).pages
+      .find((x) => x.path === 'gnu_m.mdx').mdx;
+    eq([...gnu.matchAll(/^```f90\n([^\n]*)\n```$/gm)].map((m) => m[1]),
+      ["character*8 plain /'hi'/", "character*8 sep /'x::y'/", 'character*4, save :: kept', 'integer :: modern = 4'],
+      'an old-style initial value: in a declaration without ::, or left out where an attribute needs ::');
     let react = null;
     try {
       react = [await import('react'), await import('react-dom/server'), await import('../react/index.js')];
@@ -238,8 +280,8 @@ export default async function ({ ok, eq, here, out }) {
     ].join('\n'), { root: out, path: 'badges.f90' })).pages.find((x) => x.path === 'badges_m.mdx').mdx;
     const badgeOf = (h, kind) => hpc.slice(hpc.indexOf(`### ${h} [#`)).split('\n### ')[0].split('\n')
       .find((l) => l.startsWith(`<FortranBadge kind="${kind}"`));
-    eq([badgeOf('r\\_seq', 'acc'), badgeOf('r\\_twice', 'acc'), badgeOf('r\\_loop', 'acc'), badgeOf('o\\_par', 'omp'),
-      badgeOf('o\\_do', 'omp')], ['<FortranBadge kind="acc" label="OpenACC routine" />',
+    eq([badgeOf('r_seq', 'acc'), badgeOf('r_twice', 'acc'), badgeOf('r_loop', 'acc'), badgeOf('o_par', 'omp'),
+      badgeOf('o_do', 'omp')], ['<FortranBadge kind="acc" label="OpenACC routine" />',
       '<FortranBadge kind="acc" label="OpenACC routine" />',
       '<FortranBadge kind="acc" label="OpenACC" title="routine; loop" />',
       '<FortranBadge kind="omp" label="OpenMP parallel region" />',
@@ -360,23 +402,24 @@ export default async function ({ ok, eq, here, out }) {
     eq([refsOf(norm2, 'comm'), refsOf(dense, 'comm')], [{ MPI_Comm: MPI_COMM }, { MPI_Comm: MPI_COMM }],
       'an MPI handle type from mpi_f08, in an argument and a component: its line, its page and the module');
 
-    // a library routine's card: its name as the code writes it, the registry's title, summary and page
-    const card = (name, title, { written = name, href = reg(name).link } = {}) => `<FortranRef href="${href}" `
-      + `title="${title}" detail="${reg(name).entry.summary}">\`${written}\`</FortranRef>`;
+    // a library routine's card: its name as the code writes it, the registry's title, summary and page (`hit`, the
+    // registry's entry, when the name has two meanings)
+    const card = (name, title, { written = name, hit = reg(name), href = hit.link } = {}) => `<FortranRef href="${href}" `
+      + `title="${title}" detail="${hit.entry.summary}">\`${written}\`</FortranRef>`;
     ok(page('solver_kernels_lapack.mdx').includes('**Calls:** [`check_length`](/docs/m/solver_kernels#check_length), '
       + `${card('dgesv', 'subroutine dgesv (LAPACK)')}\n`),
     'a LAPACK routine in a Calls line; a project procedure links');
-    ok(at(sk, 'norm2\\_parallel').includes(`**Calls:** ${card('MPI_Allreduce', 'subroutine MPI_Allreduce (MPI)')}`
-      + ' when USE\\_MPI'), 'an MPI routine, under its condition');
-    ok(at(sk, 'dense\\_matvec').includes(`${card('dgemv', 'subroutine dgemv (BLAS)')}`), 'a BLAS routine is BLAS');
-    ok(at(sk, 'rank\\_sum').includes(`**Calls:** ${card('co_sum', 'subroutine co_sum (intrinsic)')}`)
+    ok(at(sk, 'norm2_parallel').includes(`**Calls:** ${card('MPI_Allreduce', 'subroutine MPI_Allreduce (MPI)')}`
+      + ' when USE_MPI'), 'an MPI routine, under its condition');
+    ok(at(sk, 'dense_matvec').includes(`${card('dgemv', 'subroutine dgemv (BLAS)')}`), 'a BLAS routine is BLAS');
+    ok(at(sk, 'rank_sum').includes(`**Calls:** ${card('co_sum', 'subroutine co_sum (intrinsic)')}`)
       && reg('co_sum').link.startsWith('https://fortran-lang.org/'),
     'an intrinsic subroutine, with fortran-lang\'s page');
     ok(page('demo.mdx').includes(`${card('blacs_get', 'subroutine blacs_get (BLACS)')}, `
       + `${card('descinit', 'subroutine descinit (ScaLAPACK)')}`), 'BLACS and the ScaLAPACK tools');
     ok(page('gtsv.mdx').includes(`**Calls:** ${card('xerbla', 'subroutine xerbla (BLAS)', { written: 'XERBLA' })}`),
       'a name as F77 code writes it, with the registry\'s spelling in the title');
-    ok(reg('dgesv').link.startsWith('https://www.netlib.org/lapack/explore-html/')
+    ok(reg('dgesv').link.startsWith('https://netlib.org/lapack/explore-html/')
       && reg('MPI_Allreduce').link.startsWith('https://docs.open-mpi.org/en/v5.0.x/'),
     'Netlib for LAPACK, Open MPI 5.0 for MPI');
 
@@ -554,14 +597,15 @@ export default async function ({ ok, eq, here, out }) {
     eq(api.split('\n').find((l) => l.startsWith('**Calls:**')), '**Calls:** `dgemm`, [`zgemm`](/docs/m/wins_m#zgemm), '
       + `${card('dgesv', 'subroutine dgesv (LAPACK)')}, \`split\`, ${card('c_f_pointer',
         'subroutine c_f_pointer (iso_c_binding)')}, ${card('random_number', 'subroutine random_number (intrinsic)')}, `
-      + `\`reshape\`, \`dlamch\`, ${card('omp_set_num_threads', 'subroutine omp_set_num_threads (OpenMP)')}, `
+      + `${card('reshape', 'subroutine reshape (ScaLAPACK)', { hit: libraryOf('reshape', { subroutine: true }) })}, `
+      + `\`dlamch\`, ${card('omp_set_num_threads', 'subroutine omp_set_num_threads (OpenMP)')}, `
       + `${card('acc_init', 'subroutine acc_init (OpenACC)')}, \`acc_is_present\`, `
       + `${card('pdgemr2d', 'subroutine pdgemr2d (ScaLAPACK)')}, ${card('pdgemm', 'subroutine pdgemm (PBLAS)')}, `
       + `${card('pdgesv', 'subroutine pdgesv (ScaLAPACK)')}, \`obj%dgetrf\``,
     'the project\'s own routines win, shown or hidden; a module\'s split is not the intrinsic; intrinsic module '
-      + 'procedures name their module; a CALL of a function\'s name (reshape, dlamch, OpenACC\'s acc_is_present) is '
-      + 'some other subroutine; PBLAS has its own name, REDIST is ScaLAPACK\'s, on its Netlib file page; a type-bound '
-      + 'call is no library routine');
+      + 'procedures name their module; a CALL of reshape is ScaLAPACK\'s subroutine, not the intrinsic function; a CALL '
+      + 'of a function\'s name (dlamch, OpenACC\'s acc_is_present) is some other subroutine; PBLAS has its own name, '
+      + 'REDIST is ScaLAPACK\'s, on its Netlib file page; a type-bound call is no library routine');
     eq([reg('acc_init').entry.kind, reg('acc_is_present').entry.kind], ['subroutine', 'function'],
       'OpenACC\'s routines are subroutines and functions');
     eq([reg('pdgemr2d').entry.links.netlib, reg('pdgemr2d').link], [undefined, reg('pdgemr2d').entry.links.netlibFile],
@@ -571,9 +615,9 @@ export default async function ({ ok, eq, here, out }) {
     'OpenMP 5.2\'s specification, and the page of the OpenACC 3.4 specification');
     ok(at(lp('wins_m.mdx'), 'shadow').includes('\n**Calls:** `xerbla`\n'), 'a dummy procedure is no library routine');
     eq([classOf(api, 'dgemm'), classOf(api, 'zgemm'), classOf(api, 'dgesv'), classOf(api, 'reshape'),
-      classOf(api, 'random_number')], [undefined, 'fdfProcedure', 'fdfLapack', 'fdfExternal', undefined],
-    'and in the graph the project\'s routines are the project\'s, the hidden one not drawn; a CALL of an intrinsic '
-      + 'function\'s name is some other routine, an intrinsic subroutine is not drawn');
+      classOf(api, 'random_number')], [undefined, 'fdfProcedure', 'fdfLapack', 'fdfScalapack', undefined],
+    'and in the graph the project\'s routines are the project\'s, the hidden one not drawn; a CALL of reshape is '
+      + 'ScaLAPACK\'s, an intrinsic subroutine is not drawn');
     const callsIn = (mdx) => mdx.split('\n').find((l) => l.startsWith('**Calls:**'));
     eq([callsIn(lp('cbind_m.mdx')), callsIn(lp('reduce_m.mdx')), callsIn(lp('own_m.mdx'))],
       [`**Calls:** ${card('c_f_pointer', 'subroutine c_f_pointer (iso_c_binding)')}`,
@@ -701,8 +745,8 @@ export default async function ({ ok, eq, here, out }) {
 
     // the graphs' library classes: the registry's by default, a site's classify instead of it
     const sub = page('solver_kernels_lapack.mdx');
-    eq([classOf(sub, 'dgesv'), classOf(at(sk, 'dense\\_matvec'), 'dgemv'), classOf(page('demo.mdx'), 'blacs_get'),
-      classOf(page('demo.mdx'), 'descinit'), classOf(at(sk, 'norm2\\_parallel'), 'MPI_Allreduce')],
+    eq([classOf(sub, 'dgesv'), classOf(at(sk, 'dense_matvec'), 'dgemv'), classOf(page('demo.mdx'), 'blacs_get'),
+      classOf(page('demo.mdx'), 'descinit'), classOf(at(sk, 'norm2_parallel'), 'MPI_Allreduce')],
     ['fdfLapack', 'fdfBlas', 'fdfScalapack', 'fdfScalapack', 'fdfMpi'], 'the graphs colour LAPACK and ScaLAPACK');
     const site = buildPages(ir, { baseUrl: '/docs/m', display: ['public', 'protected', 'private'],
       graphs: { classify: (n) => (n === 'dgesv' ? 'scalapack' : null) } });
@@ -731,12 +775,97 @@ export default async function ({ ok, eq, here, out }) {
     ok(np('solver_kernels_lapack.mdx').includes('(/docs/m/solver_kernels#check_length), `dgesv`\n')
       && !/<FortranArg name="comm" [^\n]*refs=/.test(np('solver_kernels.mdx')), 'the names stay code');
     eq([classOf(np('solver_kernels_lapack.mdx'), 'dgesv'), classOf(np('demo.mdx'), 'descinit'),
-      classOf(at(np('solver_kernels.mdx'), 'dense\\_matvec'), 'dgemv')], ['fdfExternal', 'fdfExternal', 'fdfBlas'],
+      classOf(at(np('solver_kernels.mdx'), 'dense_matvec'), 'dgemv')], ['fdfExternal', 'fdfExternal', 'fdfBlas'],
     'the graphs know BLAS by name only');
     const graphless = (mdx) => mdx.replace(/```mermaid\n[\s\S]*?\n```/g, '');
     const strip = (mdx) => graphless(mdx).replace(/<FortranRef [^>]*>(`[^`]*`)<\/FortranRef>/g, '$1')
       .replace(/ refs=\{\{"MPI_Comm"[^\n]*\}\}\}/g, '');
     eq(pages.map((x) => strip(x.mdx)), none.map((x) => graphless(x.mdx)), 'everything else is the same');
+
+    // hpc.cards: false leaves the names as code, as without the registry, and the graphs as the registry colours them
+    const all3 = ['public', 'protected', 'private'];
+    const off = buildPages(ir, { baseUrl: '/docs/m', display: all3, repo, hpc: { cards: false } }).pages;
+    const graphsOf = (mdx) => [...mdx.matchAll(/```mermaid\n[\s\S]*?\n```/g)].map((m) => m[0]);
+    eq(off.map((x) => graphless(x.mdx)), none.map((x) => graphless(x.mdx)),
+      'hpc.cards: false: no card in Calls lines, on MPI_Comm or on any library name, as without the registry');
+    eq(off.map((x) => graphsOf(x.mdx)), pages.map((x) => graphsOf(x.mdx)), 'and the graphs keep the registry\'s colours');
+    eq(buildPages(ir, { baseUrl: '/docs/m', display: all3, repo, hpc: { cards: true } }).pages.map((x) => x.mdx),
+      pages.map((x) => x.mdx), 'hpc.cards: true is the default');
+
+    // hpc.links: the page each library's cards link to. Named, the defaults change nothing
+    const named = { lapack: 'netlib', scalapack: 'netlib', mpi: 'openmpi', openmp: '5.2', openacc: 'spec',
+      intrinsics: 'fortran-lang' };
+    eq(buildPages(ir, { baseUrl: '/docs/m', display: all3, repo, hpc: { links: named } }).pages.map((x) => x.mdx),
+      pages.map((x) => x.mdx), 'the default providers, named, change no page');
+    eq(Object.keys(library.LINK_PROVIDERS ?? {}), Object.keys(named), 'and they are every library\'s');
+    const libsIr = parseSource(libs.join('\n'), { root: out, path: 'libs.f90' });
+    const linked = (links, file = 'wins_m.mdx', from = libsIr) => buildPages(from, { baseUrl: '/docs/m', hpc: { links } })
+      .pages.find((x) => x.path === file).mdx;
+    eq(linked({}), lp('wins_m.mdx'), 'no providers: the defaults');
+    const hrefIn = (mdx, written) => new RegExp(`<FortranRef href="([^"]*)" title="[^"]*"(?: detail="[^"]*")?>`
+      + `\`${written}\`</FortranRef>`).exec(mdx)?.[1];
+    const L = (name, provider, hit = reg(name)) => hit.entry.links[provider];
+    const toolsReshape = libraryOf('reshape', { subroutine: true });
+    // every page asked for below exists, and is not the default's, so that each check shows its provider at work
+    const wanted = [L('dgesv', 'mkl'), L('pdgesv', 'mkl'), L('pdgemm', 'mkl'), L('MPI_Allreduce', 'mpich'),
+      L('MPI_Allreduce', 'standard-5.0'), L('omp_set_num_threads', 'spec-6.0'), L('omp_set_num_threads', 'spec-6.1'),
+      L('omp_set_num_threads', 'libgomp'), L('omp_lock_kind', 'spec-6.0'), L('acc_init', 'libgomp'),
+      L('random_number', 'gfortran'), L('c_f_pointer', 'gfortran')];
+    ok(wanted.every((h) => typeof h === 'string' && h.startsWith('https://')), 'the providers\' pages are in the registry');
+    const wm = linked({ lapack: 'mkl', scalapack: 'mkl' });
+    eq([hrefIn(wm, 'dgesv'), hrefIn(wm, 'pdgesv'), hrefIn(wm, 'pdgemm'), hrefIn(wm, 'pdgemr2d'), hrefIn(wm, 'reshape')],
+      [L('dgesv', 'mkl'), L('pdgesv', 'mkl'), L('pdgemm', 'mkl'), reg('pdgemr2d').link, toolsReshape.link],
+    'lapack and scalapack mkl: oneMKL\'s pages, and Netlib\'s for what MKL lacks (REDIST\'s, the tools\')');
+    const wl = linked({ lapack: 'mkl' });
+    eq([hrefIn(wl, 'dgesv'), hrefIn(wl, 'pdgesv')], [L('dgesv', 'mkl'), reg('pdgesv').link], 'one library at a time');
+    const mklIr = parseSource('module m\n  use lapack95\ncontains\n  subroutine s()\n    call dgesv()\n    call pdgesv()\n'
+      + '  end subroutine\nend module m\n', { root: out, path: 'mkl.f90' });
+    const onMkl95 = linked({ lapack: 'netlib' }, 'm.mdx', mklIr);
+    eq([hrefIn(onMkl95, 'dgesv'), hrefIn(onMkl95, 'pdgesv')], [reg('dgesv').link, L('pdgesv', 'mkl')],
+      'lapack netlib wins over MKL\'s modules; scalapack, left to its default, follows them');
+    const mpiLinks = (links) => [hrefIn(linked(links, 'renamed_m.mdx'), 'allreduce'),
+      refsOf(linked(links, 'comm_m.mdx'), 'c')?.MPI_Comm?.href];
+    eq([mpiLinks({ mpi: 'mpich' }), mpiLinks({ mpi: 'standard' })],
+      [[L('MPI_Allreduce', 'mpich'), reg('MPI_Comm').link], [L('MPI_Allreduce', 'standard-5.0'), reg('MPI_Comm').link]],
+      'mpi mpich and standard; MPI\'s types, which MPICH has no pages for, stay with the standard');
+    const ompLinks = (links) => [hrefIn(linked(links), 'omp_set_num_threads'),
+      refsOf(linked(links, 'locks_m.mdx'), 'l')?.omp_lock_kind?.href];
+    eq([ompLinks({ openmp: '6.0' }), ompLinks({ openmp: '6.1' }), ompLinks({ openmp: 'libgomp' })],
+      [[L('omp_set_num_threads', 'spec-6.0'), L('omp_lock_kind', 'spec-6.0')],
+        [L('omp_set_num_threads', 'spec-6.1'), L('omp_lock_kind', 'spec-6.1')],
+        [L('omp_set_num_threads', 'libgomp'), lock.link]],
+      'openmp 6.0, 6.1 and libgomp; a kind, which libgomp has no page for, keeps the specification');
+    const accIntr = linked({ openacc: 'libgomp', intrinsics: 'gfortran' });
+    eq([hrefIn(accIntr, 'acc_init'), hrefIn(accIntr, 'random_number'), hrefIn(accIntr, 'c_f_pointer')],
+      [L('acc_init', 'libgomp'), L('random_number', 'gfortran'), L('c_f_pointer', 'gfortran')],
+      'openacc libgomp, and intrinsics gfortran (an intrinsic module\'s procedure too)');
+    ok(wanted.every((h, i) => !wanted.slice(0, i).includes(h)) && ![reg('dgesv'), reg('MPI_Allreduce'),
+      reg('omp_set_num_threads'), reg('acc_init'), reg('random_number')].some((h) => wanted.includes(h.link)),
+    'each provider\'s page differs from the default\'s');
+    // the providers are the registry's: its OpenMP versions (5.2, its default, first), and the links each file has
+    const omp = load('openmp');
+    const ompDefault = omp.links.spec.default;
+    eq(library.LINK_PROVIDERS?.openmp, [ompDefault, ...omp.versions.filter((v) => v !== ompDefault).sort(), 'libgomp'],
+      'openmp: the registry\'s versions, its default first, and libgomp');
+    eq([Object.keys(load('lapack').links), Object.keys(load('scalapack').links), Object.keys(load('mpi').links),
+      Object.keys(load('openacc').links), Object.keys(load('intrinsics').links)],
+    [['netlib', 'mkl'], ['netlib', 'mkl'], ['openmpi', 'mpich', 'standard'], ['spec', 'libgomp'],
+      ['fortran-lang', 'gfortran']], 'and the providers whose links the registry builds');
+    const thrown = (hpc) => {
+      try {
+        buildPages(libsIr, { hpc });
+        return null;
+      } catch (e) {
+        return e.message;
+      }
+    };
+    eq([thrown({ links: { blas: 'mkl' } }), thrown({ links: { mpi: 'intel' } }), thrown({ links: { openmp: 5.2 } }),
+      thrown({ links: 'mkl' }), thrown({ cards: 'none' }), thrown({ links: { mpi: undefined }, cards: false })],
+    ['hpc.links: unknown library "blas"; the libraries are lapack (BLAS and LAPACK), scalapack (with PBLAS, BLACS, its '
+      + 'tools and REDIST), mpi, openmp, openacc and intrinsics', 'hpc.links: mpi takes openmpi, mpich or standard, not '
+      + '"intel"', 'hpc.links: openmp takes 5.2, 6.0, 6.1 or libgomp as a string, not the number 5.2',
+    'hpc.links takes an object of library → provider, such as { mpi: \'mpich\' }', 'hpc.cards takes true or false, '
+      + 'not "none"', null], 'an unknown library or provider throws, saying what there is; undefined is the default');
   }
 
   // ---- source blocks: an entity's lines, collapsible, under it
@@ -839,6 +968,39 @@ export default async function ({ ok, eq, here, out }) {
     ok(badGraphs.status === 2 && badGraphs.stderr.includes('--graphs takes mermaid or none'), '--graphs is checked');
     ok(read().includes('```mermaid\n'), 'the command line draws graphs by default');
     ok(cli('--graphs', 'none').status === 0 && !read().includes('<FortranGraph'), 'and none with --graphs none');
+    // --library-cards and --links: the registry's cards, and the pages they link to, as hpc.cards and hpc.links
+    ok(['--library-cards MODE', '--links LIST'].every((x) => run('--help').stdout.includes(x)),
+      '--library-cards and --links are in the help');
+    const failed = (...args) => {
+      const r = run('generate', ...args);
+      return r.status === 2 ? r.stderr.trim() : `status ${r.status}`;
+    };
+    eq([failed('--library-cards', 'off'), failed('--links', 'blas=mkl'), failed('--links', 'mpi=intel'),
+      failed('--links', 'mpich'), failed('--links', 'mpi=')], ['fumadocs-fortran: --library-cards takes registry or none',
+      'fumadocs-fortran: --links: unknown library "blas"; the libraries are lapack (BLAS and LAPACK), scalapack (with '
+        + 'PBLAS, BLACS, its tools and REDIST), mpi, openmp, openacc and intrinsics',
+      'fumadocs-fortran: --links: mpi takes openmpi, mpich or standard, not "intel"',
+      'fumadocs-fortran: --links takes library=provider pairs, comma-separated, such as mpi=mpich, not mpich',
+      'fumadocs-fortran: --links takes library=provider pairs, comma-separated, such as mpi=mpich, not mpi='],
+    'unknown modes, libraries and providers fail, saying what there is');
+    // a library name is checked as given, whatever it is: __proto__ is no library either (an object's own key)
+    const proto = cli('--links', '__proto__=mkl');
+    ok(proto.status === 2 && proto.stderr.includes('--links: unknown library "__proto__"'),
+      '--links __proto__=mkl fails as any unknown library does');
+    // every entity shown, as the Showcase shows them, and the MPI code built
+    const wide = (...args) => cli('-D', 'USE_MPI', '--display', 'public,protected,private', ...args);
+    const allreduce = libraryOf('MPI_Allreduce').entry.links;
+    const hrefs = () => [...read().matchAll(/<FortranRef href="([^"]*)"/g)].map((m) => m[1]);
+    ok(wide().status === 0 && hrefs().includes(allreduce.openmpi) && hrefs().includes(libraryOf('dgemv').link),
+      'Open MPI\'s and Netlib\'s pages by default');
+    ok(wide('--links', 'mpi=mpich', '--links', 'lapack=mkl').status === 0
+      && hrefs().includes(allreduce.mpich) && hrefs().includes(libraryOf('dgemv').entry.links.mkl)
+      && !hrefs().includes(allreduce.openmpi), '--links chooses them, and may be given more than once');
+    const readLapack = () => fs.readFileSync(path.join(dir, 'solver_kernels_lapack.mdx'), 'utf8');
+    ok(wide('--library-cards', 'none').status === 0 && !read().includes('<FortranRef')
+      && !readLapack().includes('<FortranRef') && !read().includes('"MPI_Comm":')
+      && /^ {2}class n\d+ fdfLapack$/m.test(readLapack()),
+    '--library-cards none: no cards, and the graphs keep the registry\'s colours');
     // the usual npm-script layout: run from the site's folder on ../src, the sources outside the current folder
     const site = path.join(out, 'site-layout');
     fs.rmSync(site, { recursive: true, force: true });
@@ -870,16 +1032,16 @@ export default async function ({ ok, eq, here, out }) {
     const at = (mdx, heading) => mdx.slice(mdx.indexOf(`### ${heading} [#`)).split('\n### ')[0];
     ok(sk.includes(card('Dependencies', false)), 'a unit\'s dependencies, open');
     ok(sk.indexOf(card('Dependencies', false)) < sk.indexOf('\n## Types\n'), 'above the sections');
-    ok(at(sk, 'dense\\_matrix').includes(card('Inheritance', true)), 'a type\'s inheritance, collapsed');
-    ok(at(sk, 'solve\\_dense').includes(card('Call graph', true)), 'a generic\'s calls');
-    const helper = at(sk, 'check\\_length');
+    ok(at(sk, 'dense_matrix').includes(card('Inheritance', true)), 'a type\'s inheritance, collapsed');
+    ok(at(sk, 'solve_dense').includes(card('Call graph', true)), 'a generic\'s calls');
+    const helper = at(sk, 'check_length');
     ok(helper.includes(card('Call graph', true)) && helper.indexOf('<FortranGraph') < helper.indexOf('<FortranSource'),
       'a procedure\'s calls, collapsed, above its source');
     ok(helper.includes('click n4 href "/docs/m/solver_kernels_lapack#solve_dense_real"'), 'a caller on another page');
     ok(page('demo.mdx').includes(card('Dependencies', false)) && page('demo.mdx').includes(card('Call graph', true)),
       'a program\'s dependencies and calls');
     ok(page('index.mdx').includes(`## Dependencies\n\n<FortranGraph>\n\n\`\`\`mermaid\nflowchart LR`), 'the overview\'s graph');
-    ok(!at(sk, 'max\\_order').includes('<FortranGraph'), 'none for a variable');
+    ok(!at(sk, 'max_order').includes('<FortranGraph'), 'none for a variable');
     eq(dangling(pages), [], 'every link, graph nodes\' included, has its heading');
     const none = buildPages(ir, { baseUrl: '/docs/m', graphs: false }).pages;
     ok(none.every((x) => !x.mdx.includes('<FortranGraph') && !x.mdx.includes('```mermaid')), 'graphs: false draws none');
@@ -1042,7 +1204,7 @@ export default async function ({ ok, eq, here, out }) {
     ].join('\n');
     const r = buildPages(parseSource(src, { root: out, path: 'esc.f90' }), { baseUrl: '/docs/m' });
     const esc = r.pages.find((x) => x.path === 'esc.mdx').mdx;
-    ok(esc.includes('**norm\\_r**\n\n<Callout'), 'a doc that opens with a block goes below its label');
+    ok(esc.includes('**norm_r**\n\n<Callout'), 'a doc that opens with a block goes below its label');
     ok(!esc.includes('native code'), 'an argument named constructor is an argument');
     ok(esc.includes('### point [#point]') && esc.includes('### point [#point-interface]'), 'a generic interface named after a type has an anchor of its own');
     ok(esc.includes('<FortranArgs title="Result of norm_r" columns="type intent">\n<FortranArg name="r" type="real" result decl="real :: r" />'),
@@ -1059,9 +1221,95 @@ export default async function ({ ok, eq, here, out }) {
     ok(!/\\ud835"/.test(long) && /description: ".*…"/.test(long), 'the description is cut by code points');
   }
 
+  // ---- page slugs: the second unit of a name is name-kind, and the ones after it are numbered from that after an
+  // underscore, with no suffix piling up (miniWeather has eight `program miniweather`, one per file). No URL ends in
+  // -<number>: fumadocs' search gives a page's records the ids <url>-0, <url>-1, …, so such a page could share its id
+  // with another page's record, and the site's build would stop ("A document with id … already exists")
+  {
+    const numbered = (list) => list.map((p) => p.url).filter((u) => /-\d+$/.test(u));
+    const dir = path.join(out, 'eight');
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
+    for (let i = 1; i <= 8; i++) {
+      fs.writeFileSync(path.join(dir, `mw${i}.f90`), `program miniweather\n  call step${i}()\nend program miniweather\n`);
+    }
+    const eight = buildPages(await extract({ root: dir }), { baseUrl: '/docs/m' });
+    const slugs = ['miniweather', 'miniweather-program', ...[2, 3, 4, 5, 6, 7].map((k) => `miniweather-program_${k}`)];
+    eq(eight.pages.map((p) => p.path), ['index.mdx', ...slugs.map((s) => `${s}.mdx`)],
+      'eight programs of one name: miniweather, miniweather-program, then miniweather-program_2 to _7');
+    eq(numbered(eight.pages), [], 'no URL of theirs ends in -<number>, the form of the ids of fumadocs\' search records');
+    eq(eight.metas[0].data.pages, ['index', '---Programs---', ...slugs], 'and the sidebar lists them so');
+    ok(slugs.every((s, i) => eight.pages.find((p) => p.path === `${s}.mdx`)?.mdx.includes(`\`step${i + 1}\``)),
+      'each page is its own program\'s');
+    eq(dangling(eight.pages), [], 'and every link lands');
+    // a slug that has its kind already is only numbered, and does not take the kind a second time: a unit named index
+    // takes its kind first, as index is the folder's own page (module-index), and an unnamed block data is named by
+    // its kind (blockdata)
+    const idx = path.join(out, 'kind-units');
+    fs.rmSync(idx, { recursive: true, force: true });
+    for (const d of ['a', 'b', 'c']) {
+      fs.mkdirSync(path.join(idx, d), { recursive: true });
+      fs.writeFileSync(path.join(idx, d, 'index.f90'), `module index\n  integer :: n_${d}\nend module index\n`);
+      fs.writeFileSync(path.join(idx, d, 'bd.f'), `      BLOCK DATA\n      COMMON /C${d}/ X${d}\n      END\n`);
+    }
+    const kinds = buildPages(await extract({ root: idx }), { baseUrl: '/docs/m' });
+    eq(kinds.pages.map((p) => p.path), ['index.mdx', 'module-index.mdx', 'module-index_2.mdx', 'module-index_3.mdx',
+      'blockdata.mdx', 'blockdata_2.mdx', 'blockdata_3.mdx'],
+    'three modules named index and three unnamed block data: module-index and blockdata, then _2 and _3');
+    ok(['a', 'b', 'c'].every((d, i) => kinds.pages[i + 1].mdx.includes(`from ${d}/index.f90.`)
+      && kinds.pages[i + 4].mdx.includes(`from ${d}/bd.f.`)) && !dangling(kinds.pages).length,
+    'each its own unit\'s, and every link lands');
+    // a group of external procedures whose name ends in -<number>, such as a file's, takes its kind (a file fft-2.f90
+    // beside a module fft)
+    const grp = path.join(out, 'numbered-group');
+    fs.rmSync(grp, { recursive: true, force: true });
+    fs.mkdirSync(grp, { recursive: true });
+    fs.writeFileSync(path.join(grp, 'fft.f90'), 'module fft\n  integer :: n\nend module fft\n');
+    fs.writeFileSync(path.join(grp, 'fft-2.f90'), 'subroutine fft2(x)\n  real :: x\nend subroutine fft2\n');
+    const twice = buildPages(await extract({ root: grp }), { baseUrl: '/docs/m' });
+    eq(twice.pages.map((p) => p.path), ['index.mdx', 'fft.mdx', 'fft-2-procedures.mdx'],
+      'a group named fft-2 beside a module fft: fft-2-procedures');
+    eq([...numbered(kinds.pages), ...numbered(twice.pages)], [], 'no URL of theirs ends in -<number> either');
+  }
+
+  // ---- a module whose name starts with "procedure" is a module, not a module procedure statement; a generic's
+  // module procedure statements still name its specifics
+  {
+    const modIr = parseSource([
+      'module procedures_m',
+      '  interface solve',
+      '    module procedure :: solve_a, solve_b',
+      '    module procedure solve_c',
+      '  end interface',
+      'contains',
+      '  subroutine solve_a()',
+      '  end subroutine',
+      '  subroutine solve_b()',
+      '  end subroutine',
+      '  subroutine solve_c()',
+      '  end subroutine',
+      'end module procedures_m',
+      'module procedure2',
+      '  integer :: n',
+      'end module procedure2',
+      '',
+    ].join('\n'), { root: out, path: 'procedures_m.f90' });
+    const units = Object.values(modIr.entities).filter((x) => !x.parent).map((x) => `${x.kind} ${x.name}`);
+    eq(units, ['module procedures_m', 'module procedure2'], 'module procedures_m and module procedure2 are modules');
+    const solve = Object.values(modIr.entities).find((x) => x.kind === 'interface' && x.name === 'solve');
+    eq(solve?.procedures, ['solve_a', 'solve_b', 'solve_c'], 'and the generic in one lists its module procedures');
+    eq(buildPages(modIr, { baseUrl: '/docs/m' }).pages.map((p) => p.path),
+      ['index.mdx', 'procedure2.mdx', 'procedures_m.mdx'], 'each module has its page');
+  }
+
   // with FORD's default display (public, protected), nothing links to an entity that has no heading
   const pub = buildPages(ir, { baseUrl: '/docs/m' });
   eq(dangling(pub.pages), [], 'no link to a hidden entity');
+  // a heading writes a name as the source does: an underscore inside it is no emphasis in Markdown, and left
+  // unescaped it keeps the name one word for the site's search (norm2_parallel, not norm2\_parallel)
+  eq(pages.flatMap((p) => p.mdx.match(/^#{2,3} .*[A-Za-z0-9]\\_[A-Za-z0-9].*$/gm) ?? []), [],
+    'no heading escapes an underscore inside a name');
+  ok(page('solver_kernels.mdx').includes('\n### norm2_parallel [#norm2_parallel]\n'), 'such as norm2_parallel');
 
   // writing: a second run changes nothing, and stale generated files go while hand-written ones stay
   const dir = path.join(out, 'pages');

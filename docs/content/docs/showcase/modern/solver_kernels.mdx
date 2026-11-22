@@ -66,7 +66,7 @@ $$
 
 Start with [`dense_matrix`](/docs/showcase/modern/solver_kernels#dense_matrix) and the generic [`solve_dense`](/docs/showcase/modern/solver_kernels#solve_dense).
 
-**Uses:** `iso_fortran_env` (`dp => real64`, `int64`); `iso_c_binding` (`c_double`, `c_int`); `omp_lib` (`omp_get_max_threads`) when \_OPENMP; `mpi_f08` (`MPI_Comm`, `MPI_Allreduce`, `MPI_IN_PLACE`, `MPI_SUM`, `MPI_DOUBLE_PRECISION`) when USE\_MPI
+**Uses:** `iso_fortran_env` (`dp => real64`, `int64`); `iso_c_binding` (`c_double`, `c_int`); `omp_lib` (`omp_get_max_threads`) when \_OPENMP; `mpi_f08` (`MPI_Comm`, `MPI_Allreduce`, `MPI_IN_PLACE`, `MPI_SUM`, `MPI_DOUBLE_PRECISION`) when USE_MPI
 
 <FortranSource file="examples/modern/src/modern_ford.F90" line={3} lineEnd={256} href="https://github.com/Nevensky/fumadocs-fortran/blob/main/examples/modern/src/modern_ford.F90#L3-L256" />
 
@@ -139,7 +139,7 @@ red, green and blue channels
 
 </FortranSource>
 
-### abstract\_matrix [#abstract_matrix]
+### abstract_matrix [#abstract_matrix]
 
 ```f90
 type, abstract :: abstract_matrix
@@ -224,7 +224,7 @@ flowchart BT
 
 </FortranSource>
 
-### dense\_matrix [#dense_matrix]
+### dense_matrix [#dense_matrix]
 
 ```f90
 type, extends(abstract_matrix) :: dense_matrix
@@ -304,7 +304,7 @@ flowchart BT
 
 </FortranSource>
 
-### banded\_matrix [#banded_matrix]
+### banded_matrix [#banded_matrix]
 
 ```f90
 type, extends(abstract_matrix) :: banded_matrix(k, kl, ku)
@@ -397,7 +397,7 @@ flowchart BT
 
 ## Interfaces
 
-### matvec\_iface [#matvec_iface]
+### matvec_iface [#matvec_iface]
 
 ```f90
 abstract interface
@@ -529,7 +529,7 @@ flowchart LR
 
 </FortranSource>
 
-### solve\_dense [#solve_dense]
+### solve_dense [#solve_dense]
 
 ```f90
 interface solve_dense
@@ -544,7 +544,7 @@ end interface
 
 Generic interface with module procedures implemented in a submodule.
 
-**solve\_dense\_real**: Solve $A X = B$ with LAPACK `dgesv`.
+**solve_dense_real**: Solve $A X = B$ with LAPACK `dgesv`.
 
 <FortranArgs title="Arguments of subroutine solve_dense_real(a, b, info)" columns="type shape intent attrs">
 <FortranArg name="a" type="real(dp)" dims="(:,:)" intent="inout" decl="real(dp), intent(inout) :: a(:,:)" refs={{"dp":{"href":"https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fFORTRAN_005fENV.html","title":"dp ⇒ real64","detail":"Real kind with a storage size of 64 bits: double precision","note":"Renamed in the use statement at examples/modern/src/modern_ford.F90:21"}}}>
@@ -564,7 +564,7 @@ LAPACK info code
 </FortranArg>
 </FortranArgs>
 
-**solve\_dense\_complex**: Complex version, calls `zgesv`.
+**solve_dense_complex**: Complex version, calls `zgesv`.
 
 <FortranArgs title="Arguments of subroutine solve_dense_complex(a, b, info)" columns="type shape intent attrs">
 <FortranArg name="a" type="complex(dp)" dims="(:,:)" intent="inout" decl="complex(dp), intent(inout) :: a(:,:)" refs={{"dp":{"href":"https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fFORTRAN_005fENV.html","title":"dp ⇒ real64","detail":"Real kind with a storage size of 64 bits: double precision","note":"Renamed in the use statement at examples/modern/src/modern_ford.F90:21"}}} />
@@ -632,7 +632,7 @@ flowchart LR
 
 </FortranSource>
 
-### matrix\_free [#matrix_free]
+### matrix_free [#matrix_free]
 
 ```f90
 interface
@@ -672,7 +672,7 @@ An external C routine.
 
 ## Procedures
 
-### matrix\_order [#matrix_order]
+### matrix_order [#matrix_order]
 
 ```f90
 pure integer function matrix_order(self) result(n)
@@ -705,7 +705,7 @@ Order of a matrix.
 
 </FortranSource>
 
-### write\_matrix [#write_matrix]
+### write_matrix [#write_matrix]
 
 ```f90
 subroutine write_matrix(self, unit, iotype, v_list, iostat, iomsg)
@@ -741,7 +741,7 @@ subroutine write_matrix(self, unit, iotype, v_list, iostat, iomsg)
 
 </FortranSource>
 
-### dense\_matvec [#dense_matvec]
+### dense_matvec [#dense_matvec]
 
 ```f90
 subroutine dense_matvec(self, x, y)
@@ -762,7 +762,7 @@ which computes $y \leftarrow \alpha A x + \beta y$ (here $\alpha = 1$, $\beta = 
 <FortranArg name="y" type="real(dp)" dims="(:)" intent="out" decl="real(dp), intent(out) :: y(:)" refs={{"dp":{"href":"https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fFORTRAN_005fENV.html","title":"dp ⇒ real64","detail":"Real kind with a storage size of 64 bits: double precision","note":"Renamed in the use statement at examples/modern/src/modern_ford.F90:21"}}} />
 </FortranArgs>
 
-**Calls:** [`check_length`](/docs/showcase/modern/solver_kernels#check_length), <FortranRef href="https://www.netlib.org/lapack/explore-html/d7/dda/group__gemv_ga4ac1b675072d18f902db8a310784d802.html#ga4ac1b675072d18f902db8a310784d802" title="subroutine dgemv (BLAS)" detail="Performs one of the matrix-vector operations y := alpha*A*x + beta*y, or y := alpha*A**T*x + beta*y…">`dgemv`</FortranRef>
+**Calls:** [`check_length`](/docs/showcase/modern/solver_kernels#check_length), <FortranRef href="https://netlib.org/lapack/explore-html/d7/dda/group__gemv_ga4ac1b675072d18f902db8a310784d802.html#ga4ac1b675072d18f902db8a310784d802" title="subroutine dgemv (BLAS)" detail="Performs one of the matrix-vector operations y := alpha*A*x + beta*y, or y := alpha*A**T*x + beta*y, where alpha and beta are scalars, x and y are vectors and A is an m by n matrix.">`dgemv`</FortranRef>
 
 <FortranGraph title="Call graph" collapsed>
 
@@ -808,7 +808,7 @@ flowchart LR
 
 </FortranSource>
 
-### banded\_matvec [#banded_matvec]
+### banded_matvec [#banded_matvec]
 
 ```f90
 subroutine banded_matvec(self, x, y)
@@ -825,7 +825,7 @@ subroutine banded_matvec(self, x, y)
 <FortranArg name="y" type="real(dp)" dims="(:)" intent="out" decl="real(dp), intent(out) :: y(:)" refs={{"dp":{"href":"https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fFORTRAN_005fENV.html","title":"dp ⇒ real64","detail":"Real kind with a storage size of 64 bits: double precision","note":"Renamed in the use statement at examples/modern/src/modern_ford.F90:21"}}} />
 </FortranArgs>
 
-**Calls:** [`check_length`](/docs/showcase/modern/solver_kernels#check_length), <FortranRef href="https://www.netlib.org/lapack/explore-html/dd/df4/group__gbmv_ga7001c2a185bcc8a3b6731f5d1ea7093e.html#ga7001c2a185bcc8a3b6731f5d1ea7093e" title="subroutine dgbmv (BLAS)" detail="Performs one of the matrix-vector operations y := alpha*A*x + beta*y, or y := alpha*A**T*x + beta*y…">`dgbmv`</FortranRef>
+**Calls:** [`check_length`](/docs/showcase/modern/solver_kernels#check_length), <FortranRef href="https://netlib.org/lapack/explore-html/dd/df4/group__gbmv_ga7001c2a185bcc8a3b6731f5d1ea7093e.html#ga7001c2a185bcc8a3b6731f5d1ea7093e" title="subroutine dgbmv (BLAS)" detail="Performs one of the matrix-vector operations y := alpha*A*x + beta*y, or y := alpha*A**T*x + beta*y, where alpha and beta are scalars, x and y are vectors and A is an m by n band matrix, with kl…">`dgbmv`</FortranRef>
 
 <FortranGraph title="Call graph" collapsed>
 
@@ -863,7 +863,7 @@ flowchart LR
 
 </FortranSource>
 
-### check\_length [#check_length]
+### check_length [#check_length]
 
 ```f90
 subroutine check_length(n, m, what)
@@ -933,7 +933,7 @@ flowchart LR
 
 </FortranSource>
 
-### dense\_finalize [#dense_finalize]
+### dense_finalize [#dense_finalize]
 
 ```f90
 impure elemental subroutine dense_finalize(self)
@@ -961,7 +961,7 @@ impure elemental subroutine dense_finalize(self)
 
 </FortranSource>
 
-### add\_dense [#add_dense]
+### add_dense [#add_dense]
 
 ```f90
 function add_dense(a, b) result(c)
@@ -994,7 +994,7 @@ function add_dense(a, b) result(c)
 
 </FortranSource>
 
-### assign\_from\_array [#assign_from_array]
+### assign_from_array [#assign_from_array]
 
 ```f90
 subroutine assign_from_array(lhs, rhs)
@@ -1023,7 +1023,7 @@ subroutine assign_from_array(lhs, rhs)
 
 </FortranSource>
 
-### norm2\_parallel [#norm2_parallel]
+### norm2_parallel [#norm2_parallel]
 
 ```f90
 function norm2_parallel(x, comm) result(nrm)
@@ -1062,7 +1062,7 @@ the global 2-norm
 </FortranArg>
 </FortranArgs>
 
-**Calls:** <FortranRef href="https://docs.open-mpi.org/en/v5.0.x/man-openmpi/man3/MPI_Allreduce.3.html" title="subroutine MPI_Allreduce (MPI)" detail="Combines values from all processes and distributes the result back to all processes.">`MPI_Allreduce`</FortranRef> when USE\_MPI
+**Calls:** <FortranRef href="https://docs.open-mpi.org/en/v5.0.x/man-openmpi/man3/MPI_Allreduce.3.html" title="subroutine MPI_Allreduce (MPI)" detail="Combines values from all processes and distributes the result back to all processes.">`MPI_Allreduce`</FortranRef> when USE_MPI
 
 <FortranGraph title="Call graph" collapsed>
 
@@ -1112,7 +1112,7 @@ flowchart LR
 
 </FortranSource>
 
-### axpy\_elem [#axpy_elem]
+### axpy_elem [#axpy_elem]
 
 ```f90
 pure real(dp) function axpy_elem(a, x, y)
@@ -1151,7 +1151,7 @@ A device routine for OpenACC and OpenMP offload: one element of $a x + y$.
 
 </FortranSource>
 
-### rank\_sum [#rank_sum]
+### rank_sum [#rank_sum]
 
 ```f90
 subroutine rank_sum(x, total)
@@ -1210,7 +1210,7 @@ flowchart LR
 
 </FortranSource>
 
-### concurrent\_scale [#concurrent_scale]
+### concurrent_scale [#concurrent_scale]
 
 ```f90
 subroutine concurrent_scale(x, alpha)
@@ -1251,7 +1251,7 @@ in a `do concurrent` loop, where `local_init` gives each iteration its own copy 
 
 ## Variables
 
-### max\_order [#max_order]
+### max_order [#max_order]
 
 ```f90
 integer, parameter :: max_order = 64

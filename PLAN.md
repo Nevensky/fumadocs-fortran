@@ -46,7 +46,8 @@ Each decision was taken as recommended, and the rest of the plan assumes it. The
    - **Chosen for MPI:** Open MPI 5.0.x.
    - **Chosen for OpenMP:** version 5.2, since compilers trail 6.x.
 
-   All three are configurable per site.
+   All three are configurable per site: `hpc.links` (`--links`) chooses the provider of each library's pages, and
+   `hpc.cards: false` (`--library-cards none`) leaves library names as code (§8; built in v0.3).
 7. **Order of work.** **Chosen:** parser gate → API reference → highlighting and site scaffold → HPC layer → FORD
    drop-in → scale (§14). The alternative is to bring the HPC features forward.
 
@@ -362,6 +363,13 @@ Entity sections contain no sub-headings, so fumadocs' own `<include>…#solve</i
 - Above a size budget, the argument records are dropped (`search.granularity`), because a static export ships the whole
   index to every visitor.
 - Huge modules can be split into a page per entity (json-fortran's `json_value_module` has 247 procedures).
+- The components give the records their text, not their tags: the README shows the `filterElement` option of
+  fumadocs' remark-structure that does it, as the docs site uses it (its index 24% smaller, stdlib's 73%). A heading
+  keeps an underscore inside a name unescaped, so that search finds the name as one word.
+- No page's URL ends in `-` and a number, the form of the ids fumadocs gives a page's records: units of one name are
+  numbered after an underscore (`miniweather-program_2`).
+- Sites with large references turn the sidebar's prefetch off (`sidebar={{ prefetch: false }}`), as the README says;
+  Next prefetches every page whose link is in view.
 
 **Links** are absolute paths under `baseUrl`. `fortran-inventory.json` feeds the remark plugin and the code-block
 linker. A FORD-compatible `modules.json` lets FORD sites link into ours.
@@ -392,14 +400,15 @@ linker. A FORD-compatible `modules.json` lets FORD sites link into ours.
     lines and the types of `mpi_f08` and kinds of `omp_lib` in the tables; a project's own names always win.
   - Cards are a few hundred bytes each, so one per occurrence is cheaper than the script that sharing one per page
     would need.
-  - Badges, intents, attributes, conditions, shapes and the `*` or `:` of a character length say what they mean in
-    a card of the same look, drawn by CSS on hover. The components name the term (`data-term`, and `data-arg` for
-    what goes with it), and `style.css` holds one meaning per term, which a site can reword or translate with a rule
-    outside any `@layer`, so that no meaning is written once per pill; a shape's words, the components' own English,
-    are the exception. The terms, and the fields an opened row has for the meanings, add about 2.5% to the largest
-    Showcase page. The pills take no keyboard stop: a row with an intent or an attribute opens, and lists the
-    meanings of its intent, attributes, shape and length, for the keyboard and screen readers; a badge's meaning is
-    for the pointer alone, and its title is text that screen readers read with it.
+  - Badges, intents, attributes, conditions, shapes, the `*` or `:` of a character length and the `kind` or `len` of
+    a type parameter's type say what they mean in a card of the same look, drawn by CSS on hover. The components
+    name the term (`data-term`, and `data-arg` for what goes with it), and `style.css` holds one meaning per term,
+    which a site can reword or translate with a rule outside any `@layer`, so that no meaning is written once per
+    pill; a shape's words, the components' own English, are the exception. The terms, and the fields an opened row
+    has for the meanings, add about 2.5% to the largest Showcase page. The pills take no keyboard stop: a row with an
+    intent, an attribute or a type parameter's `kind` or `len` opens, and lists the meanings of its intent, type
+    parameter, attributes, shape and length, for the keyboard and screen readers; a badge's meaning is for the
+    pointer alone, and its title is text that screen readers read with it.
 - **`style.css`.** Plain `.fdf-*` classes on fumadocs' `--color-fd-*` variables, with `.dark` overrides, and Pele's
   `--pele-*` variables mapped to them for the graphs.
   - Library colour tokens (`--fdf-omp`, `--fdf-mpi`, …) can be overridden by sites.
@@ -421,30 +430,35 @@ committed with `SOURCES.md` and `NOTICE`.
 | Library | Pinned source (licence) | Entries |
 |---|---|---|
 | BLAS + LAPACK 3.12.1 | Reference-LAPACK `\brief` and `\param` (BSD) | 2,304 |
-| ScaLAPACK 2.2, PBLAS, BLACS | Reference-ScaLAPACK Purpose/Arguments (BSD) | 892 |
+| ScaLAPACK 2.2, PBLAS, BLACS | Reference-ScaLAPACK Purpose/Arguments, and the comments of its C routines for Fortran (BSD) | 892 |
 | MPI 5.0 (4.1 alias) | Open MPI's API data and man-page summaries, pinned (BSD-3); mpi-abi-stubs (MIT) | about 465 |
 | OpenMP 6.1 / 6.0 / 5.2 | LLVM `omp_lib` (Apache-2.0), fragment IDs from the spec's contents; our own one-liners | about 463 |
 | OpenACC 3.4, intrinsics | names and our own one-liners; M_intrinsics (MIT) | about 300 |
 | MKL, OpenBLAS, cuBLAS | hand-curated names | small |
 
-- **Size and use.** About 1 MB, or 0.2 MB gzipped. It is used only at build time, and pages embed only the entries they
-  reference.
+- **Size and use.** About 1.2 MB, or 0.23 MB gzipped. It is used only at build time, and pages embed only the entries
+  they reference.
 - **Text we do not copy:** prose from the GFDL manuals (gfortran, libgomp), the OpenMP and MPI standards, Intel, NVIDIA
   or FFTW.
 - **Summaries.** v1 writes its own one-liners for the 100 or so most used OpenMP and OpenACC items; the others get a name
-  and a link.
+  and a link. LAPACK's, ScaLAPACK's and MPI's keep their source's whole first sentence up to the 200 characters a card
+  shows.
 - **Graphs.** The call graphs colour a routine by its library: the registry names the BLAS (first), LAPACK,
   ScaLAPACK, MPI, OpenMP and OpenACC routines; the names of MPI, OpenMP, OpenACC, CUDA, coarray-collective and BLAS
   routines, and the HPC modules they come from, tell too, and are all that tells CUDA routines and the coarray
   collectives; `graphs.classify` takes the registry's place.
 
-**Link providers** (`hpc.links`):
-- `netlib`: member pages from Doxygen's search index, with file pages computed from their hash as the fallback;
-- `mkl`;
-- `openmpi` (5.0.x, the default), `mpich` or `standard`;
-- `openmp`: stable fragment IDs plus a page map per version;
-- `fortran-lang` and `gfortran` for intrinsics;
-- `libgomp`.
+**Link providers** (`hpc.links`, or `--links lapack=mkl,mpi=mpich`; built in v0.3), by library, the default first:
+- `lapack` (BLAS and LAPACK) and `scalapack` (with PBLAS, BLACS, its tools and REDIST): `netlib`, member pages on
+  netlib.org from Doxygen's search index, with file pages computed from their hash as the fallback, or `mkl`. The
+  default is `mkl` when the code uses MKL's modules;
+- `mpi`: `openmpi` (5.0.x), `mpich` or `standard`;
+- `openmp`: `5.2`, `6.0` or `6.1`, from stable fragment IDs plus a page map per version, or `libgomp`;
+- `openacc`: `spec` (3.4) or `libgomp`;
+- `intrinsics`: `fortran-lang` or `gfortran`.
+
+A name the chosen provider has no page for links as by default, and `hpc.cards: false` (`--library-cards none`)
+leaves library names as code, with no card.
 
 **Scope-aware resolution:**
 - Project symbols always win.
@@ -627,6 +641,9 @@ or less (the registry is about 1 MB). Distribution is decision 4.
   - attachment fixtures for each comment style;
   - a set of 40 hand-labelled doc blocks from json-fortran, MOM6, CP2K, ELPA and LAPACK;
   - name resolution.
+
+  Each run has a scratch folder of its own under `test/out`, removed when every check passes and kept when one
+  fails, so that runs side by side cannot disturb each other.
 - **Emitter tests.** Doc strings fuzzed from the corpora (`*>`, `${rt}$`, `\(`, braces, `import`/`export`, HTML) must
   compile, evaluate and render, with and without remark-math. The tools for this are development dependencies only.
 - **Conformance:**
@@ -714,7 +731,7 @@ Every release has a tag, a CHANGELOG entry and a working docs site. The grammar 
   - every BLAS, LAPACK, ScaLAPACK, MPI and OpenMP call in the showcase links correctly;
   - a project's own `dgemm` shadows BLAS;
   - the badges in `examples/modern` are right, conditional ones included;
-  - the registry is at most 1.2 MB, with its sources and notices;
+  - the registry is at most 1.25 MB (250,000 bytes gzipped), with its sources and notices;
   - the external link check passes.
 
 **v0.4: FORD drop-in and authoring**

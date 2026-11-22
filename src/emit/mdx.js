@@ -9,7 +9,13 @@ import { SHIKI_LANGS } from './shiki-langs.js';
 
 // ---------------------------------------------------------------- plain text
 
-const escapeChars = (s) => s.replace(/\\/g, '\\\\').replace(/[`*_[\]{}|~$]/g, (c) => `\\${c}`).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// An underscore between two ASCII letters or digits stays as written: Markdown never reads one inside a word as
+// emphasis, and unescaped it keeps a name such as norm2_parallel one word for a site's search, whose records keep the
+// page's Markdown.
+const WORD = /[A-Za-z0-9]/;
+const escapeChars = (s) => s.replace(/\\/g, '\\\\')
+  .replace(/[`*_[\]{}|~$]/g, (c, i, t) => (c === '_' && WORD.test(t[i - 1] ?? '') && WORD.test(t[i + 1] ?? '') ? c : `\\${c}`))
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // a bare URL as GFM finds one: it ends at white space, <, >, " or `, or at a maths placeholder
 const BARE_URL = /(?<![\w@/.-])(?:(?:https?|ftp):\/\/|www\.)[^\s<>"`\uE000-\uE003]+/gi;

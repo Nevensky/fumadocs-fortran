@@ -4,13 +4,13 @@ import type { ReactElement, ReactNode } from 'react';
  * Badge kinds with a label of their own. Kinds of entity are filled; HPC models and libraries (omp to cpp) have a
  * colour each, set by the `--fdf-<kind>` variables in style.css; the rest are neutral.
  *
- * On hover a badge, an attribute, an intent, a condition, a shape and the * or : of a character length say what they
- * mean, in a card: the components name the term (data-term, with data-arg for what goes with it, such as self in
- * pass(self)), and style.css has the meanings, once for the page, which an opened row says too. A term it has no
- * meaning for shows no card. A site gives a term a meaning, or rewords one in its own words or language, with a rule
- * outside any @layer, as `[data-term='hdf5'] { --fdf-mean: "HDF5: …"; }`, which wins whichever stylesheet comes
- * first: style.css's meanings are in :where(), with no specificity, and in no layer. A shape's words are the
- * components' own, in English.
+ * On hover a badge, an attribute, an intent, a condition, a shape, the * or : of a character length and the kind or
+ * len of a type parameter's type (integer, kind) say what they mean, in a card: the components name the term
+ * (data-term, with data-arg for what goes with it, such as self in pass(self)), and style.css has the meanings, once
+ * for the page, which an opened row says too. A term it has no meaning for shows no card. A site gives a term a
+ * meaning, or rewords one in its own words or language, with a rule outside any @layer, as
+ * `[data-term='hdf5'] { --fdf-mean: "HDF5: …"; }`, which wins whichever stylesheet comes first: style.css's meanings
+ * are in :where(), with no specificity, and in no layer. A shape's words are the components' own, in English.
  */
 export type FortranBadgeKind =
   | 'module' | 'submodule' | 'program' | 'subroutine' | 'function' | 'type' | 'interface'
@@ -74,7 +74,9 @@ export interface FortranArgProps {
   /**
    * The type, as declared: 'real(dp)', 'type(MPI_Comm)', 'character(*)'. The * or : of a character length has a card,
    * and an opened row says the length: assumed, deferred, or as written. The * of a `result` takes its length from
-   * where the function is called.
+   * where the function is called. A type parameter's type is its declaration's, with its kind or len: 'integer, kind',
+   * 'integer(int8), len'. That word has a card (its term is kind or len, as for an attribute) and an opened row's Type
+   * parameter line says the same.
    */
   type?: string;
   /**
@@ -170,9 +172,10 @@ export declare function FortranBadge(props: FortranBadgeProps): ReactElement | n
 /** A table of FortranArg rows in the manner of fumadocs' TypeTable: a title, a header row, then the rows. */
 export declare function FortranArgs(props: FortranArgsProps): ReactElement;
 /**
- * One row (an argument, component, binding or result), which opens to its doc, declaration, intent and attributes in
- * words, shape, length and condition. A row with nothing more to say than its cells (no doc, declaration, shape,
- * condition, * or : length, intent in, out or inout, or attribute with a term, as `attrs` says) does not open.
+ * One row (an argument, component, type parameter, binding or result), which opens to its doc, declaration, intent,
+ * type parameter's kind or len and attributes in words, shape, length and condition. A row with nothing more to say
+ * than its cells (no doc, declaration, shape, condition, * or : length, kind or len of a type parameter, intent in, out
+ * or inout, or attribute with a term, as `attrs` says) does not open.
  */
 export declare function FortranArg(props: FortranArgProps): ReactElement;
 /** A name with a link and a hover card; nothing without a name. */

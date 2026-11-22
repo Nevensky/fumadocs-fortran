@@ -19,7 +19,7 @@
       "name": "Netlib LAPACK documentation, Doxygen search index",
       "version": "3.12.1, as published (Netlib keeps no older builds)",
       "licence": "BSD-3-Clause (generated from Reference-LAPACK)",
-      "homepage": "https://www.netlib.org/lapack/explore-html/",
+      "homepage": "https://netlib.org/lapack/explore-html/",
       "urls": {
         "searchdata": "https://www.netlib.org/lapack/explore-html/search/searchdata.js",
         "functions": "https://www.netlib.org/lapack/explore-html/search/functions_{n}.js"
@@ -37,7 +37,7 @@
         "tarball": "https://github.com/Reference-ScaLAPACK/scalapack/archive/refs/tags/v2.2.2.tar.gz"
       },
       "notice": "LICENSE",
-      "uses": "Routine names and arguments from the code (SRC, TOOLS, PBLAS, REDIST, BLACS, and the error handler PBLAS/SRC/PTZBLAS/pxerbla.f); scope (global or local), intent and type from the Arguments prose; summaries from the first sentence of Purpose; hint tags.",
+      "uses": "Routine names and arguments from the code (SRC, TOOLS, PBLAS, REDIST, BLACS, the error handler PBLAS/SRC/PTZBLAS/pxerbla.f, and the Fortran-callable C routines of SRC, TOOLS and PBLAS/SRC/PTOOLS, with the types of their C definitions); scope (global or local), intent and type from the Arguments prose; summaries from the first sentence of Purpose; hint tags.",
       "copied": "Summaries, which are BSD-licensed."
     },
     {
@@ -45,7 +45,7 @@
       "name": "Netlib ScaLAPACK documentation, Doxygen search index",
       "version": "2.2.2, as published",
       "licence": "BSD-3-Clause (generated from Reference-ScaLAPACK)",
-      "homepage": "https://www.netlib.org/scalapack/explore-html/",
+      "homepage": "https://netlib.org/scalapack/explore-html/",
       "urls": {
         "searchdata": "https://www.netlib.org/scalapack/explore-html/search/searchdata.js",
         "functions": "https://www.netlib.org/scalapack/explore-html/search/functions_{n}.js"

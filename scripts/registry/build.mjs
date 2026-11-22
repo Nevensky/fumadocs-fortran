@@ -72,10 +72,32 @@ async function sourcesMd(sources, results) {
     'No prose is taken from the GFDL manuals (gfortran, libgomp), the OpenMP, OpenACC or MPI specifications, Intel,',
     'NVIDIA or FFTW. From the specifications and manuals the registry keeps names, page numbers and fragment IDs only,',
     'and from the OpenACC specification whether each routine is a subroutine or a function. Its OpenMP (kinds',
-    'included), OpenACC, BLACS, MPI-callback, MPI-type and vendor one-liners are our own; the summaries of LAPACK,',
+    'included), OpenACC, BLACS, MPI-callback, MPI-type and vendor one-liners are our own, as are those of the',
+    'ScaLAPACK C routines whose sources have no prose (?lamov, reshape, sl_gridreshape); the summaries of LAPACK,',
     'ScaLAPACK, Open MPI and M_intrinsics come from those projects under their permissive licences (see NOTICE).',
     '',
+    '## Summaries',
+    '',
+    'A summary is its source\'s one-liner or first sentence: LAPACK\'s `\\brief` (else the first sentence of its',
+    'Purpose), the first sentence of ScaLAPACK\'s Purpose, the summary line of an Open MPI man page, the NAME line of',
+    'M_intrinsics. It is kept whole up to 200 characters (code points), what a hover card shows, and cut at a word,',
+    'with an ellipsis, beyond that. Open MPI\'s RST markup is taken off, its substitutions (`|mdash|`,',
+    '`|deprecated_favor|`) are expanded and its escapes undone; the words that LAPACK\'s and ScaLAPACK\'s prose',
+    'breaks at the end of a line are joined. These slips of the sources are corrected (the `CORRECTIONS` tables of',
+    '`scripts/registry/lapack.mjs`, `scalapack.mjs` and `mpi.mjs`):',
+    '',
   );
+  const tables = [
+    ['Reference-LAPACK', lapack.CORRECTIONS],
+    ['Reference-ScaLAPACK', scalapack.CORRECTIONS],
+    ['Open MPI', mpi.CORRECTIONS],
+  ];
+  for (const [label, table] of tables) {
+    for (const [name, fixes] of Object.entries(table)) {
+      lines.push(`- \`${name}\` (${label}): ${fixes.map(([from, to]) => `\`${from}\` → \`${to}\``).join('; ')}`);
+    }
+  }
+  lines.push('');
   return lines.join('\n');
 }
 

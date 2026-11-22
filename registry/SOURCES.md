@@ -18,9 +18,9 @@ The registry is used at build time only: pages embed just the entries they refer
 
 | File | Entries | Bytes | Contents |
 |---|---:|---:|---|
-| `lapack.json` | 2,265 | 535,170 | BLAS and LAPACK 3.12.1: routines and precision families |
-| `scalapack.json` | 1,010 | 250,822 | ScaLAPACK 2.2.2 with TOOLS, PBLAS, REDIST and BLACS |
-| `mpi.json` | 475 | 150,976 | MPI 5.0 procedures callable from Fortran (4.1 alias), callbacks, the derived types of mpi_f08 |
+| `lapack.json` | 2,265 | 580,005 | BLAS and LAPACK 3.12.1: routines and precision families |
+| `scalapack.json` | 1,028 | 274,543 | ScaLAPACK 2.2.2 with TOOLS, PBLAS, REDIST and BLACS |
+| `mpi.json` | 475 | 151,228 | MPI 5.0 procedures callable from Fortran (4.1 alias), callbacks, the derived types of mpi_f08 |
 | `openmp.json` | 469 | 79,258 | OpenMP 6.1, 6.0 and 5.2: directives, clauses, routines, environment variables, kinds, constants |
 | `openacc.json` | 147 | 11,906 | OpenACC 3.4: directives, clauses, routines, environment variables |
 | `intrinsics.json` | 218 | 34,580 | Fortran intrinsic procedures |
@@ -44,7 +44,7 @@ rules of its link providers. `read.mjs` expands entries and builds their links.
 
 - **Version:** 3.12.1, as published (Netlib keeps no older builds)
 - **Licence:** BSD-3-Clause (generated from Reference-LAPACK)
-- **Homepage:** <https://www.netlib.org/lapack/explore-html/>
+- **Homepage:** <https://netlib.org/lapack/explore-html/>
 - **searchdata:** <https://www.netlib.org/lapack/explore-html/search/searchdata.js> (sha256 `253b19abc166e493…`)
 - **functions:** `https://www.netlib.org/lapack/explore-html/search/functions_{n}.js` (14 files, each pinned in sources.lock.json)
 - **Used for:** The anchor of each routine's member page.
@@ -56,14 +56,14 @@ rules of its link providers. `read.mjs` expands entries and builds their links.
 - **Licence:** BSD-3-Clause
 - **Homepage:** <https://github.com/Reference-ScaLAPACK/scalapack>
 - **tarball:** <https://github.com/Reference-ScaLAPACK/scalapack/archive/refs/tags/v2.2.2.tar.gz> (sha256 `a2f0c9180a210bf7…`)
-- **Used for:** Routine names and arguments from the code (SRC, TOOLS, PBLAS, REDIST, BLACS, and the error handler PBLAS/SRC/PTZBLAS/pxerbla.f); scope (global or local), intent and type from the Arguments prose; summaries from the first sentence of Purpose; hint tags.
+- **Used for:** Routine names and arguments from the code (SRC, TOOLS, PBLAS, REDIST, BLACS, the error handler PBLAS/SRC/PTZBLAS/pxerbla.f, and the Fortran-callable C routines of SRC, TOOLS and PBLAS/SRC/PTOOLS, with the types of their C definitions); scope (global or local), intent and type from the Arguments prose; summaries from the first sentence of Purpose; hint tags.
 - **Copied:** Summaries, which are BSD-licensed.
 
 ### Netlib ScaLAPACK documentation, Doxygen search index
 
 - **Version:** 2.2.2, as published
 - **Licence:** BSD-3-Clause (generated from Reference-ScaLAPACK)
-- **Homepage:** <https://www.netlib.org/scalapack/explore-html/>
+- **Homepage:** <https://netlib.org/scalapack/explore-html/>
 - **searchdata:** <https://www.netlib.org/scalapack/explore-html/search/searchdata.js> (sha256 `130e1a055e30af43…`)
 - **functions:** `https://www.netlib.org/scalapack/explore-html/search/functions_{n}.js` (19 files, each pinned in sources.lock.json)
 - **Used for:** The anchor of each routine's member page.
@@ -193,5 +193,25 @@ These sites are linked to; nothing is downloaded from them or copied.
 No prose is taken from the GFDL manuals (gfortran, libgomp), the OpenMP, OpenACC or MPI specifications, Intel,
 NVIDIA or FFTW. From the specifications and manuals the registry keeps names, page numbers and fragment IDs only,
 and from the OpenACC specification whether each routine is a subroutine or a function. Its OpenMP (kinds
-included), OpenACC, BLACS, MPI-callback, MPI-type and vendor one-liners are our own; the summaries of LAPACK,
+included), OpenACC, BLACS, MPI-callback, MPI-type and vendor one-liners are our own, as are those of the
+ScaLAPACK C routines whose sources have no prose (?lamov, reshape, sl_gridreshape); the summaries of LAPACK,
 ScaLAPACK, Open MPI and M_intrinsics come from those projects under their permissive licences (see NOTICE).
+
+## Summaries
+
+A summary is its source's one-liner or first sentence: LAPACK's `\brief` (else the first sentence of its
+Purpose), the first sentence of ScaLAPACK's Purpose, the summary line of an Open MPI man page, the NAME line of
+M_intrinsics. It is kept whole up to 200 characters (code points), what a hover card shows, and cut at a word,
+with an ellipsis, beyond that. Open MPI's RST markup is taken off, its substitutions (`|mdash|`,
+`|deprecated_favor|`) are expanded and its escapes undone; the words that LAPACK's and ScaLAPACK's prose
+breaks at the end of a line are joined. These slips of the sources are corrected (the `CORRECTIONS` tables of
+`scripts/registry/lapack.mjs`, `scalapack.mjs` and `mpi.mjs`):
+
+- `dlasyf_rook` (Reference-LAPACK): `DLASYF_ROOK *> DLASYF_ROOK` → `DLASYF_ROOK`
+- `drotmg` (Reference-LAPACK): `DSQRT(DD2)*> DY2` → `DSQRT(DD2)*DY2`
+- `srotmg` (Reference-LAPACK): `SQRT(SD2)*> SY2` → `SQRT(SD2)*SY2`
+- `pdlasnbt` (Reference-ScaLAPACK): `pdalsnbt` → `pdlasnbt`; `a double double precision` → `a double precision`
+- `pslasnbt` (Reference-ScaLAPACK): `psalsnbt` → `pslasnbt`
+- `MPI_Buffer_detach` (Open MPI): `for use in in` → `for use in`
+- `MPI_Comm_detach_buffer` (Open MPI): `communicator(for use in in` → `communicator (for use in`
+- `MPI_Session_detach_buffer` (Open MPI): `session(for use in in` → `session (for use in`

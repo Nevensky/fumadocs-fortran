@@ -123,8 +123,10 @@ class Graph {
   }
 
   /**
-   * The Mermaid source. Nodes are numbered breadth first from the subject, so a cap keeps the nearest; past `max`,
-   * one "… N more" node stands for the rest (it counts towards `max`) and takes the edges that led to them.
+   * The Mermaid source. Nodes are numbered breadth first from the subject. Past `max`, one "… N more" node stands for
+   * the nodes left out (it counts towards `max`) and takes the edges that led to them. The routines from outside the
+   * project go first, the farthest first: they only end paths, however many callers they have, and a graph is about
+   * the project's own code. When they are not enough, the farthest of the rest go too, so that a cap keeps the nearest.
    */
   render(subject, max = Infinity) {
     let order = [...this.nodes.keys()];
@@ -148,7 +150,13 @@ class Graph {
       }
       order = [...bfs, ...order.filter((k) => !seen.has(k))];
     }
-    const keep = order.length > max ? order.slice(0, Math.max(1, max - 1)) : order;
+    let keep = order;
+    if (order.length > max) {
+      const room = Math.max(1, max - 1);
+      const outside = order.filter((k) => k !== subject && this.nodes.get(k).library);
+      const out = new Set(outside.slice(room - order.length));
+      keep = order.filter((k) => !out.has(k)).slice(0, room);
+    }
     const kept = new Set(keep);
     const nodes = keep.map((k) => this.nodes.get(k));
     const edges = [];
@@ -207,8 +215,10 @@ function arrow(e) {
  * @param {(entity: object) => boolean} [options.shown] the access filter (default: every entity): what it hides is
  *   not drawn, except what the page names anyway: a shown generic's specifics, a shown binding's implementation, and
  *   a type's ancestors
- * @param {(name: string) => string|null} [options.classify] a library routine's class from its lower-case name: a
- *   class such as fdfLapack, or a family word such as lapack; null when it does not know the name
+ * @param {(name: string, how: { subroutine: boolean }) => string|null} [options.classify] a library routine's class
+ *   from its lower-case name: a class such as fdfLapack, or a family word such as lapack; null when it does not know
+ *   the name. `subroutine`: a CALL names it, or an interface body declares it a subroutine (a name can be a library's
+ *   subroutine and an intrinsic function: ScaLAPACK's reshape)
  * @param {number} [options.maxNodes] nodes drawn at most, the "… N more" node included (default 40); below 2 it counts
  *   as 2, the subject and "… N more". Also the overview's limit on units (default 80), taken as given
  * @param {number} [options.depth] how far uses and callees are followed (default 2)
@@ -479,19 +489,22 @@ export function buildGraphs(ir, options = {}) {
     if (e.kind === 'interface' || e.kind === 'binding') n.generic = true;
     return n;
   };
-  /** A procedure outside the project, one node per name; `from` is an interface body that documents it. */
-  const libraryNode = (name, cls, from = null) => (
-    { key: `lib:${lc(name)}`, label: name, shape: 'round', classes: [cls], url: urlOf(from), entity: null });
+  /**
+   * A procedure outside the project, one node per name; `from` is an interface body that documents it. `library`
+   * marks it for the cap, which leaves such a routine out before any of the project's when nothing else links to it.
+   */
+  const libraryNode = (name, cls, from = null) => ({ key: `lib:${lc(name)}`, label: name, shape: 'round',
+    classes: [cls], url: urlOf(from), entity: null, library: true });
   // what a shown binding calls is drawn even when the filter hides it: the binding's row on the page names it
   // (`procedure :: start => engine_start`), as a generic's entry lists its specifics, however private
   const visible = (n) => !n.entity || shown(n.entity) || (!!n.via && shown(n.via));
 
   /**
    * A library routine's class from its lower-case name: the site's classify(), then the families the names show.
-   * LAPACK and ScaLAPACK names are left to classify().
+   * LAPACK and ScaLAPACK names are left to classify(). `subroutine`: the name is a subroutine's (a CALL's).
    */
-  const libraryClass = (n) => {
-    const c = normaliseClass(options.classify?.(n));
+  const libraryClass = (n, subroutine = false) => {
+    const c = normaliseClass(options.classify?.(n, { subroutine }));
     if (c) return c;
     if (n.startsWith('mpi_')) return 'fdfMpi';
     if (n.startsWith('omp_')) return 'fdfOmp';
@@ -504,12 +517,12 @@ export function buildGraphs(ir, options = {}) {
    * The node of a routine a use statement names from a module outside the project, classed by name or module. The
    * standard's intrinsic modules give intrinsic procedures, which are not drawn, as are those of another processor
    * module (`use, intrinsic`) unless it is an HPC library's: gfortran keeps omp_lib and openacc with the intrinsic
-   * ones.
+   * ones. `subroutine`: a CALL names it.
    */
-  const usedRoutine = (lv, written) => {
+  const usedRoutine = (lv, written, subroutine = false) => {
     const mod = lc(lv.ext.module);
     if (INTRINSIC_MODULES.has(mod) || (lv.ext.nature === 'intrinsic' && !HPC_MODULES.has(mod))) return null;
-    const cls = libraryClass(lv.name) ?? HPC_MODULES.get(mod);
+    const cls = libraryClass(lv.name, subroutine) ?? HPC_MODULES.get(mod);
     return { node: libraryNode(lv.written ?? written, cls ?? 'fdfExternal'), known: !!cls };
   };
 
@@ -529,7 +542,7 @@ export function buildGraphs(ir, options = {}) {
     if (x.separate) return nodeOf(implementationOf(x) ?? x);
     const ext = externals.get(lc(x.name));
     if (ext) return nodeOf(nearest(ext, x.file));
-    return libraryNode(x.name, libraryClass(lc(x.name)) ?? 'fdfExternal', x);
+    return libraryNode(x.name, libraryClass(lc(x.name), x.proc === 'subroutine') ?? 'fdfExternal', x);
   };
 
   const callableMemo = new Map();
@@ -586,11 +599,11 @@ export function buildGraphs(ir, options = {}) {
     if (r?.entity) return targetOf(r.entity);
     if (r?.none) return null;
     if (r?.ext) {
-      const u = usedRoutine(r, written);
+      const u = usedRoutine(r, written, isCall);
       return u && (u.known || isCall) ? u.node : null;
     }
     if ((isCall ? INTRINSIC_SUBROUTINES : INTRINSIC_PROCEDURES).has(n)) return null;
-    const cls = libraryClass(n);
+    const cls = libraryClass(n, isCall);
     return cls || isCall ? libraryNode(written, cls ?? 'fdfExternal') : null;
   };
 

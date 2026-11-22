@@ -7,9 +7,15 @@ import { deflateSync, gzipSync } from 'node:zlib';
 import * as MPI from '../../scripts/registry/data/mpi.mjs';
 import * as OPENACC from '../../scripts/registry/data/openacc.mjs';
 import * as OPENMP from '../../scripts/registry/data/openmp.mjs';
-import { firstSentence } from '../../scripts/registry/lib.mjs';
+import * as SCALAPACK_DATA from '../../scripts/registry/data/scalapack.mjs';
+import * as LAPACK_BUILDER from '../../scripts/registry/lapack.mjs';
+import * as LIB from '../../scripts/registry/lib.mjs';
+import * as MPI_BUILDER from '../../scripts/registry/mpi.mjs';
 import { pdfOutline } from '../../scripts/registry/pdf.mjs';
+import * as SCALAPACK_BUILDER from '../../scripts/registry/scalapack.mjs';
 import { LIBRARY_SECTIONS, libraryOf, load, lookup, names } from '../../registry/read.mjs';
+
+const { firstSentence } = LIB;
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const DIR = path.join(ROOT, 'registry');
@@ -37,11 +43,12 @@ const vendors = load('vendors');
 // ---------------------------------------------------------------- counts (the plan's estimates, within 5%)
 {
   near(Object.keys(lapack.entries).length, 2300, 'BLAS and LAPACK routines');
-  // the estimate of 890 covered ScaLAPACK, its tools and PBLAS; REDIST and BLACS come on top
+  // the plan estimated 890 for ScaLAPACK, its tools and PBLAS, which their Fortran and PBLAS's p?xxx_ in C give (922);
+  // the Fortran-callable C routines of SRC, TOOLS and PBLAS/SRC/PTOOLS (18) come on top, as do REDIST and BLACS
   const sl = Object.values(scalapack.entries);
-  near(sl.filter((e) => !e.l || e.l === 'tools' || e.l === 'pblas').length, 890, 'ScaLAPACK, TOOLS and PBLAS routines');
-  eq(sl.filter((e) => e.l === 'redist').length, 10, 'REDIST routines (p?gemr2d, p?trmr2d)');
-  ok(sl.filter((e) => e.l === 'blacs').length >= 70, 'BLACS routines');
+  const byLibrary = (l) => sl.filter((e) => (e.l ?? 'scalapack') === l).length;
+  eq(['scalapack', 'tools', 'pblas', 'redist', 'blacs'].map(byLibrary), [703, 109, 128, 10, 78],
+    'ScaLAPACK (13 in C), TOOLS (2 in C), PBLAS (3 of PTOOLS), REDIST (p?gemr2d, p?trmr2d) and BLACS routines');
   near(Object.keys(mpi.entries).length, 465, 'MPI entries');
   near(['directives', 'clauses', 'routines', 'env', 'types', 'constants'].reduce((n, s) => n + Object.keys(openmp[s]).length, 0), 463, 'OpenMP entries');
   ok(Object.keys(intrinsics.entries).length >= 210, 'intrinsic procedures');
@@ -53,8 +60,9 @@ const vendors = load('vendors');
   const files = readdirSync(DIR).filter((f) => statSync(path.join(DIR, f)).isFile());
   const bytes = files.reduce((n, f) => n + statSync(path.join(DIR, f)).size, 0);
   const gz = files.reduce((n, f) => n + gzipSync(readFileSync(path.join(DIR, f)), { level: 9 }).length, 0);
-  ok(bytes <= 1_200_000, `the registry is at most 1.2 MB: ${bytes} bytes`);
-  ok(gz <= 250_000, `the registry gzips to about 0.2 MB: ${gz} bytes`);
+  // 1.2 MB until the summaries kept their whole first sentences (up to 200 code points) and ScaLAPACK its C routines
+  ok(bytes <= 1_250_000, `the registry is at most 1.25 MB: ${bytes} bytes`);
+  ok(gz <= 250_000, `the registry gzips to at most 250,000 bytes: ${gz} bytes`);
   for (const f of ['lapack.json', 'scalapack.json', 'mpi.json', 'openmp.json', 'openacc.json', 'intrinsics.json', 'vendors.json', 'SOURCES.md', 'NOTICE', 'read.mjs']) {
     ok(files.includes(f), `registry/${f} exists`);
   }
@@ -75,8 +83,8 @@ const vendors = load('vendors');
   ok(e.tags.includes('ld') && e.tags.includes('info'), 'dgesv tags: ld, info');
   eq(e.ld, { lda: 'max(1,n)', ldb: 'max(1,n)' }, 'dgesv leading dimensions');
   ok(/^Computes the solution to/.test(e.summary), `dgesv summary: ${e.summary}`);
-  eq(e.links.netlib, 'https://www.netlib.org/lapack/explore-html/d8/da6/group__gesv_ga831ce6a40e7fd16295752d18aed2d541.html#ga831ce6a40e7fd16295752d18aed2d541', 'dgesv Netlib member page');
-  eq(e.links.netlibFile, 'https://www.netlib.org/lapack/explore-html/d8/d72/dgesv_8f.html', 'dgesv Netlib file page (md5 rule)');
+  eq(e.links.netlib, 'https://netlib.org/lapack/explore-html/d8/da6/group__gesv_ga831ce6a40e7fd16295752d18aed2d541.html#ga831ce6a40e7fd16295752d18aed2d541', 'dgesv Netlib member page');
+  eq(e.links.netlibFile, 'https://netlib.org/lapack/explore-html/d8/d72/dgesv_8f.html', 'dgesv Netlib file page (md5 rule)');
   eq(e.links.mkl, 'https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-fortran/2026-2/gesv.html', 'dgesv oneMKL page');
   const z = lookup('lapack', 'zgesv');
   eq(z.args[2][2], 'complex*16(lda,n)', 'zgesv A type from the T template');
@@ -130,7 +138,7 @@ for (const id of ['lapack', 'scalapack']) {
   eq(e.args[2].slice(1), ['inout', 'double precision(lld_a,locc(ja+n-1))', 'l'], 'pdgesv A: local input/output');
   eq(e.args[5].slice(1), ['in', 'integer(dlen_)', 'gl'], 'pdgesv DESCA: global and local input');
   ok(e.tags.includes('desc') && e.tags.includes('info'), 'pdgesv tags: desc, info');
-  ok(/^https:\/\/www\.netlib\.org\/scalapack\/explore-html\/d[0-9a-f]\/d[0-9a-f]{2}\/pdgesv_8f_a[0-9a-f]{32}\.html#a[0-9a-f]{32}$/.test(e.links.netlib), `pdgesv Netlib member page: ${e.links.netlib}`);
+  ok(/^https:\/\/netlib\.org\/scalapack\/explore-html\/d[0-9a-f]\/d[0-9a-f]{2}\/pdgesv_8f_a[0-9a-f]{32}\.html#a[0-9a-f]{32}$/.test(e.links.netlib), `pdgesv Netlib member page: ${e.links.netlib}`);
   eq(e.links.mkl, 'https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-fortran/2026-2/p-gesv.html', 'pdgesv oneMKL page');
   eq(lookup('scalapack', 'pzheevd').args.find((a) => a[0] === 'rwork')?.[2]?.startsWith('double precision'), true, 'pzheevd RWORK is double precision');
   for (const n of ['descinit', 'numroc', 'indxg2p', 'pdgemm', 'pdgemr2d', 'blacs_gridinit', 'blacs_gridinfo', 'dgesd2d', 'igsum2d']) ok(lookup('scalapack', n), `${n} is in scalapack.json`);
@@ -276,7 +284,7 @@ for (const id of ['lapack', 'scalapack']) {
   const member = /explore-html\/(d[0-9a-f]\/d[0-9a-f]{2})\/pxerbla_8f_a([0-9a-f]{32})\.html#a\2$/;
   const dir = member.exec(e?.links.netlib)?.[1];
   ok(dir, `pxerbla Netlib member page: ${e?.links.netlib}`);
-  eq(e?.links.netlibFile, `https://www.netlib.org/scalapack/explore-html/${dir}/pxerbla_8f.html`,
+  eq(e?.links.netlibFile, `https://netlib.org/scalapack/explore-html/${dir}/pxerbla_8f.html`,
     'pxerbla Netlib file page: pxerbla.f, not PTZBLAS/pxerbla.f');
 }
 
@@ -504,7 +512,7 @@ for (const id of ['lapack', 'scalapack']) {
   r?.entry.family.members.push('mine');
   ok(r && !libraryOf('dgesv').entry.family.members.includes('mine'), 'each call gives fresh objects');
   const ga = 'ga831ce6a40e7fd16295752d18aed2d541';
-  eq(r?.link, `https://www.netlib.org/lapack/explore-html/d8/da6/group__gesv_${ga}.html#${ga}`,
+  eq(r?.link, `https://netlib.org/lapack/explore-html/d8/da6/group__gesv_${ga}.html#${ga}`,
     'link: the Netlib member page');
   const links = {
     MPI_Send: 'https://docs.open-mpi.org/en/v5.0.x/man-openmpi/man3/MPI_Send.3.html',
@@ -517,8 +525,236 @@ for (const id of ['lapack', 'scalapack']) {
   for (const [n, link] of Object.entries(links)) eq(libraryOf(n)?.link, link, `libraryOf(${n}).link`);
   const all = LIBRARY_SECTIONS.flatMap(([id, s]) => Object.keys(load(id)[s] ?? {}));
   ok(all.length > 4000, `the procedures, types, kinds and constants of the registry: ${all.length}`);
-  eq(new Set(all.map((n) => n.toLowerCase())).size, all.length, 'no name is in two libraries');
+  const seen = new Map();
+  for (const n of all) seen.set(n.toLowerCase(), (seen.get(n.toLowerCase()) ?? 0) + 1);
+  eq([...seen].filter(([, k]) => k > 1).map(([n]) => n), ['reshape'],
+    'one name is in two libraries: reshape, a TOOLS subroutine of ScaLAPACK and an intrinsic function');
   eq(all.filter((n) => libraryOf(n.toUpperCase())?.name !== n), [], 'libraryOf finds every name, in any case');
+
+  // a CALL names a subroutine: libraryOf(name, { subroutine: true }) gives the subroutine of a name in two libraries
+  const sub = (n) => {
+    const x = libraryOf(n, { subroutine: true });
+    return x && [x.lib, x.library, x.name, x.section, x.entry.kind];
+  };
+  eq(of('RESHAPE'), ['intrinsics', 'intrinsics', 'reshape', 'entries'], 'reshape: the intrinsic function, by default');
+  eq(libraryOf('reshape')?.entry.kind, 'function', 'the intrinsic RESHAPE is a function');
+  eq(sub('RESHAPE'), ['scalapack', 'tools', 'reshape', 'entries', 'subroutine'],
+    'a CALL of reshape: ScaLAPACK\'s TOOLS subroutine (TOOLS/reshape.c)');
+  eq(libraryOf('reshape', { subroutine: true })?.link,
+    'https://netlib.org/scalapack/explore-html/d6/dbd/reshape_8c_ad850b10edd8fbfa9c231d84bdae6d349.html#ad850b10edd8fbfa9c231d84bdae6d349',
+    'and its link: reshape_ on Netlib\'s page of reshape.c');
+  // in one library, the option changes nothing; a function stays a function, which the caller can tell by its kind
+  for (const n of ['dgesv', 'pb_topget', 'random_number', 'MPI_Send', 'dlamch', 'acc_is_present', 'MPI_Comm', 'nothing']) {
+    eq(libraryOf(n, { subroutine: true }), libraryOf(n), `libraryOf(${n}, { subroutine: true }) is libraryOf(${n})`);
+  }
+  eq(libraryOf('reshape', {}), libraryOf('reshape'), 'no options: the default');
+}
+
+// ---------------------------------------------------------------- ScaLAPACK's Fortran-callable C routines
+{
+  // SRC (lamov.h's LAMOV for each ?lamov.c, pdlaiect.c, pslaiect.c, pcrot.c, pzrot.c), TOOLS (reshape.c,
+  // SL_gridreshape.c) and PBLAS/SRC/PTOOLS (PB_topget_.c, PB_topset_.c, PB_freebuf_.c)
+  const want = {
+    slamov: 'scalapack', dlamov: 'scalapack', clamov: 'scalapack', zlamov: 'scalapack', pcrot: 'scalapack',
+    pzrot: 'scalapack', pdlasnbt: 'scalapack', pslasnbt: 'scalapack', pdlaiectb: 'scalapack', pdlaiectl: 'scalapack',
+    pslaiect: 'scalapack', pdlachkieee: 'scalapack', pslachkieee: 'scalapack', reshape: 'tools',
+    sl_gridreshape: 'tools', pb_topget: 'pblas', pb_topset: 'pblas', pb_freebuf: 'pblas',
+  };
+  eq(Object.fromEntries(Object.keys(want).map((n) => [n, lookup('scalapack', n)?.library ?? null])), want,
+    'the C routines of SRC, TOOLS and PTOOLS, each in its library');
+  const base = 'https://netlib.org/scalapack/explore-html/';
+  for (const n of Object.keys(want)) {
+    const e = lookup('scalapack', n);
+    ok(e?.summary && e.args.every((a) => a[1]) && e.links.netlib?.startsWith(base),
+      `${n}: a summary, an intent for each argument and a Netlib member page: ${JSON.stringify(e?.links)}`);
+  }
+  const dlamov = lookup('scalapack', 'dlamov');
+  eq(dlamov?.args, [['uplo', 'in', 'character'], ['m', 'in', 'integer'], ['n', 'in', 'integer'],
+    ['a', 'in', 'double precision(lda,*)'], ['lda', 'in', 'integer'], ['b', 'out', 'double precision(ldb,*)'],
+    ['ldb', 'in', 'integer']], 'dlamov: ?lacpy\'s arguments, with the types of lamov.h for TYPE double');
+  eq([lookup('scalapack', 'zlamov')?.args[3][2], dlamov?.family?.id, dlamov?.family?.members.sort()],
+    ['complex*16(lda,*)', '?lamov', ['clamov', 'dlamov', 'slamov', 'zlamov']], 'the ?lamov family');
+  eq(dlamov?.links.netlib, `${base}d9/df7/lamov_8h_a492a3202ad065486791bc26ae32b23e2.html#a492a3202ad065486791bc26ae32b23e2`,
+    'dlamov links to LAMOV in lamov.h, which dlamov.c names with its macros');
+  const pcrot = lookup('scalapack', 'pcrot');
+  eq(pcrot?.args.map((a) => a[0]), ['n', 'x', 'ix', 'jx', 'descx', 'incx', 'y', 'iy', 'jy', 'descy', 'incy', 'c', 's'],
+    'pcrot: the documented names (DESCX, where the C code says desc_X)');
+  eq([pcrot?.args[1], pcrot?.args[11][2], pcrot?.args[12][2], pcrot?.family?.id, pcrot?.tags],
+    [['x', 'inout', 'complex(*)', 'l'], 'real', 'complex', 'p?rot', ['desc']],
+    'pcrot: types from C, scopes from the prose');
+  // the prose of pcrot.c and pzrot.c heads X and Y "(local input)", then says "On output, CX is overwritten with
+  // C*X + S*Y", as p?porfs.f heads X "(local input)", then says "On exit, it contains the improved solution vectors"
+  const updated = (n, a) => lookup('scalapack', n)?.args.find((x) => x[0] === a)?.[1];
+  const inout = [['pcrot', 'x'], ['pcrot', 'y'], ['pzrot', 'x'], ['pzrot', 'y'], ['psporfs', 'x'], ['pdporfs', 'x'],
+    ['pcporfs', 'x'], ['pzporfs', 'x']];
+  eq(inout.map(([n, a]) => updated(n, a)), Array(8).fill('inout'),
+    'an argument headed input whose prose says what it holds on exit is input/output');
+  eq([['pdporfs', 'b'], ['pdlaed2', 'z'], ['pclattrs', 'normin'], ['pdgesvd', 'a']].map(([n, a]) => updated(n, a)),
+    ['in', 'in', 'in', 'in'],
+    'but not B of p?porfs, Z "destroyed" on exit, nor NORMIN, whose prose says what CNORM holds');
+  eq([SCALAPACK_BUILDER.scopeIntent('(local input)', 'On output, CX is overwritten with C*X + S*Y.'),
+    SCALAPACK_BUILDER.scopeIntent('(global input)', 'The order of A. Unchanged on exit.')],
+  [{ intent: 'b', scope: 'l' }, { intent: 'i', scope: 'g' }],
+  'scopeIntent: the heading, then what the prose says on exit');
+  eq(lookup('scalapack', 'pzrot')?.args.slice(11).map((a) => a[2]), ['double precision', 'complex*16'],
+    'pzrot: C and S are double, whatever its prose (copied from pcrot) says');
+  eq(lookup('scalapack', 'sl_gridreshape')?.result, 'integer', 'sl_gridreshape is an integer function');
+  eq(lookup('scalapack', 'pdlaiectb')?.args[2], ['d', 'in', 'double precision(2*n-1)'], 'pdlaiectb: D from the prose');
+  const summaries = {
+    pb_topget: 'Returns the row, column or all broadcast and combine topologies.',
+    pb_topset: 'Initializes the row-, column- or all- broadcast and combine topologies.',
+    pb_freebuf: 'Disposes the dynamic memory allocated by PB_Cgetbuf.',
+    pdlasnbt: 'Finds the position of the signbit of a double precision floating point number.',
+    pslasnbt: 'Finds the position of the signbit of a single precision floating point number.',
+    pzrot: 'Applies a plane rotation, where the cos (C) is real and the sin (S) is complex, and the vectors CX and CY '
+      + 'are complex…',
+  };
+  for (const [n, s] of Object.entries(summaries)) eq(lookup('scalapack', n)?.summary, s, `${n} summary`);
+  // the C definitions as the builder reads them: typed, not K&R; neither declarations nor indented ones
+  const c = SCALAPACK_BUILDER.cEntryPoints?.([
+    '#ifdef __STDC__',
+    'void PB_topget_( Int * ICTXT, F_CHAR_T OP, F_CHAR_T SCOPE, F_CHAR_T TOP )',
+    '#else',
+    'void PB_topget_( ICTXT, OP, SCOPE, TOP )',
+    '#endif',
+    '{',
+    '   void        blacs_abort_();',
+    '}',
+    'void dlacpy_(const char *UPLO, const F_INTG_FCT *M);',
+    'Int sl_gridreshape_(Int *ctxt, Int *pstart)',
+    '{ }',
+    'Int sl_gridreshape__(Int *ctxt, Int *pstart)',
+    '{ }',
+    'void reshape( Int* context_in )',
+    'void pzaxpy_( n, alpha )',
+    '{ }',
+  ].join('\n'));
+  eq(c && [...c].map(([n, x]) => [n, x.result, x.params?.map((q) => `${q.name}:${q.base}${q.array ? '[]' : ''}`)]), [
+    ['pb_topget', null, ['ictxt:integer', 'op:character', 'scope:character', 'top:character']],
+    ['sl_gridreshape', 'integer', ['ctxt:integer', 'pstart:integer']],
+    ['pzaxpy', null, undefined],
+  ], 'cEntryPoints: name_ and name__ (one routine), typed definitions only, K&R ones without parameters');
+}
+
+// ---------------------------------------------------------------- Netlib: netlib.org, which answers without a redirect
+{
+  // www.netlib.org answers each page with a 301 to the same path on netlib.org
+  for (const id of ['lapack', 'scalapack']) {
+    const base = `https://netlib.org/${id}/explore-html/`;
+    eq(load(id).links.netlib.base, base, `${id}: Netlib's base`);
+    const off = names(id).filter((n) => Object.entries(lookup(id, n).links)
+      .some(([k, u]) => k.startsWith('netlib') && !u.startsWith(base)));
+    eq(off, [], `${id}: every Netlib link is on ${base}`);
+  }
+  const md = readFileSync(path.join(DIR, 'SOURCES.md'), 'utf8');
+  ok(md.includes('**Homepage:** <https://netlib.org/lapack/explore-html/>')
+    && md.includes('**Homepage:** <https://netlib.org/scalapack/explore-html/>'), 'SOURCES.md links Netlib on netlib.org');
+}
+
+// ---------------------------------------------------------------- summaries: the whole first sentence, up to a card's
+// 200 code points; no markup, escape or slip of the sources
+{
+  const all = [];
+  const collect = (id, o) => {
+    if (Array.isArray(o)) o.forEach((x) => collect(id, x));
+    else if (o && typeof o === 'object') {
+      for (const [k, v] of Object.entries(o)) {
+        if ((k === 's' || k === 'sc') && typeof v === 'string') all.push([id, v]);
+        else collect(id, v);
+      }
+    }
+  };
+  for (const id of ['lapack', 'scalapack', 'mpi', 'openmp', 'openacc', 'intrinsics', 'vendors']) {
+    const { legend, links, ...rest } = load(id);
+    collect(id, rest);
+  }
+  eq(LIB.SUMMARY_MAX, 200, 'the builders keep 200 code points, what routineCard shows');
+  eq(all.filter(([, s]) => [...s].length > 200).map(([id, s]) => `${id}: ${s}`), [],
+    'every summary fits a card: at most 200 code points');
+  // what is still cut: a first sentence longer than 200, or one that goes on in a table or formula (at 110 and 120 code
+  // points, 1,191 of LAPACK's 2,265 were cut, 687 of ScaLAPACK's 1,010 and 9 of MPI's 463)
+  const cut = (id) => names(id).filter((n) => lookup(id, n).summary?.endsWith('…')).length;
+  eq([cut('lapack'), cut('scalapack'), cut('mpi')], [344, 314, 0], 'summaries cut with an ellipsis: LAPACK, ScaLAPACK, MPI');
+  // the first sentence whole where it fits (these were cut at 110), through the prose after a formula (dgemv), with
+  // LAPACK's UTF-8 (≤, λ) and the words broken at the end of a line joined (infog2l)
+  const whole = [
+    ['lapack', 'dlarfx', 'Applies an elementary reflector to a general rectangular matrix, with loop unrolling when the '
+      + 'reflector has order ≤ 10.'],
+    ['lapack', 'cgemv', 'Performs one of the matrix-vector operations y := alpha*A*x + beta*y, or y := alpha*A**T*x + '
+      + 'beta*y, or y := alpha*A**H*x + beta*y, where alpha and beta are scalars, x and y are vectors and A is an m…'],
+    ['lapack', 'dgemv', 'Performs one of the matrix-vector operations y := alpha*A*x + beta*y, or y := alpha*A**T*x + '
+      + 'beta*y, where alpha and beta are scalars, x and y are vectors and A is an m by n matrix.'],
+    ['lapack', 'dlagtf', 'Computes an LU factorization of a matrix T-λI, where T is a general tridiagonal matrix, and λ a '
+      + 'scalar, using partial pivoting with row interchanges.'],
+    ['scalapack', 'infog2l', 'Computes the starting local indexes LRINDX, LCINDX corresponding to the distributed '
+      + 'submatrix starting globally at the entry pointed by GRINDX, GCINDX.'],
+  ];
+  for (const [id, n, s] of whole) eq(lookup(id, n)?.summary, s, `${n}: its whole first sentence, or 200 code points`);
+  const maths = `${'𝑥'.repeat(150)} ${'a'.repeat(49)}`;
+  eq([LIB.clip?.(maths, 200), LIB.clip?.(`${maths}b c`, 200)], [maths, `${'𝑥'.repeat(150)}…`],
+    'clip counts code points (200 of them fit, though they are 350 UTF-16 units), the ellipsis within the limit');
+  eq([...(LIB.clip?.('x'.repeat(300), 200) ?? '')].length, 200, 'a text without a blank is cut at the limit');
+  // an ellipsis inside a sentence ends none: "W( CLSTRT ), W( CLSTRT+1 ), ... W( CLEND ), DLARRF2 finds …" (?larrf2,
+  // whose summary stopped there once 110 code points no longer cut it before), "i = KF, ... , KL-1, have …" (p?laecv)
+  eq(firstSentence('Given W( 1 ), W( 2 ), ...\nW( N ), it finds X. Then Y.'),
+    'Given W( 1 ), W( 2 ), ... W( N ), it finds X.', 'an ellipsis inside a sentence goes on');
+  eq(firstSentence('It stops here...'), 'It stops here...', 'an ellipsis at the end of the text ends it');
+  eq(all.filter(([, s]) => /\.\.\.$/.test(s)).map(([id, s]) => `${id}: ${s}`), [],
+    'no summary stops at an ellipsis inside its sentence');
+  eq(lookup('scalapack', 'pdlaecv')?.summary,
+    'Checks if the input intervals [ INTVL(2*i-1), INTVL(2*i) ], i = KF, ... , KL-1, have "converged".',
+    'p?laecv summary');
+
+  // Open MPI's RST: substitutions expanded (|mdash|, |deprecated_favor|), escapes undone (*n*\ th is nth)
+  eq(lookup('mpi', 'MPI_Info_get_nthkey').summary, 'Returns the nth defined key in info.', 'MPI_Info_get_nthkey summary');
+  eq(lookup('mpi', 'MPI_Attr_delete').summary,
+    'Deletes attribute value associated with a key — this routine is deprecated in favor of MPI_Comm_delete_attr.',
+    'MPI_Attr_delete summary');
+  eq(names('mpi').filter((n) => /\\|\|\w+\||\*|``|:ref:/.test(lookup('mpi', n).summary)), [],
+    'no MPI summary keeps RST markup');
+  const subs = MPI_BUILDER.rstSubstitutions?.([
+    '.. |mdash|  unicode:: U+02014 .. Em dash',
+    '.. |year| replace:: {year}',
+    '.. |deprecated_favor| replace:: this routine is deprecated in favor of',
+  ].join('\n'));
+  eq(subs && [...subs], [['mdash', '—'], ['deprecated_favor', 'this routine is deprecated in favor of']],
+    'rstSubstitutions: unicode and replace, without the configuration\'s variables');
+  eq(MPI_BUILDER.rstSummary('.. include_body\n\n:ref:`MPI_X` |mdash| Gets the *n*\\ th **key** \\*not\\* '
+    + '|deprecated_favor| :ref:`MPI_Y`.', subs ?? new Map()),
+  'Gets the nth key *not* this routine is deprecated in favor of MPI_Y.', 'rstSummary: markup off, escapes undone');
+
+  // slips of the sources, corrected in the builders' CORRECTIONS (registry/SOURCES.md lists them)
+  eq(lookup('mpi', 'MPI_Buffer_detach').summary, 'Removes an existing buffer (for use in MPI_Bsend, etc.)',
+    'MPI_Buffer_detach: "for use in in" corrected');
+  eq(lookup('mpi', 'MPI_Comm_detach_buffer').summary,
+    'Removes an existing buffer previously attached to the communicator (for use in MPI_Bsend, etc.)',
+    'MPI_Comm_detach_buffer: "communicator(for use in in" corrected');
+  eq(lookup('mpi', 'MPI_Session_detach_buffer').summary,
+    'Removes an existing buffer previously attached to the session (for use in MPI_Bsend, etc.)',
+    'MPI_Session_detach_buffer: "session(for use in in" corrected');
+  eq(all.filter(([, s]) => /\b([a-z]{2,}) \1\b/i.test(s)).map(([id, s]) => `${id}: ${s}`), [],
+    'no summary repeats a word');
+  const md = readFileSync(path.join(DIR, 'SOURCES.md'), 'utf8');
+  const tables = [
+    ['lapack', LAPACK_BUILDER.CORRECTIONS],
+    ['mpi', MPI_BUILDER.CORRECTIONS],
+    ['scalapack', SCALAPACK_BUILDER.CORRECTIONS],
+  ];
+  ok(tables.every(([, t]) => t && Object.keys(t).length), 'the LAPACK, MPI and ScaLAPACK builders have corrections');
+  for (const [id, table] of tables) {
+    for (const [n, fixes] of Object.entries(table ?? {})) {
+      const s = lookup(id, n)?.summary ?? '';
+      ok(fixes.every(([from, to]) => !s.includes(from) && md.includes(`\`${from}\` → \`${to}\``)) && md.includes(`\`${n}\``),
+        `${n}: corrected, and listed in SOURCES.md`);
+    }
+  }
+  // words LAPACK's and ScaLAPACK's prose breaks at the end of a line, joined; compounds keep their hyphen (row- or
+  // column-major, upper- or lower-triangular are no broken words)
+  const words = new Set(['topologies', 'problem', 'dependent', 'guard']);
+  eq(LIB.dehyphenate?.('combine topo-\n  logies, problem-\n  dependent, row- or column-major', words),
+    'combine topologies, problem-dependent, row- or column-major', 'dehyphenate');
+  eq(all.filter(([id, s]) => /^(?:sca)?lapack$/.test(id) && /[a-z]- [a-z]/.test(s.replace(/\b(?:row|column|all|upper)- /g, '')))
+    .map(([, s]) => s), [], 'no LAPACK or ScaLAPACK summary keeps a word broken at the end of a line');
 }
 
 // ---------------------------------------------------------------- our own text only (no specification prose)
@@ -528,6 +764,12 @@ for (const id of ['lapack', 'scalapack']) {
   ok(omp.every((s) => ours.has(s)), 'every OpenMP summary is one of ours');
   const kindsOurs = new Set(Object.values(OPENMP.KINDS ?? {}));
   ok(Object.values(openmp.types).every((e) => kindsOurs.has(e.s)), 'every OpenMP kind summary is one of ours');
+  // ScaLAPACK's C routines without prose: ?lamov, reshape and sl_gridreshape
+  const cOurs = Object.entries(SCALAPACK_DATA.C_ROUTINES ?? {}).flatMap(([key, [s]]) =>
+    (key.includes('?') ? [...'sdcz'].map((p) => key.replace('?', p)) : [key]).map((n) => [n, s]));
+  eq(cOurs.filter(([n, s]) => lookup('scalapack', n)?.summary !== s).map(([n]) => n), [],
+    'the summaries of ScaLAPACK\'s C routines without prose are our one-liners');
+  ok(cOurs.length === 6, `six such routines: ${cOurs.map(([n]) => n)}`);
   const typesOurs = new Set(Object.values(MPI.TYPES ?? {}));
   ok(Object.values(mpi.types ?? {}).every((e) => typesOurs.has(e.s)), 'every MPI type summary is one of ours');
   const accOurs = new Set([...Object.values(OPENACC.DIRECTIVES).map((d) => d[2]), ...Object.values(OPENACC.CLAUSE_SUMMARIES), ...Object.values(OPENACC.ROUTINE_SUMMARIES), ...Object.values(OPENACC.ENV)]);

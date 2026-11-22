@@ -58,20 +58,23 @@ A site without them can show the maths as code instead: `generate --math code`.
 
 Arguments, results and components are tables whose rows open to their documentation and declaration. Kind names and
 derived types in them link to their definitions, with a card on hover or keyboard focus, and every badge, intent,
-attribute and shape says what it means in a card on hover; an opened row lists the meanings of its intent,
-attributes, shape and length, for the keyboard and screen readers, while a badge's meaning is for the pointer alone.
-The registry of HPC library names that the package ships (`registry/`) gives cards to the libraries' names: in a
-procedure's "Calls:" line, a BLAS, LAPACK, ScaLAPACK, MPI, OpenMP or OpenACC routine has a card with its library
-and, where the registry has them, its kind, a summary and a link to its documentation, and in the tables mpi_f08's
-types (`type(MPI_Comm)`) and omp_lib's kinds have theirs; a project's own names always win. Each entry's source code
-is in a block that opens, with line numbers, read from the files parsed wherever they lie (`--source link` only
-links to the lines). Modules, types and procedures have dependency, inheritance and call graphs, written as
-` ```mermaid ` blocks: add fumadocs' `remarkMdxMermaid` and a `Mermaid` component to the site, or leave them out with
-`--graphs none`. Calls into BLAS, LAPACK, ScaLAPACK, MPI, OpenMP, OpenACC, CUDA and the coarray collectives are drawn
-in their library's colour (the JavaScript option `graphs.classify` takes the registry's place). Graphs drawn by
-[Pele](https://github.com/obsidianmd/pele) take the theme's colours from `fumadocs-fortran/style.css`. A page's front
-matter says what each heading is, for the letters (`t` type, `s` subroutine, `f` function, …) that `fortranToc()`
-puts in the table of contents.
+attribute, shape and type parameter's `kind` or `len` says what it means in a card on hover; an opened row lists the
+meanings of its intent, type parameter, attributes, shape and length, for the keyboard and screen readers, while a
+badge's meaning is for the pointer alone. The registry of HPC library names that the package ships (`registry/`)
+gives cards to the libraries' names: in a procedure's "Calls:" line, a BLAS, LAPACK, ScaLAPACK (the routines it
+writes in C for Fortran, such as `pcrot` and `reshape`, included), MPI, OpenMP or OpenACC routine has a card with its
+library and, where the registry has them, its kind, a summary and a link to its documentation, and in the tables
+mpi_f08's types (`type(MPI_Comm)`) and omp_lib's kinds have theirs; a project's own names always win.
+`--links mpi=mpich,openmp=6.0` (`hpc.links` in JavaScript) chooses the pages the cards link to, by library, and
+`--library-cards none` (`hpc.cards: false`) leaves the names as code; `generate --help` lists the providers. Each
+entry's source code is in a block that opens, with line numbers, read from the files parsed wherever they lie
+(`--source link` only links to the lines). Modules, types and procedures have dependency, inheritance and call
+graphs, written as ` ```mermaid ` blocks: add fumadocs' `remarkMdxMermaid` and a `Mermaid` component to the site, or
+leave them out with `--graphs none`. Calls into BLAS, LAPACK, ScaLAPACK, MPI, OpenMP, OpenACC, CUDA and the coarray
+collectives are drawn in their library's colour (the JavaScript option `graphs.classify` takes the registry's
+place). Graphs drawn by [Pele](https://github.com/obsidianmd/pele) take the theme's colours from
+`fumadocs-fortran/style.css`. A page's front matter says what each heading is, for the letters (`t` type,
+`s` subroutine, `f` function, …) that `fortranToc()` puts in the table of contents.
 [Components](https://nevensky.github.io/fumadocs-fortran/docs/reference/components) shows how to set these up.
 
 From JavaScript:
@@ -105,6 +108,45 @@ Every Fortran fence then uses them (`fortran`, `f90`, `f77` and Shiki's other Fo
 by `fumadocs-fortran/style.css`, and fumadocs' `[!code highlight]` notations work in `!` comments. With Shiki alone,
 load `fortranLanguages` and add the transformers `transformerFortranDirectives()` and `transformerFortranNotation()`.
 
+## Search and prefetch on large references
+
+fumadocs indexes a page's headings and paragraphs for search. For the pages of a fumadocs-mdx collection, it keeps the
+element of each component in the records as an HTML tag with its text attributes, so a statically exported site
+ships every badge, source header and argument row without docs to each reader, and the search dialog shows them as
+chips. Give the Fortran components their text instead:
+
+```ts
+// in defineDocs: docs.mdxOptions (in source.config.ts, defineConfig's mdxOptions take the same option)
+applyMdxPreset({
+  remarkStructureOptions: {
+    // the elements of other components stay tags, as by default; HTML elements give their text
+    filterElement: (node) => /^(?!Fortran[A-Z])[A-Z][\w$]*$/.test(node.name ?? ''),
+  },
+});
+```
+
+Headings, argument docs and the names on "Calls:" lines stay searchable, while badges, source headers, the rows of
+undocumented arguments and the words only their attributes hold, such as an argument's type, leave the index. The
+option replaces fumadocs' own choice for every element, which is why it keeps the other components, the capitalised
+names, itself. With it, the documentation site's index is 24% smaller (18% gzipped), and that of stdlib's pages 73%
+(64% gzipped).
+
+Next.js prefetches the page behind each link in view, and fumadocs' sidebar keeps Next's default. On a site with large
+reference pages (a first visit to stdlib's `stdlib_ansi` page prefetched 10.3 MB gzipped with the pages' source
+blocks and graphs, and 1.4 MB without either), turn the sidebar's prefetch off:
+
+```tsx
+// app/docs/layout.tsx
+<DocsLayout tree={source.getPageTree()} sidebar={{ prefetch: false }} {...baseOptions()}>
+  {children}
+</DocsLayout>
+```
+
+Its links then load a page when they are clicked, not when they come into view or are hovered. The previous and next
+links under a page, its breadcrumbs, the links in its text, the navigation title and the sidebar's tab switcher (root
+folders) still prefetch. Next prefetches the links in view and under the pointer only in production builds, so
+measure one. The documentation site keeps the default, as its pages are small.
+
 ## Development
 
 The scripts run in Docker, so the machine needs no Node: `scripts/dev.sh` runs a command in a `node:24-bookworm`
@@ -134,7 +176,16 @@ Two further checks run on demand:
 - `scripts/oracle/ford.sh` runs FORD 7.0.13 in Docker, and `scripts/oracle/compare-ford.mjs` compares every dummy
   argument with FORD's, field by field. The FORD script is GPL-3.0-or-later, like FORD, and is not part of the
   package.
-- `scripts/search/measure.mjs` measures the static search index for all of LAPACK with fumadocs' own index builder.
+- `scripts/search/measure.mjs` measures the static search index of a generated reference, Reference-LAPACK's library
+  by default, with fumadocs' own index builder: under fumadocs' defaults and under the docs site's MDX options.
+  `--sample N` measures N pages of a large corpus. It needs the docs site's `node_modules`, which `scripts/docs.sh`
+  keeps in a Docker volume:
+
+  ```bash
+  docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD":/work \
+    -v fdf-docs-node-modules:/work/docs/node_modules -w /work node:24-bookworm \
+    node scripts/search/measure.mjs .corpus/stdlib src -I include --sample 10
+  ```
 
 ## Licence
 

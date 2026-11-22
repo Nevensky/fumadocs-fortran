@@ -96,6 +96,8 @@ const unid = (html) => html.replace(/ (id|aria-describedby)="[^"]*"/g, ' $1="ID"
 // [aria-describedby of each name, id of the card inside it]
 const described = (html) => [...html.matchAll(/<(?:a|button) class="fdf-ref-name"[^>]*? aria-describedby="([^"]*)"><span class="fdf-ref-text">(?:(?!<\/?span)[\s\S])*<\/span><span class="fdf-ref-card not-prose" role="tooltip" aria-hidden="true" id="([^"]*)">/g)]
   .map((m) => [m[1], m[2]]);
+// How many tab stops the markup has: links, buttons, summaries, form fields and anything with a tabindex
+const stops = (html) => (html.match(/<(?:a|button|summary|input|select|textarea)\b|tabindex=/g) ?? []).length;
 const rowOf = (html) => inner(html, '<summary class="fdf-arg-row not-prose">') ?? inner(html, '<div class="fdf-arg-row not-prose">');
 const cellOf = (html, col) => inner(rowOf(html) ?? '', `<span class="fdf-col-${col}"`);
 // The panel's fields: [label, value, narrow only, the value's attributes]
@@ -146,8 +148,9 @@ export default async function ({ ok, eq }) {
   // has some and is in no @layer: a :where() rule of the site's only ties with them, and a layered one loses.
   ok(!/:where\(\[data-term/.test(dts) && /`\[data-term='hdf5'\] \{ --fdf-mean: "HDF5: …"; \}`/.test(dts) && /outside any @layer/.test(dts),
     "types/react.d.ts shows a site's meaning as a [data-term] rule outside any @layer, which wins whichever stylesheet comes first");
-  // the meanings are written once, in style.css: an opened row's Length line takes the meaning of its * or : from there
-  eq([...src.matchAll(/(['"`])((?:(?!\1)[^\n\\])*(?:actual argument|allocated or assigned|preprocessor condition)(?:(?!\1)[^\n\\])*)\1/g)].map((m) => m[2]), [],
+  // the meanings are written once, in style.css: an opened row's Length line takes the meaning of its * or : from there,
+  // and its Type parameter line that of a type parameter's kind or len
+  eq([...src.matchAll(/(['"`])((?:(?!\1)[^\n\\])*(?:actual argument|allocated or assigned|preprocessor condition|kind type parameter|length type parameter)(?:(?!\1)[^\n\\])*)\1/g)].map((m) => m[2]), [],
     'react/index.js holds no meaning in its strings');
 
   // ---------------------------------------------------------------- style.css: nothing outside the components
@@ -320,7 +323,7 @@ export default async function ({ ok, eq }) {
   eq([decl('.fdf-ref-card', 'position')[0], decl('.fdf-ref-card', 'top')[0], decl('.fdf-ref-card', 'inset-inline-start')[0]], ['absolute', 'calc(100% + 0.25rem)', '0'],
     'without anchor positioning the card is placed as before');
   const upward = ['fdf-args', 'fdf-arg', 'fdf-arg-row', 'fdf-col-type', 'fdf-arg-type', 'fdf-arg-panel', 'fdf-arg-fields', 'fdf-arg-field', 'fdf-arg-alt', 'fdf-ref', 'fdf-ref-name',
-    'fdf-col-shape', 'fdf-col-intent', 'fdf-col-attrs', 'fdf-badges', 'fdf-badge', 'fdf-intent', 'fdf-flag', 'fdf-cond', 'fdf-len'];
+    'fdf-col-shape', 'fdf-col-intent', 'fdf-col-attrs', 'fdf-badges', 'fdf-badge', 'fdf-intent', 'fdf-flag', 'fdf-cond', 'fdf-len', 'fdf-type-param'];
   eq(rules.flatMap(([sels, decls]) => sels.filter((s) => upward.some((c) => new RegExp(`\\.${c}(?![\\w-])[^ >+~]*$`).test(s)))
     .flatMap((s) => decls.filter((d) => /^(?:overflow(?:-x|-y)?|contain|content-visibility)\s*:/.test(d) && !/:\s*visible$/.test(d)).map((d) => `${s} { ${d} }`))), [],
   'nothing on the way up from a hover card or the card of a pill clips it');
@@ -369,6 +372,10 @@ export default async function ({ ok, eq }) {
   ok(/element order/.test(mean('impure')) && /scalars/.test(mean('elemental')) && /pure/i.test(mean('elemental')), 'elemental: written for scalars, pure unless impure, which goes in element order');
   ok(/cannot override/.test(mean('non_overridable')) && /strides/.test(mean('contiguous')) && /pending/.test(mean('asynchronous')) && /C/.test(mean('bindc')),
     'non_overridable, contiguous, asynchronous and bind(C)');
+  // kind and len are the terms of the word in a type parameter's type (integer, kind) and of a hand-written pill alike:
+  // each says what that kind of type parameter is, a kind one fixed when compiling, a length one free to vary at run time
+  ok(/^A kind type parameter: /.test(mean('kind')) && /compil/.test(mean('kind')) && /^A length type parameter: /.test(mean('len')) && /run time/.test(mean('len')),
+    'kind and len say what a kind and a length type parameter are');
   eq(['in', 'out', 'inout'].map((i) => mean(`intent-${i}`).split(':')[0]), ['intent(in)', 'intent(out)', 'intent(inout)'], 'an intent\'s meaning names it, so that an opened row can say it alone');
   // the pill is on arguments and components: an allocatable argument is not freed when the procedure returns, only an
   // unsaved local variable is, and deallocate frees any of them
@@ -380,7 +387,7 @@ export default async function ({ ok, eq }) {
 
   // the cards: the ::after of what they explain, drawn while it is hovered, in the look of a hover card
   const CARD_ON = ['.fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after', '.fdf-intent[data-term]:hover::after', '.fdf-flag[data-term]:hover::after',
-    '.fdf-cond[data-term]:hover::after', '.fdf-col-shape[data-term]:hover::after', '.fdf-len[data-term]:hover::after'];
+    '.fdf-cond[data-term]:hover::after', '.fdf-col-shape[data-term]:hover::after', '.fdf-len[data-term]:hover::after', '.fdf-type-param[data-term]:hover::after'];
   const NOTE = '.fdf-badge:hover > .fdf-badge-note';
   const CARDS = [...CARD_ON, NOTE];
   const LOOK = ['position', 'top', 'inset-inline-start', 'z-index', 'box-sizing', 'max-width', 'padding', 'border', 'border-radius', 'background-color', 'color', 'box-shadow',
@@ -407,6 +414,8 @@ export default async function ({ ok, eq }) {
     "a badge's note is hidden from the eye, not from screen readers, until its card shows");
   eq([anchored('.fdf-flag[data-term]:hover', 'anchor-name'), anchored('.fdf-flag[data-term]', 'anchor-name')], [['--fdf-tip'], []],
     'with anchor positioning only what is hovered is an anchor, one name for every card on the page');
+  eq(['.fdf-len[data-term]:hover', '.fdf-type-param[data-term]:hover'].map((s) => anchored(s, 'anchor-name')), [['--fdf-tip'], ['--fdf-tip']],
+    "and so is a length's * or a type parameter's kind while it is hovered");
   eq(['position', 'position-anchor', 'position-area'].map((p) => CARDS.map((s) => anchored(s, p)[0])),
     [CARDS.map(() => 'fixed'), CARDS.map(() => '--fdf-tip'), CARDS.map(() => 'block-end span-inline-end')], 'and a card is placed as a hover card is');
   ok(CARDS.every((s) => anchored(s, 'position-try-fallbacks')[0] === anchored(CARD_SEL, 'position-try-fallbacks')[0]), 'and flips as a hover card does');
@@ -422,6 +431,9 @@ export default async function ({ ok, eq }) {
   // a card in a panel's field starts at the field's edge, as a hover card there does
   eq([fallback('.fdf-arg-field .fdf-len', 'position'), fallback('.fdf-arg-field .fdf-len[data-term]:hover::after', 'max-width')], [['static'], ['min(18rem, 100%)']],
     "and a length's card in a panel's field starts at the field's edge and keeps to its width");
+  // as does that of a type parameter's kind or len in a narrow table's copy of the type
+  eq([fallback('.fdf-arg-field .fdf-type-param', 'position'), fallback('.fdf-arg-field .fdf-type-param[data-term]:hover::after', 'max-width')], [['static'], ['min(18rem, 100%)']],
+    "and so does the card of a type parameter's kind or len in a panel's field");
   // A badge's card ran past a phone's edge from a badge late in its row (by 128px at 375px), and fumadocs' layout clips
   // what runs past it (overflow-x: clip): it starts at the row's edge, and keeps to the row's width.
   eq([fallback('.fdf-badges', 'position'), fallback('.fdf-badges > .fdf-badge', 'position'), fallback(`.fdf-badges > ${CARD_ON[0]}`, 'max-width'),
@@ -441,8 +453,8 @@ export default async function ({ ok, eq }) {
     "a badge's note shows as its card while the badge is hovered: unclipped, as tall as its text");
   eq(CARDS.map((s) => rules.filter(([sels, , at]) => at !== '@starting-style' && sels.includes(s)).flatMap(([, decls]) => decls).filter((d) => /^(?:visibility|opacity)\s*:/.test(d))),
     CARDS.map(() => []), 'nothing makes a shown card invisible but its fade');
-  eq(['.fdf-badge', '.fdf-intent', '.fdf-flag', '.fdf-cond', '.fdf-col-shape', '.fdf-len'].map((s) => screen(s, 'position')), Array(6).fill('relative'),
-    "each pill, shape and length is its card's containing block");
+  eq(['.fdf-badge', '.fdf-intent', '.fdf-flag', '.fdf-cond', '.fdf-col-shape', '.fdf-len', '.fdf-type-param'].map((s) => screen(s, 'position')), Array(7).fill('relative'),
+    "each pill, shape, length and type parameter's word is its card's containing block");
   eq(screen('.fdf-arg-terms', 'display'), 'grid', 'an opened row lists its attributes beside their meanings');
   eq(rules.filter(([sels, decls, at]) => at !== '@media print' && sels.some((s) => /\.fdf-arg-terms(?: > d[td](?:::after)?)?$|\.fdf-arg-field > dd\[data-term\]::after$/.test(s))
     && decls.some((d) => /^(?:display:\s*none|visibility:\s*hidden|opacity:\s*0|content-visibility:\s*hidden)\b/.test(d))).map(([sels]) => sels.join(', ')), [],
@@ -457,6 +469,11 @@ export default async function ({ ok, eq }) {
     'and a card does not fade in for those who ask for less motion');
   eq([decl('.fdf-arg-row > .fdf-col-shape', 'justify-self'), decl('.fdf-len > code', 'font-family')], [['start'], ['var(--fdf-mono)']],
     "the shape's cell is as wide as the shape, and the * of character(*) is code, apart from its card");
+  // the kind of integer, kind: code too, apart from its card, and marked as the * is, by a dotted line and the help cursor
+  const MARK = ['text-decoration', 'text-decoration-color', 'text-underline-offset', 'cursor'];
+  eq([decl('.fdf-type-param > code', 'font-family'), MARK.map((p) => screen('.fdf-type-param', p))], [['var(--fdf-mono)'], MARK.map((p) => screen('.fdf-len', p))],
+    "a type parameter's kind or len is code, apart from its card, and has the * of character(*)'s dotted line and cursor");
+  ok(MARK.every((p) => screen('.fdf-len', p)) && screen('.fdf-len', 'text-decoration').includes('dotted'), 'which are a dotted underline and the help cursor');
 
   // ---------------------------------------------------------------- rendering
   let React, server;
@@ -722,6 +739,51 @@ export default async function ({ ok, eq }) {
     eq([arg({ name: 'c', type: 'character(*)' }), arg({ name: 'c', type: 'character(:)' }), arg({ name: 'c', type: 'character(10)' })].map((out) => out.includes('fdf-arg-plain')),
       [false, false, true], 'an assumed or a deferred length opens a row, to say it in words; a length as written does not');
 
+    // ---- a type parameter's kind or len. The generator writes `integer, kind :: k = dp` as the type "integer, kind" and
+    // one pill, "default dp": the word kind or len has a card that says what such a parameter is, as the * of
+    // character(*) has, and an opened row says it in words, as its Length line says a * or a :. Before, nothing in the
+    // row explained the word: only a hand-written attrs="kind" pill had the meaning.
+    const KIND = arg({ name: 'k', type: 'integer, kind', attrs: 'default dp', decl: 'integer, kind :: k = dp' }, h('p', null, 'The kind of the entries.'));
+    eq(cellOf(KIND, 'type'), '<span class="fdf-arg-type"><code>integer, </code><span class="fdf-type-param" data-term="kind"><code>kind</code></span></span>',
+      "the kind of a type parameter's type is a span that names its term, the code cut around it, as the * of character(*) is");
+    eq(fieldsOf(KIND).map(([label, , narrow, props]) => [label, narrow, props]),
+      [['Type', true, ''], ['Declaration', false, ''], ['Type parameter', false, 'data-term="kind"'], ['Attributes', false, '']],
+      "an opened row says what the kind means on a line of its own, which style.css writes in by the term, before the default's meaning");
+    eq(fieldsOf(KIND).find(([label]) => label === 'Type')?.[1], cellOf(KIND, 'type'), "the type's copy for a narrow table has the card too");
+    eq(textOf(wide(KIND)), 'k integer, kind — default dp The kind of the entries. Declaration integer, kind :: k = dp Type parameter Attributes default dp',
+      'the row reads its name, type and default, then its panel, the Type parameter line before the attributes');
+    eq([stops(KIND), / title=/.test(KIND)], [1, false], "the word is no tab stop and has no native tooltip: a row is one stop, its summary");
+    // the declaration's form: an integer type, then kind or len, in any case and spacing, a kind selector before it
+    const param = (type, refs) => termsOf(cellOf(arg({ name: 'k', type, refs, decl: 'd' }), 'type')).filter(([el]) => el === 'span.fdf-type-param').map(([, term]) => term);
+    eq(['integer, kind', 'integer, len', 'INTEGER, LEN', 'Integer(int8), Kind', 'integer(kind=int8), len', 'integer,kind', 'integer , len', 'integer*8, kind'].map((t) => param(t)),
+      [['kind'], ['len'], ['len'], ['kind'], ['len'], ['kind'], ['len'], ['kind']], 'integer, kind and integer, len, whatever the case, the blanks or the kind of the integer');
+    // a kind selector's kind=, a binding's generic => kind, len and character(len=*) are not a type parameter's word
+    eq(['integer', 'integer(kind=4)', 'real(kind=dp)', 'type(matrix(kind=dp, len=3))', 'generic => kind, len', 'integer, parameter', 'real, kind', 'kind', 'character(len=*)']
+      .map((t) => param(t)), Array(9).fill([]), 'no other type has the word');
+    // nor does a longer word, kind or len with more to it, a second attribute after it, or a name that only starts as
+    // integer does: the word is the whole of the one item after an integer type
+    eq(['integer, kindx', 'integer, kind=4', 'integer, len(3)', 'integer, kind, public', 'integer2, len'].map((t) => param(t)), Array(5).fill([]),
+      'only kind or len alone after an integer type is the word');
+    eq(textOf(cellOf(arg({ name: 'k', type: 'INTEGER , LEN', decl: 'd' }), 'type')), 'INTEGER , LEN', 'and the type reads as written');
+    // a kind name in the type still links: the code is cut around both, in order
+    const I8 = { href: '/docs/api/kinds#i8', title: 'integer, parameter :: i8 = int64' };
+    eq(unid(cellOf(arg({ name: 'k', type: 'integer(i8), kind', refs: { i8: I8 }, decl: 'd' }), 'type')).replace(/<span class="fdf-ref">[\s\S]*?<\/a><\/span>/, 'REF'),
+      '<span class="fdf-arg-type"><code>integer(</code>REF<code>), </code><span class="fdf-type-param" data-term="kind"><code>kind</code></span></span>',
+      "a name that links and the type parameter's word, each cut out of the code");
+    // a name in refs spelt as the word does not take it: the word is the type parameter's, drawn once
+    const named = cellOf(arg({ name: 'k', type: 'integer(kind), kind', refs: { kind: I8 }, decl: 'd' }), 'type');
+    eq([textOf(wide(`<p>${named}</p>`)), (named.match(/class="fdf-ref"/g) ?? []).length, param('integer(kind), kind', { kind: I8 })], ['integer(kind), kind', 1, ['kind']],
+      "a name spelt kind links where it is a name, and the type parameter's word stays the word");
+    // a type parameter's type alone opens the row, to say what the word means for the keyboard and screen readers
+    const lone = arg({ name: 'n', type: 'integer, len' });
+    eq([lone.startsWith('<details class="fdf-arg">'), fieldsOf(lone).map(([label, , narrow, props]) => [label, narrow, props]), stops(lone), / title=/.test(lone)],
+      [true, [['Type', true, ''], ['Type parameter', false, 'data-term="len"']], 1, false], 'a type parameter with nothing else to say opens a row, to say what len means');
+    // a page written by hand, as the generator wrote it before, keeps its pill, its card and its line in the list
+    const old = arg({ name: 'k', type: 'integer', attrs: 'kind, default dp', decl: 'integer, kind :: k = dp' });
+    eq([termsOf(cellOf(old, 'attrs')), listOf(old), fieldsOf(old).map(([label]) => label)],
+      [[['span.fdf-flag', 'kind', undefined], ['span.fdf-flag', 'default', 'dp']], [['kind', 'kind', undefined], ['default dp', 'default', 'dp']], ['Type', 'Declaration', 'Attributes']],
+      'a hand-written attrs="kind" is a pill with the same term, beside its meaning in the opened row, and no Type parameter line');
+
     // ---- an intent and attributes open a row: its panel says what they mean for the keyboard and screen readers, who
     // get no hover card (the docs' own <FortranArg name="info" type="integer" intent="out" /> said it to no one)
     const info2 = arg({ name: 'info', type: 'integer', intent: 'out', optional: true });
@@ -907,7 +969,8 @@ export default async function ({ ok, eq }) {
           name: 's', type: 'character(len=*)', intent: 'in', decl: 'd',
           attrs: 'allocatable, pointer, target, contiguous, value, save, volatile, asynchronous, protected, external, intrinsic, bind(c), nopass, pass, pass(self), non_overridable, kind, len, default dp, = 0, => null(), device, managed, pinned, rank(2)',
         }),
-        h(FortranArg, { name: 't', type: 'character(:)', attrs: 'deferred, private, public, parameter' })),
+        h(FortranArg, { name: 't', type: 'character(:)', attrs: 'deferred, private, public, parameter' }),
+        h(FortranArg, { name: 'k', type: 'integer, kind', attrs: 'default dp' }), h(FortranArg, { name: 'n', type: 'integer, len' })),
       h(FortranRef, { title: 't' }, 'n'),
       h(FortranSource, { file: 'a.f90', line: 1, href: 'https://example.org' }), h(FortranSource, { file: 'a.f90', line: 1, href: 'https://example.org' }, 'code'),
       h(FortranGraph, { title: 'g' }, 'd'), h(FortranGraph, { title: 'g', collapsed: true }, 'd'),
@@ -933,11 +996,11 @@ export default async function ({ ok, eq }) {
       'no meaning is written into the markup: a page of thousands of pills holds each once, in style.css');
     eq([...gallery.matchAll(/<\w+ class="([^"]*)"[^>]*? title="/g)].map((m) => m[1]), ['fdf-source-link'],
       "no pill or badge has a native tooltip on top of its card: the one title left is a source link's");
-    // no new tab stops: a row is one, its summary; pills, shapes, lengths and badges are none
-    const stops = (html) => (html.match(/<(?:a|button|summary|input|select|textarea)\b|tabindex=/g) ?? []).length;
+    // no new tab stops: a row is one, its summary; pills, shapes, lengths, type parameters' words and badges are none
     eq([stops(arg({ name: 's', type: 'character(len=*)', dims: ':', intent: 'in', attrs: 'allocatable, pass(self)', cond: 'X', decl: 'd' }, 'doc')),
-      stops(render(h(FortranBadges, null, h(FortranBadge, { kind: 'mpi', conditional: 'X', title: 'MPI_Bcast' }), h(FortranBadge, { kind: 'pure' }))))], [1, 0],
-    'no pill, shape, length or badge is a tab stop');
+      stops(render(h(FortranBadges, null, h(FortranBadge, { kind: 'mpi', conditional: 'X', title: 'MPI_Bcast' }), h(FortranBadge, { kind: 'pure' })))),
+      stops(arg({ name: 'k', type: 'integer, kind', attrs: 'default dp', decl: 'd' }, 'doc'))], [1, 0, 1],
+    "no pill, shape, length, type parameter's word or badge is a tab stop");
   } finally {
     console.error = error;
   }

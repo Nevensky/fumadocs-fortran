@@ -322,6 +322,8 @@ function sentenceEnd(s) {
     if (ABBREVIATION.test(head)) continue;
     // "LSAME returns .TRUE. if CA is …" goes on
     if (OPERATOR.test(head) || (LOGICAL.test(head) && /^\s+[^\sA-Z]/.test(s.slice(m.index + 1)))) continue;
+    // so does a list with an ellipsis in it: "W( CLSTRT ), W( CLSTRT+1 ), ... W( CLEND ), DLARRF2 finds …"
+    if (head.endsWith('...') && /^\s+\S/.test(s.slice(m.index + 1))) continue;
     return head;
   }
   return null;
@@ -329,27 +331,70 @@ function sentenceEnd(s) {
 
 /**
  * The first sentence of a text. It may run on through paragraphs of one line (BLAS sets its formulas apart:
- * "performs one of the matrix-matrix operations / C := alpha*op( A )*op( B ) + beta*C, / where …"), but stops before
- * a paragraph of several lines, such as a table, with an ellipsis when the sentence is unfinished.
+ * "performs one of the matrix-matrix operations / C := alpha*op( A )*op( B ) + beta*C, / where …") and through prose
+ * that goes on with it, in lower case and indented as the text starts ("alpha and beta are scalars, …"), but stops
+ * before any other paragraph of several lines, such as a table or an indented formula, with an ellipsis when the
+ * sentence is unfinished (and without the "i.e.," that led to the table).
  */
 export function firstSentence(text) {
   const paras = text.split(/\n\s*\n/).map((p) => p.split('\n').filter((l) => l.trim())).filter((p) => p.length);
+  const indent = (line) => /^\s*/.exec(line)[0].length;
+  const prose = (lines) => /^\s*[a-z]/.test(lines[0]) && indent(lines[0]) <= indent(paras[0][0]) + 1;
   let s = '';
   for (const [i, lines] of paras.entries()) {
-    if (i > 0 && (lines.length > 1 || s.length > 200)) break;
+    if (i > 0 && ((lines.length > 1 && !prose(lines)) || s.length > 200)) break;
     s = squash(`${s} ${lines.join(' ')}`);
     const end = sentenceEnd(s);
     if (end) return end;
   }
-  return s && !/[.!?]$/.test(s) ? `${s.replace(/[:,;]$/, '')}…` : s;
+  if (!s || /[.!?]$/.test(s)) return s;
+  return `${s.replace(/[:,;]$/, '').replace(/,?\s*\b(?:i\.e|e\.g)\.$/i, '')}…`;
 }
 
-/** Shortens a text to at most `max` characters, at a word boundary, with an ellipsis. */
+/**
+ * Joins the words a text breaks at the end of a line ("topo-" before "logies" in PB_topget_.c), and keeps the hyphen
+ * of a compound broken there ("quasi-" before "triangular"): the hyphen goes when the joined word is one of `words`
+ * (the words of the source's prose, in lower case; see wordsOf), or the part before the hyphen is not.
+ */
+export function dehyphenate(text, words) {
+  return text.replace(/([A-Za-z]+)-\n[ \t]*([a-z]+)/g, (all, a, b) =>
+    words.has(`${a}${b}`.toLowerCase()) || !words.has(a.toLowerCase()) ? `${a}${b}` : `${a}-${b}`,
+  );
+}
+
+/** The words of a text, in lower case, without the halves of the words it breaks at the end of a line. */
+export const wordsOf = (text) => text.replace(/[A-Za-z]+-\n[ \t]*[a-z]+/g, ' ').toLowerCase().match(/[a-z]+/g) ?? [];
+
+/**
+ * The longest summary the builders keep, in code points: a hover card shows 200 (routineCard in src/emit/library.js),
+ * so a first sentence that fits is shown whole, and a longer one is cut once, here.
+ */
+export const SUMMARY_MAX = 200;
+
+/**
+ * Shortens a text to at most `max` code points, the ellipsis included: at the last blank that leaves room for it,
+ * unless that is in the first half.
+ */
 export function clip(text, max) {
-  if (text.length <= max) return text;
-  let cut = text.lastIndexOf(' ', max - 1);
+  const cps = Array.from(text);
+  if (cps.length <= max) return text;
+  let cut = cps.lastIndexOf(' ', max - 1);
   if (cut < max / 2) cut = max - 1;
-  return text.slice(0, cut).replace(/[\s,;:(]+$/, '') + '…';
+  return cps.slice(0, cut).join('').replace(/[\s,;:(]+$/, '') + '…';
+}
+
+/**
+ * Corrects slips in text copied from upstream: `table` is a builder's corrections, name → [[text, replacement], …],
+ * applied to `text`, the summary of `name`. A correction whose text is not there (fixed upstream, say) is noted in
+ * `problems`, so that the table keeps only live slips. registry/SOURCES.md lists the tables.
+ */
+export function correct(table, name, text, problems) {
+  let out = text;
+  for (const [from, to] of Object.hasOwn(table, name) ? table[name] : []) {
+    if (out.includes(from)) out = out.split(from).join(to);
+    else problems.push(`${name}: the correction of "${from}" finds no such text`);
+  }
+  return out;
 }
 
 export const capitalise = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);

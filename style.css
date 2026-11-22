@@ -272,7 +272,7 @@
   overflow-wrap: anywhere;
 }
 
-.fdf-arg-type > code, .fdf-len > code, .fdf-arg-shape, .fdf-arg-decl, .fdf-arg-field code {
+.fdf-arg-type > code, .fdf-len > code, .fdf-type-param > code, .fdf-arg-shape, .fdf-arg-decl, .fdf-arg-field code {
   font-family: var(--fdf-mono);
   font-size: 0.8125rem;
 }
@@ -556,19 +556,19 @@
   justify-self: center;
 }
 
-/* ---- meanings: what a pill, a badge, a shape or the * of character(*) means, in a card on hover ---- */
+/* ---- meanings: what a pill, a badge, a shape, a length's * or a type parameter's kind means, on hover ---- */
 
 /* The components name the term (data-term, and data-arg for what goes with it: self in pass(self)), and the meanings
    at the end of this section say it, once for the whole page. A card is the ::after of what it explains, drawn only
    while that is hovered, in the look of the hover cards above. It is out of the way: the pointer passes through it,
    and screen readers leave it out of a row's name, as an opened row lists the same text beside each pill (a row with
-   an intent or an attribute opens for that). A term without a meaning (a site's own badge, an attribute the list
-   lacks) shows no card. */
-.fdf-badge, .fdf-intent, .fdf-flag, .fdf-cond, .fdf-col-shape, .fdf-len { position: relative; }
+   an intent, an attribute or a type parameter's kind or len opens for that). A term without a meaning (a site's own
+   badge, an attribute the list lacks) shows no card. */
+.fdf-badge, .fdf-intent, .fdf-flag, .fdf-cond, .fdf-col-shape, .fdf-len, .fdf-type-param { position: relative; }
 
 .fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after, .fdf-intent[data-term]:hover::after,
 .fdf-flag[data-term]:hover::after, .fdf-cond[data-term]:hover::after, .fdf-col-shape[data-term]:hover::after,
-.fdf-len[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note {
+.fdf-len[data-term]:hover::after, .fdf-type-param[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note {
   position: absolute;
   top: calc(100% + 0.25rem);
   inset-inline-start: 0;
@@ -600,14 +600,15 @@
    browsers allow, which an older one does not */
 .fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after, .fdf-intent[data-term]:hover::after,
 .fdf-flag[data-term]:hover::after, .fdf-cond[data-term]:hover::after, .fdf-col-shape[data-term]:hover::after,
-.fdf-len[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note::before {
+.fdf-len[data-term]:hover::after, .fdf-type-param[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note::before {
   content: var(--fdf-mean) var(--fdf-also, '');
 }
 
 @supports (content: '' / '') {
   .fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after, .fdf-intent[data-term]:hover::after,
   .fdf-flag[data-term]:hover::after, .fdf-cond[data-term]:hover::after, .fdf-col-shape[data-term]:hover::after,
-  .fdf-len[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note::before {
+  .fdf-len[data-term]:hover::after, .fdf-type-param[data-term]:hover::after,
+  .fdf-badge:hover > .fdf-badge-note::before {
     content: var(--fdf-mean) var(--fdf-also, '') / '';
   }
 }
@@ -615,7 +616,8 @@
 @starting-style {
   .fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after, .fdf-intent[data-term]:hover::after,
   .fdf-flag[data-term]:hover::after, .fdf-cond[data-term]:hover::after, .fdf-col-shape[data-term]:hover::after,
-  .fdf-len[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note { opacity: 0; }
+  .fdf-len[data-term]:hover::after, .fdf-type-param[data-term]:hover::after,
+  .fdf-badge:hover > .fdf-badge-note { opacity: 0; }
 }
 
 /* A badge's note (its title: the routines or constructs it stands for) is text in the badge, which screen readers read
@@ -652,11 +654,13 @@
    hovered is an anchor, so that one name serves every card on the page. */
 @supports (anchor-scope: all) and (position-try-fallbacks: flip-inline) {
   .fdf-badge:hover, .fdf-intent[data-term]:hover, .fdf-flag[data-term]:hover, .fdf-cond[data-term]:hover,
-  .fdf-col-shape[data-term]:hover, .fdf-len[data-term]:hover { anchor-name: --fdf-tip; }
+  .fdf-col-shape[data-term]:hover, .fdf-len[data-term]:hover, .fdf-type-param[data-term]:hover {
+    anchor-name: --fdf-tip;
+  }
 
   .fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after, .fdf-intent[data-term]:hover::after,
   .fdf-flag[data-term]:hover::after, .fdf-cond[data-term]:hover::after, .fdf-col-shape[data-term]:hover::after,
-  .fdf-len[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note {
+  .fdf-len[data-term]:hover::after, .fdf-type-param[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note {
     position: fixed;
     position-anchor: --fdf-tip;
     inset: auto;
@@ -688,9 +692,11 @@
     inset-inline-end: auto;
   }
 
-  .fdf-arg-field .fdf-len { position: static; }
+  .fdf-arg-field .fdf-len, .fdf-arg-field .fdf-type-param { position: static; }
 
-  .fdf-arg-field .fdf-len[data-term]:hover::after { max-width: min(18rem, 100%); }
+  .fdf-arg-field .fdf-len[data-term]:hover::after, .fdf-arg-field .fdf-type-param[data-term]:hover::after {
+    max-width: min(18rem, 100%);
+  }
 
   .fdf-badges { position: relative; }
 
@@ -715,16 +721,17 @@
   .fdf-arg > summary [data-term]:hover::after { display: none; }
 }
 
-/* the * or : of character(*): a dotted line, as under a name with a hover card, says there is more to it */
-.fdf-len {
+/* the * or : of character(*), and the kind or len of a type parameter's integer, kind: a dotted line, as under a name
+   with a hover card, says there is more to it */
+.fdf-len, .fdf-type-param {
   text-decoration: underline dotted;
   text-decoration-color: color-mix(in oklab, currentColor 50%, transparent);
   text-underline-offset: 0.2em;
   cursor: help;
 }
 
-/* An opened row's intent and the * or : of its length, in words, and its attributes, each beside its meaning: the
-   text of their cards, for the keyboard and for screen readers, which read it here */
+/* An opened row's intent, its type parameter's kind or len and the * or : of its length, in words, and its attributes,
+   each beside its meaning: the text of their cards, for the keyboard and for screen readers, which read it here */
 .fdf-arg-field > dd[data-term]::after, .fdf-arg-terms > dd::after { content: var(--fdf-mean); }
 
 .fdf-arg-terms {
@@ -1248,8 +1255,8 @@
 /* A type is set apart in the direction of its first letter, left to right as a Fortran keyword is, and not by
    direction: ltr, which its hover cards would take too: they keep the page's direction, so that a card opens from its
    name's start edge and stays over its table. A card's lines of text take the direction of their own words, so that a
-   doc in a right-to-left script reads and aligns as one on any page; so does the card of a pill, a shape or a length
-   (above, with its look), whose meaning a site may give in its own language. */
+   doc in a right-to-left script reads and aligns as one on any page; so does the card of a pill, a shape, a length or
+   a type parameter's kind or len (above, with its look), whose meaning a site may give in its own language. */
 .fdf-arg-type, .fdf-ref-detail, .fdf-ref-note { unicode-bidi: plaintext; }
 
 /* ---- print: paper does not open ---- */
@@ -1286,7 +1293,8 @@
   /* so is the card of what the pointer was on; an opened row prints the meanings beside its pills */
   .fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after, .fdf-intent[data-term]:hover::after,
   .fdf-flag[data-term]:hover::after, .fdf-cond[data-term]:hover::after, .fdf-col-shape[data-term]:hover::after,
-  .fdf-len[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note { display: none; }
+  .fdf-len[data-term]:hover::after, .fdf-type-param[data-term]:hover::after,
+  .fdf-badge:hover > .fdf-badge-note { display: none; }
 }
 
 /* ---- motion: none for those who ask for less ---- */
@@ -1297,7 +1305,8 @@
 
   .fdf-badge[data-term]:not(:has(> .fdf-badge-note)):hover::after, .fdf-intent[data-term]:hover::after,
   .fdf-flag[data-term]:hover::after, .fdf-cond[data-term]:hover::after, .fdf-col-shape[data-term]:hover::after,
-  .fdf-len[data-term]:hover::after, .fdf-badge:hover > .fdf-badge-note { transition: none; }
+  .fdf-len[data-term]:hover::after, .fdf-type-param[data-term]:hover::after,
+  .fdf-badge:hover > .fdf-badge-note { transition: none; }
 
   /* no fade; the card still waits a moment before it goes, so that the pointer can reach it */
   .fdf-ref-card { transition: visibility 0s 0.15s; }

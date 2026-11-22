@@ -504,6 +504,28 @@ export default async function ({ ok, eq, here, out }) {
     eq(edges('is_ok'), ['guarded --> is_ok'], 'so a function tested in a condition has callers');
   }
 
+  // ---- a function reference is drawn as the source writes it, as a call is: fixed form in capitals stays in
+  // capitals, and a name written two ways is one node, labelled as first written
+  {
+    const ir = src([
+      '      SUBROUTINE DGETRF2( M, N, A, LDA, IPIV, INFO )',
+      '      CHARACTER TRANS',
+      '      INTEGER M, N, LDA, INFO, I, IPIV( * )',
+      '      DOUBLE PRECISION SFMIN, A( LDA, * )',
+      "      SFMIN = DLAMCH( 'S' )",
+      "      SFMIN = Dlamch( 'E' ) + dlamch( 'P' )",
+      "      IF( LSAME( TRANS, 'N' ) .AND. DISNAN( SFMIN ) ) INFO = 1",
+      '      CALL DSCAL( M, 1.0D0 / DNRM2( M, A, 1 ), A, 1 )',
+      '      I = IDAMAX( M, A( 1, 1 ), 1 )',
+      '      END',
+    ], { path: 'dgetrf2.f' });
+    const g = read(buildGraphs(ir, { classify: classifyLibrary }).calls(find(ir, 'dgetrf2')));
+    eq(classed(g), ['DGETRF2 fdfProcedure fdfFocus', 'DSCAL fdfBlas', 'DISNAN fdfLapack', 'DLAMCH fdfLapack',
+      'DNRM2 fdfBlas', 'IDAMAX fdfBlas', 'LSAME fdfBlas'],
+    'function references in capitals, after a string (LSAME\'s \'N\') and in a CALL\'s arguments; DLAMCH, written '
+      + 'three ways, is one node');
+  }
+
   // ---- a generic is one with the generics of its name its scope declares or uses (norm_b's norm extends norm_a's)
   {
     const ir = src([
@@ -633,7 +655,7 @@ export default async function ({ ok, eq, here, out }) {
     const g = buildGraphs(ir);
     const run = read(g.calls(find(ir, 'run')) ?? '');
     eq(classed(run), ['run fdfProcedure fdfFocus', 'cublasDgemm fdfCuda', 'curandGenerateUniform fdfCuda',
-      'dgetrf fdfExternal', 'cudadevicesynchronize fdfCuda', 'cufftexecz2z fdfCuda'],
+      'dgetrf fdfExternal', 'cudaDeviceSynchronize fdfCuda', 'CUFFTEXECZ2Z fdfCuda'],
     'CUDA routines by prefix, in any case, called or referenced, with no only list; LAPACK is left to classify');
     eq(classed(read(g.dependencies(find(ir, 'gpu')) ?? '')), ['gpu fdfModule fdfFocus', 'cudafor fdfCuda', 'cufft fdfCuda'],
       "the modules of the CUDA libraries, not only cudafor's, are CUDA in a dependency graph");
@@ -697,12 +719,13 @@ export default async function ({ ok, eq, here, out }) {
 
     // the registry's classify, which the page writer gives buildGraphs: the same classes as the site's above, and an
     // intrinsic (co_sum) is left to the graphs, which draw it as a coarray call
-    const registry = read(buildGraphs(ir, { classify: (n) => classifyLibrary(n) }).calls(find(ir, 'hpc_calls')));
+    const registry = read(buildGraphs(ir, { classify: classifyLibrary }).calls(find(ir, 'hpc_calls')));
     eq(classed(registry), classed(h), 'the registry classes LAPACK and ScaLAPACK, and leaves intrinsics to the graphs');
   }
 
-  // ---- a CALL names a subroutine: a name only an intrinsic function has is some other routine (ScaLAPACK's RESHAPE,
-  // in TOOLS/reshape.c), and is drawn; intrinsic subroutines (gfortran's too) and references of intrinsics are not
+  // ---- a CALL names a subroutine: a name only an intrinsic function has is some other routine, drawn, and the
+  // registry's classify gives it the subroutine of that name it knows (ScaLAPACK's reshape, in TOOLS/reshape.c);
+  // intrinsic subroutines (gfortran's too) and references of intrinsics are not drawn
   {
     const ir = src([
       'subroutine redist(a, b, n, s)',
@@ -720,9 +743,33 @@ export default async function ({ ok, eq, here, out }) {
       'end subroutine',
     ]);
     const g = (opts) => classed(read(buildGraphs(ir, opts).calls(find(ir, 'redist')) ?? ''));
-    eq([g({}), g({ classify: (n) => classifyLibrary(n) })], [['redist fdfProcedure fdfFocus', 'RESHAPE fdfExternal'],
-      ['redist fdfProcedure fdfFocus', 'RESHAPE fdfExternal']],
-    'a CALL of an intrinsic function\'s name is an outside routine, with the registry\'s classify too');
+    eq([g({}), g({ classify: classifyLibrary })], [['redist fdfProcedure fdfFocus', 'RESHAPE fdfExternal'],
+      ['redist fdfProcedure fdfFocus', 'RESHAPE fdfScalapack']],
+    'a CALL of an intrinsic function\'s name is an outside routine, and with the registry\'s classify ScaLAPACK\'s');
+    // a name an only list gives from a module outside the project: a CALL of reshape is the subroutine, and a
+    // function reference of it, which may as well be an array, is drawn only when classify() knows a function of the
+    // name: here the intrinsic's, which is not drawn
+    const used = src([
+      'module rs',
+      '  use mylib, only: reshape',
+      'contains',
+      '  subroutine called(a, b)',
+      '    real :: a(4), b(2, 2)',
+      '    call reshape(a, 4, b)',
+      '  end subroutine',
+      '  subroutine referenced(a, b)',
+      '    real :: a(4), b(2, 2)',
+      '    b = reshape(a, [2, 2])',
+      '  end subroutine',
+      'end module rs',
+    ]);
+    const u = (name) => classed(read(buildGraphs(used, { classify: classifyLibrary }).calls(find(used, name)) ?? ''));
+    eq([u('called'), u('referenced')], [['called fdfProcedure fdfFocus', 'reshape fdfScalapack'], []],
+      'through an only list: a CALL of reshape is ScaLAPACK\'s, a function reference of it no node');
+    eq([classifyLibrary('reshape'), classifyLibrary('RESHAPE', { subroutine: true }), classifyLibrary('dlamch'),
+      classifyLibrary('dlamch', { subroutine: true })], [null, 'scalapack', 'lapack', 'lapack'],
+    'the registry\'s classify: reshape is the intrinsic function, unless a subroutine is asked for; a name of one '
+      + 'library is that library\'s either way');
     // the intrinsic subroutines are intrinsic procedures, and the registry's are all among them (its functions none)
     const reg = load('intrinsics').entries;
     eq([[...INTRINSIC_SUBROUTINES].filter((n) => !INTRINSIC_PROCEDURES.has(n)),
@@ -763,14 +810,15 @@ export default async function ({ ok, eq, here, out }) {
       'scalapack', 'scalapack', 'scalapack', 'mpi', 'openmp', 'openacc', null, null, null, null, null, null, null],
     'routines by library (PBLAS, BLACS and the tools are ScaLAPACK); intrinsics, types, kinds and constants have none');
     const asLapack = () => ({ lib: 'lapack', library: 'lapack', section: 'entries', name: 'x', entry: {} });
-    eq([classifyLibrary('dgemm', asLapack), classifyLibrary('dfoo', () => ({ ...asLapack(), library: 'blas' }))],
+    eq([classifyLibrary('dgemm', { find: asLapack }),
+      classifyLibrary('dfoo', { find: () => ({ ...asLapack(), library: 'blas' }) })],
       ['blas', 'blas'], 'BLAS before LAPACK: a BLAS name, and the registry\'s BLAS mark');
     let asked = 0;
     const broken = libraryLookup(() => {
       asked++;
       throw new Error('ENOENT: registry/lapack.json');
     });
-    eq([...names.slice(0, 5), 'MPI_Allreduce'].map((n) => classifyLibrary(n, broken)),
+    eq([...names.slice(0, 5), 'MPI_Allreduce'].map((n) => classifyLibrary(n, { find: broken })),
       ['blas', 'blas', 'blas', 'blas', null, null], 'a registry that cannot be read: BLAS by name, as without it');
     eq(asked, 1, 'and it is asked once');
   }
@@ -826,6 +874,47 @@ export default async function ({ ok, eq, here, out }) {
     eq(read(buildGraphs(ir).calls(find(ir, 'near1'))).nodes.length, 22, 'under the cap, no … more node');
     eq(read(buildGraphs(ir, { depth: 1 }).calls(find(ir, 'hub'))).labels.filter((l) => l.startsWith('deep')), [],
       'depth 1: direct callees only');
+  }
+
+  // ---- caps: the routines from outside the project go first, however many callers they have, the farthest first,
+  // and then the farthest of the rest; "… N more" counts all of them
+  {
+    const ir = src([
+      'module capm',
+      'contains',
+      '  subroutine hub()',
+      '    real :: x',
+      '    call ext1()',
+      '    call ext2()',
+      '    call ext3()',
+      '    call mid()',
+      '    call shared()',
+      "    x = dlamch('e')",
+      '  end subroutine',
+      '  subroutine mid()',
+      '    call deep1()',
+      '    call deep2()',
+      '    call shared()',
+      '    call ext4()',
+      '  end subroutine',
+      '  subroutine deep1()',
+      '  end subroutine',
+      '  subroutine deep2()',
+      '  end subroutine',
+      'end module capm',
+    ]);
+    const capped = (maxNodes) => buildGraphs(ir, { maxNodes, classify: classifyLibrary }).calls(find(ir, 'hub'));
+    eq(read(capped(Infinity)).labels, ['hub', 'ext1', 'ext2', 'ext3', 'mid', 'shared', 'dlamch', 'deep1', 'deep2',
+      'ext4'], 'uncapped: ten nodes, breadth first');
+    const r8 = read(capped(8));
+    eq(r8.labels, ['hub', 'ext1', 'ext2', 'ext3', 'mid', 'deep1', 'deep2', '… 3 more'],
+      'over the cap, the farthest outside routines go (ext4, dlamch, and shared with its two callers), no project one');
+    eq(sorted(r8.edges), sorted(['hub --> ext1', 'hub --> ext2', 'hub --> ext3', 'hub --> mid', 'mid --> deep1',
+      'mid --> deep2', 'hub --> … 3 more', 'mid --> … 3 more']),
+    'and what led to them leads to … 3 more');
+    eq(read(capped(4)).labels, ['hub', 'mid', 'deep1', '… 7 more'],
+      'with too few outside routines, all of them go, then the farthest of the project\'s own');
+    eq([problems(capped(8)), problems(capped(4))], [[], []], 'both are well formed');
   }
 
   // ---- escaping: operators and assignment in labels, and every character Mermaid reads as markup

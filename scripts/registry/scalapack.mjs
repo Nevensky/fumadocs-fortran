@@ -1,16 +1,19 @@
-// Builds registry/scalapack.json: ScaLAPACK 2.2.2 with its TOOLS, PBLAS, REDIST and BLACS, from the Purpose and
-// Arguments prose of Reference-ScaLAPACK, with Netlib's member pages from its Doxygen search index.
+// Builds registry/scalapack.json: ScaLAPACK 2.2.2 with its TOOLS, PBLAS, REDIST and BLACS, in Fortran and C, from the
+// Purpose and Arguments prose of Reference-ScaLAPACK, with Netlib's member pages from its Doxygen search index.
 //
 //   node scripts/registry/scalapack.mjs [--refresh]
 //
 // "(global input)" and its kin give each argument's scope and intent. Precision families follow the names (pdgesv is
 // in p?gesv), since ScaLAPACK has no \ingroup.
 import { BLACS, BLACS_COLLECTIVE, BLACS_P2P, REDIST } from './data/blacs.mjs';
+import { C_ROUTINES } from './data/scalapack.mjs';
 import { typeCode, units } from './fortran.mjs';
 import { netlibAnchors, PREC_R, PREC_T, template } from './lapack.mjs';
 import {
   capitalise,
   clip,
+  correct,
+  dehyphenate,
   doxygenDir,
   doxygenEscape,
   fetchPinned,
@@ -23,13 +26,67 @@ import {
   saveLock,
   source,
   squash,
+  SUMMARY_MAX,
+  wordsOf,
   writeRegistry,
 } from './lib.mjs';
 
-const SUMMARY_MAX = 110;
-
 /** ScaLAPACK's error handler, as XERBLA is LAPACK's: code written in ScaLAPACK's style calls it too. */
 const PXERBLA = 'PBLAS/SRC/PTZBLAS/pxerbla.f';
+
+/**
+ * Slips in the first sentences of ScaLAPACK's Purpose prose, corrected before the routine's own name is taken off
+ * them: routine → [[text, replacement], …] (see correct in lib.mjs; registry/SOURCES.md lists them).
+ */
+export const CORRECTIONS = {
+  // SRC/pdlaiect.c: the name is misspelt, and a line break repeats "double"
+  pdlasnbt: [['pdalsnbt', 'pdlasnbt'], ['a double double precision', 'a double precision']],
+  // SRC/pslaiect.c: the name is misspelt
+  pslasnbt: [['psalsnbt', 'pslasnbt']],
+};
+
+// The C types of ScaLAPACK's C sources as Fortran types: complex and complex16 are its single and double precision
+// complex structs, F_CHAR_T a Fortran character, F_INTG_FCT its Fortran integer.
+const C_TYPES = {
+  Int: 'integer',
+  int: 'integer',
+  F_INTG_FCT: 'integer',
+  float: 'real',
+  double: 'double precision',
+  complex: 'complex',
+  complex16: 'complex*16',
+  char: 'character',
+  F_CHAR_T: 'character',
+};
+
+/**
+ * The Fortran-callable functions a C source defines, those whose names end in an underscore (name_, or name__ as f2c
+ * spells a name with an underscore of its own): Fortran name → { result, params, at }, with
+ * - result: the Fortran type of a function's result, null for a subroutine (void);
+ * - params: [{ name, base, array }] from the definition's typed form (where the source has a K&R form too), null when
+ *   it has only the K&R form;
+ * - at: where the definition starts, which its prose follows.
+ * Declarations ("void dlacpy_(…);") and indented ones inside a body are not definitions.
+ */
+export function cEntryPoints(text) {
+  const out = new Map();
+  const re = /^(void|Int|int|double|float|F_INTG_FCT)\s+(\w*?[A-Za-z0-9])(_{1,2})\s*\(([^)]*)\)/gm;
+  for (const m of text.matchAll(re)) {
+    if (/^\s*;/.test(text.slice(m.index + m[0].length))) continue;
+    const name = m[2].toLowerCase();
+    const list = m[4].trim();
+    const parts = !list || list === 'void' ? [] : list.split(',').map((p) => p.trim());
+    const typed = parts.map((p) => /^(?:const\s+)?(\w+)\s*\*?\s*(\w+)\s*(\[\s*\])?$/.exec(p));
+    const params = typed.every((t) => t && C_TYPES[t[1]])
+      ? typed.map((t) => ({ name: t[2].toLowerCase(), base: C_TYPES[t[1]], array: !!t[3] }))
+      : null;
+    const known = out.get(name);
+    if (known?.params) continue;
+    const result = m[1] === 'void' ? null : C_TYPES[m[1]];
+    out.set(name, { result, params, at: known?.at ?? m.index });
+  }
+  return out;
+}
 
 /** Prose sections of a comment block (lines without their comment marks): heading → lines. */
 export function proseSections(lines) {
@@ -78,11 +135,19 @@ export function proseArgs(lines) {
   return out;
 }
 
-/** "(local input/local output)" → { intent: 'b', scope: 'l' }. */
-export function scopeIntent(text) {
+// what an argument's prose says it holds on exit: "On output, CX is overwritten with C*X + S*Y" (pcrot.c), "On exit, it
+// contains the improved solution vectors" (p?porfs.f); not "Unchanged on exit", nor what is "destroyed" on exit
+const HOLDS_ON_EXIT = /\bon\s+(?:exit|output)\b[^.]*\b(?:overwritten|contains)\b/i;
+
+/**
+ * "(local input/local output)" → { intent: 'b', scope: 'l' }. `body`, the argument's prose, makes input/output an
+ * argument headed input only that it says is overwritten on exit, or what it contains then (X and Y of pcrot.c and
+ * pzrot.c, X of p?porfs.f).
+ */
+export function scopeIntent(text, body = '') {
   const t = text.toLowerCase();
   const input = /\binput\b/.test(t);
-  const output = /\boutput\b/.test(t);
+  const output = /\boutput\b/.test(t) || (input && HOLDS_ON_EXIT.test(body));
   const intent = input && output ? 'b' : input ? 'i' : output || /workspace/.test(t) ? 'o' : '';
   const global = /\bglobal\b/.test(t);
   const local = /\blocal\b/.test(t);
@@ -101,11 +166,14 @@ const PROSE_TYPES = [
   ['CHARACTER', 'a'],
 ];
 
-/** The type code and dimensions an argument's prose gives: "DOUBLE PRECISION pointer into … dimension (LLD_A,…)". */
+/**
+ * The type code and dimensions an argument's prose gives: "DOUBLE PRECISION pointer into … dimension (LLD_A,…)". The
+ * "dimension of at least (…)" of a distributed matrix is the global one, not the local array's.
+ */
 function proseType(head) {
   const t = head.toUpperCase().replace(/\s+/g, ' ');
   const base = PROSE_TYPES.find(([k]) => t.startsWith(k))?.[1] ?? '?';
-  const m = /dimension\s*(?:at\s+least\s*)?(\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)|[A-Z_][A-Z0-9_]*)/i.exec(head);
+  const m = /dimension\s*(?:at\s+least\s*)?(?!of\b)(\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)|[A-Z_][A-Z0-9_]*)/i.exec(head);
   let dims = null;
   if (m && /array|pointer|dimension/i.test(head)) dims = m[1].startsWith('(') ? m[1] : `(${m[1]})`;
   return { base, dims: dims && dims.replace(/\s+/g, '').toLowerCase() };
@@ -152,10 +220,20 @@ export async function build() {
   const sources = await loadSources();
   const src = source(sources, 'scalapack');
   const tar = readTarGz(await fetchPinned('scalapack', src.urls.tarball), (p) =>
-    /^(SRC|TOOLS|PBLAS\/SRC|REDIST\/SRC|BLACS\/SRC)\/[^/]+\.(f|c)$/.test(p) || p === PXERBLA || p === 'LICENSE',
+    /^(SRC|TOOLS|PBLAS\/SRC|REDIST\/SRC|BLACS\/SRC)\/[^/]+\.(f|c)$/.test(p) ||
+    /^SRC\/[^/]+\.h$/.test(p) ||
+    /^PBLAS\/SRC\/PTOOLS\/\w+_\.c$/.test(p) ||
+    p === PXERBLA ||
+    p === 'LICENSE',
   );
   const routines = new Map();
   const dropped = [];
+  const problems = [];
+  // the words of the prose read, for dehyphenate
+  const words = new Set();
+  const addWords = (lines) => {
+    for (const w of wordsOf(lines.join('\n'))) words.add(w);
+  };
 
   // Fortran: SRC, TOOLS, PBLAS's own pilaenv.f and its error handler PXERBLA (the rest of PBLAS/SRC/PTZBLAS is
   // internal); the prose sits inside each unit, after its header.
@@ -167,6 +245,7 @@ export async function build() {
       const lines = text.split(/\r?\n/);
       for (const u of units(text)) {
         const comments = lines.slice(u.start, u.end).filter((l) => /^[*cC]/.test(l)).map((l) => l.slice(1));
+        addWords(comments);
         const sections = proseSections(comments);
         const args = proseArgs(sections.get('Arguments') ?? []);
         if (routines.has(u.name)) {
@@ -192,6 +271,7 @@ export async function build() {
     const name = file.replace(/_\.c$/, '');
     const text = tar.get(path).toString('latin1');
     const comments = text.split(/\r?\n/).filter((l) => /^\s*\*/.test(l)).map((l) => l.replace(/^\s*\*/, ''));
+    addWords(comments);
     const sections = proseSections(comments);
     const prose = proseArgs(sections.get('Arguments') ?? []);
     let argNames = cArgs(text, `${name}_`);
@@ -211,6 +291,98 @@ export async function build() {
       purpose: (sections.get('Purpose') ?? []).join('\n'),
       prose,
     }));
+  }
+
+  // ScaLAPACK's own Fortran-callable C routines, in SRC (lamov.h's LAMOV, which each ?lamov.c names with macros, the
+  // p?laiect and p?lasnbt routines, pcrot, pzrot), TOOLS (reshape, sl_gridreshape) and PBLAS/SRC/PTOOLS (PB_topget_,
+  // PB_topset_, PB_freebuf_). Names and types come from the C definitions; intents, scopes, dimensions and summaries
+  // from the prose after each definition, or from data/scalapack.mjs where there is none. SRC also keeps old copies of
+  // PBLAS's pzaxpy, pzdotc and pzdotu, which it does not build: PBLAS's own are read already.
+  const headers = new Map(
+    [...tar].filter(([p]) => /^SRC\/[^/]+\.h$/.test(p)).map(([p, b]) => [p.slice('SRC/'.length), b.toString('latin1')]),
+  );
+  for (const [prefix, folder] of [['SRC/', 'scalapack'], ['TOOLS/', 'tools'], ['PBLAS/SRC/PTOOLS/', 'pblas']]) {
+    const paths = [...tar.keys()].filter((p) => p.startsWith(prefix) && /^[^/]+\.c$/.test(p.slice(prefix.length)));
+    for (const path of paths.sort()) {
+      let text = tar.get(path).toString('latin1');
+      let file = path.slice(prefix.length);
+      let points = cEntryPoints(text);
+      // the C name of each routine where Doxygen documents it, for its Netlib page
+      const cName = new Map([...points.keys()].map((n) => [n, [`${n}_`, n]]));
+      // a file of macros for a header it includes (dlamov.c: TYPE, LAMOV, …): the header's routine, expanded
+      const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '').split('\n').filter((l) => l.trim());
+      const include = /^\s*#\s*include\s+"([^"/]+\.h)"\s*$/m.exec(text)?.[1];
+      if (!points.size && headers.has(include) && code.every((l) => /^\s*#\s*(?:define|include)\b/.test(l))) {
+        const macros = [...text.matchAll(/^\s*#\s*define\s+(\w+)\s+(\S+)\s*$/gm)].map((m) => [m[1], m[2]]);
+        text = headers.get(include);
+        for (const [k, v] of macros) text = text.replace(new RegExp(`\\b${k}\\b`, 'g'), v);
+        file = include;
+        points = cEntryPoints(text);
+        for (const n of points.keys()) {
+          const macro = macros.find(([, v]) => v === `${n}_`);
+          cName.set(n, macro ? [macro[0].toLowerCase()] : [`${n}_`, n]);
+        }
+      }
+      const starts = [...points.values()].map((x) => x.at).sort((a, b) => a - b);
+      for (const [name, point] of points) {
+        if (routines.has(name)) {
+          dropped.push(`${path} (${name} already read)`);
+          continue;
+        }
+        if (!point.params) {
+          problems.push(`${path}: ${name}_ has no typed definition`);
+          continue;
+        }
+        // the prose after this definition, up to the next one
+        const next = starts.find((s) => s > point.at) ?? text.length;
+        const comments = text.slice(point.at, next).split(/\r?\n/).filter((l) => /^\s*\*/.test(l))
+          .map((l) => l.replace(/^\s*\*/, ''));
+        addWords(comments);
+        const sections = proseSections(comments);
+        const purpose = (sections.get('Purpose') ?? []).join('\n');
+        let prose = proseArgs(sections.get('Arguments') ?? []);
+        let own = null;
+        const cNames = point.params.map((x) => x.name);
+        let argNames = cNames;
+        let dims = new Map();
+        if (!purpose.trim() && !prose.size) {
+          // no prose: data/scalapack.mjs gives the intents, dimensions and summary
+          const key = [name, name.replace(/^(p?)[sdcz]/, '$1?')].find((k) => Object.hasOwn(C_ROUTINES, k));
+          if (!key) throw new Error(`${path}: ${name}_ has no prose and no entry in data/scalapack.mjs`);
+          const [summary, spec] = C_ROUTINES[key];
+          const args = spec.split(' ').map((s) => s.split(':'));
+          if (args.map(([a]) => a).join() !== cNames.join()) {
+            const listed = args.map(([a]) => a);
+            throw new Error(`${path} ${name}: the source has the arguments ${cNames}, data/scalapack.mjs ${listed}`);
+          }
+          const said = { i: 'input', o: 'output', b: 'input/output' };
+          prose = new Map(args.map(([a, intent]) => [a, { scope: said[intent], head: '', body: '' }]));
+          dims = new Map(args.filter(([, , d]) => d).map(([a, , d]) => [a, d]));
+          own = summary;
+        } else if (prose.size === cNames.length) {
+          // the prose is the documented interface (DESCX where the C code says desc_X); its order is the definition's
+          argNames = [...prose.keys()];
+        }
+        // types from the definition; an array where the definition or the prose says so, with the prose's dimensions
+        const decls = {};
+        point.params.forEach((x, i) => {
+          const head = prose.get(argNames[i])?.head ?? '';
+          const array = x.array || dims.has(argNames[i]) || !!proseType(head).dims;
+          decls[argNames[i]] = { base: x.base, dims: dims.get(argNames[i]) ?? (array ? '(*)' : null) };
+        });
+        routines.set(name, record(name, folder, file, {
+          kind: point.result ? 'f' : 's',
+          resultBase: point.result,
+          argNames,
+          decls,
+          externals: new Set(),
+          purpose,
+          prose,
+          own,
+          anchorNames: cName.get(name),
+        }));
+      }
+    }
   }
 
   // REDIST: p?gemr2d and p?trmr2d; arguments from data/blacs.mjs, summaries from the Purpose prose.
@@ -265,7 +437,7 @@ export async function build() {
         if (scope) arg.push(scope);
         return arg;
       });
-      r.summary = summary ?? clip(capitalise(squash(firstSentence(purpose).replace(new RegExp(`^${r.name}\\b\\s*`, 'i'), ''))), SUMMARY_MAX);
+      r.summary = summary ?? clip(capitalise(squash(firstSentence(dehyphenate(purpose, words)).replace(new RegExp(`^${r.name}\\b\\s*`, 'i'), ''))), SUMMARY_MAX);
       r.result = r.resultBase ? template(typeCode(r.resultBase, p), p) : null;
       if (r.folder === 'blacs') {
         if (BLACS_COLLECTIVE.has(key)) r.tags.push('coll');
@@ -281,26 +453,28 @@ export async function build() {
       if (r.externals.has(a)) type = d ? `x${type}` : 'x';
       const dims = d ? d.dims && (pt.dims ?? d.dims) : pt.dims;
       if (dims && !type.startsWith('x')) type += dims;
-      const { intent, scope } = pr ? scopeIntent(pr.scope) : { intent: '', scope: '' };
+      const { intent, scope } = pr ? scopeIntent(pr.scope, pr.body) : { intent: '', scope: '' };
       const arg = [a, intent, template(type, p)];
       if (scope) arg.push(scope);
       return arg;
     });
     r.result = r.resultBase ? template(typeCode(r.resultBase, p), p) : null;
-    let summary = firstSentence(r.purpose);
-    summary = summary.replace(new RegExp(`^(?:the\\s+)?${r.name}\\b(?![\\s:,-]*(?:is|are|has)\\b)[\\s:,-]*`, 'i'), '');
-    r.summary = clip(capitalise(squash(summary)), SUMMARY_MAX);
+    // the corrections first, then the routine's own name off the front ("PDGESV computes …", "PB_topget_ returns …")
+    let summary = correct(CORRECTIONS, r.name, firstSentence(dehyphenate(r.purpose, words)), problems);
+    summary = summary.replace(new RegExp(`^(?:the\\s+)?${r.name}_?\\b(?![\\s:,-]*(?:is|are|has)\\b)[\\s:,-]*`, 'i'), '');
+    r.summary = r.own ?? clip(capitalise(squash(summary)), SUMMARY_MAX);
     const bodies = [...r.prose.values()].map((x) => x.body);
     if (bodies.some((b) => WSQ_RE.test(b))) r.tags.push('wsq');
     if (r.argNames.some((a) => /^desc/.test(a))) r.tags.push('desc');
     if (r.prose.get('info') && /illegal\s+value/i.test(r.prose.get('info').body)) r.tags.push('info');
   }
 
-  // Netlib member pages (file members: ScaLAPACK has no groups); PBLAS's C functions carry the trailing underscore.
+  // Netlib member pages (file members: ScaLAPACK has no groups); PBLAS's C functions carry the trailing underscore,
+  // and the C routines read above have the names Doxygen documents them by (LAMOV for ?lamov).
   const anchors = await netlibAnchors(sources, 'netlib-scalapack');
   let linked = 0;
   for (const r of routines.values()) {
-    const a = anchors.get(r.name) ?? anchors.get(`${r.name}_`);
+    const a = (r.anchorNames ?? [r.name, `${r.name}_`]).map((k) => anchors.get(k)).find(Boolean);
     const f = a?.files.find((x) => x.base === doxygenEscape(r.file));
     if (!f) continue;
     if (f.dir === doxygenDir(f.base)) r.fileHash = f.hash;
@@ -363,7 +537,13 @@ export async function build() {
     version: src.version,
     sources: ['scalapack', 'netlib-scalapack'],
     legend: {
-      libraries: { scalapack: 'ScaLAPACK (SRC)', tools: 'ScaLAPACK tools (TOOLS)', pblas: 'PBLAS', redist: 'REDIST', blacs: 'BLACS' },
+      libraries: {
+        scalapack: 'ScaLAPACK (SRC, with its Fortran-callable C routines)',
+        tools: 'ScaLAPACK tools (TOOLS, with reshape and sl_gridreshape, in C)',
+        pblas: 'PBLAS (with PB_topget, PB_topset and PB_freebuf of PBLAS/SRC/PTOOLS)',
+        redist: 'REDIST',
+        blacs: 'BLACS',
+      },
       kinds: { s: 'subroutine (the default, not stored)', f: 'function' },
       intents: { i: 'in', o: 'out', b: 'inout' },
       scopes: { g: 'global: the same value on every process', l: 'local: each process has its own', gl: 'global and local (descriptors)' },
@@ -395,7 +575,8 @@ export async function build() {
     },
     links: {
       netlib: {
-        base: 'https://www.netlib.org/scalapack/explore-html/',
+        // netlib.org: www.netlib.org answers every page with a redirect to it
+        base: 'https://netlib.org/scalapack/explore-html/',
         fileMember: '{dir}/{file}_a{v}.html#a{v}',
         file: '{dir}/{file}.html',
         rule: 'as in lapack.json: file escaped as Doxygen does, dir from the md5 of the escaped name',
@@ -421,7 +602,10 @@ export async function build() {
     noArgsDocs: all.filter((r) => !r.curated && r.args.some((a) => !a[1])).map((r) => r.name),
     unknownTypes: all.filter((r) => r.args.some((a) => a[2].includes('?'))).map((r) => r.name),
     tags: Object.fromEntries(['wsq', 'desc', 'info', 'coll', 'p2p'].map((t) => [t, all.filter((r) => r.tags.includes(t)).length])),
+    fromC: all.filter((r) => r.anchorNames).map((r) => r.name),
+    cut: all.filter((r) => r.summary?.endsWith('…')).length,
     dropped,
+    problems,
     bytes,
   };
   return { file: 'scalapack.json', bytes, stats, licence: tar.get('LICENSE').toString('utf8') };

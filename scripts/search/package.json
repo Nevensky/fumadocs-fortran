@@ -1,9 +1,0 @@
-{
-  "name": "fumadocs-fortran-search-measure",
-  "private": true,
-  "description": "Development only: measures the static search index a generated API reference produces",
-  "type": "module",
-  "dependencies": {
-    "fumadocs-core": "16.19.4"
-  }
-}

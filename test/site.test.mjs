@@ -2,8 +2,9 @@
 // and the width of the docs' prose, then its own code (docs/lib/shared.ts, docs/components/mdx): the links next/link
 // never sees, those of hover cards, source headers, graph nodes and the llms files, get what it gives the others,
 // the base path the site is served under and, in the static export, a page's trailing slash, so that a link to an
-// anchor of the page being read only scrolls. The site's modules are bundled with esbuild, with one React; that part
-// needs the site's node_modules (scripts/docs.sh keeps them in a Docker volume) and is skipped without them.
+// anchor of the page being read only scrolls; and the search records of its pages. The site's modules are bundled
+// with esbuild, with one React; that part needs the site's node_modules (scripts/docs.sh keeps them in a Docker volume)
+// and is skipped without them.
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -96,7 +97,7 @@ export default async function ({ ok, eq, here, out }) {
   // ---- the home page's sample, against the generated entry of the same procedure
   const home = read('docs/app/(home)/page.tsx');
   const sk = read('docs/content/docs/showcase/modern/solver_kernels.mdx');
-  const at0 = sk.indexOf('### norm2\\_parallel');
+  const at0 = sk.indexOf('### norm2_parallel');
   const generated = at0 < 0 ? '' : sk.slice(at0, sk.indexOf('\n### ', at0 + 1));
   ok(generated.includes('<FortranArgs'), 'the Showcase has the entry of norm2_parallel');
   eq([...generated.matchAll(/columns="[^"]*"|decl="[^"]*"/g)].map((m) => m[0]).filter((a) => !home.includes(a)), [],
@@ -329,4 +330,61 @@ export default async function ({ ok, eq, here, out }) {
     .replace('"/docs/showcase/modern"', '"/fdf/docs/showcase/modern/"')));
   eq(ex.siteLinks(samples.join('\n')).split('\n'), want,
     "siteLinks: code samples keep their links, and the graphs' own mermaid blocks and the text around them do not");
+
+  // ---- the search records of the pages, compiled with the site's MDX options and read as the static index
+  // (app/api/search/route.ts) reads them. fumadocs keeps a component's element in the records as an HTML tag with its
+  // attributes; the site keeps the text of the Fortran components alone (an argument's docs, the names on a Calls
+  // line), so that search shows no markup and the index is smaller. The records are otherwise fumadocs' own.
+  const { loadSite } = await import(pathToFileURL(path.join(repo, 'scripts/search/records.mjs')).href);
+  const search = await loadSite({ docs, out: path.join(dir, 'records') });
+  // a page with Markdown images: fumadocs leaves them out of its records, as the site's build does with this
+  // paragraph, and the records are read although the images are not where the build would find them
+  let pictured;
+  try {
+    pictured = (await search.records('## Figures\n\nA graph ![graph](/graph.png) and the same ![graph](./graph.png).\n',
+      'site')).contents.map((r) => r.content);
+  } catch (e) {
+    pictured = String(e.message).slice(0, 120);
+  }
+  eq(pictured, ['A graph  and the same .'], 'the search records of a page with Markdown images, without the images');
+  const pagesIn = (d) => fs.readdirSync(path.join(repo, d), { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory() ? pagesIn(`${d}/${e.name}`) : e.name.endsWith('.mdx') ? [`${d}/${e.name}`] : []));
+  // a Fortran component's tag as fumadocs writes it into a record (its text attributes, in quotes with " escaped), or
+  // a code span, whose text is the page's own, such as the Components page's `<FortranArg>`
+  const tagOrCode = /(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)|<\/?Fortran[A-Z]\w*(?:\s+[\w-]+(?:="[^"]*")?)*\s*\/?>/g;
+  const cutTags = (s) => s.replace(tagOrCode, (m, code) => (code ? m : ''));
+  const tags = (sd) => [...sd.headings, ...sd.contents].filter((r) => cutTags(r.content) !== r.content);
+  const norm = (rs, cut) => rs.map((r) => ({ ...r, content: (cut ? cutTags(r.content) : r.content)
+    .replace(/\s+/g, ' ').trim() })).filter((r) => r.content);
+  const tagged = [];
+  const changed = [];
+  let fumadocsTags = 0;
+  let solver;
+  for (const page of pagesIn('docs/content/docs')) {
+    const text = read(page);
+    const own = await search.records(text, 'site');
+    const defaults = await search.records(text, 'defaults');
+    if (page.endsWith('/solver_kernels.mdx')) solver = own;
+    tagged.push(...tags(own).map((r) => `${page}: ${r.content.slice(0, 80)}`));
+    fumadocsTags += tags(defaults).length;
+    // fumadocs' records with the Fortran tags taken out, and those it leaves empty dropped
+    const same = ['headings', 'contents'].every((k) => JSON.stringify(norm(own[k], false))
+      === JSON.stringify(norm(defaults[k], true)));
+    if (!same) changed.push(page);
+  }
+  ok(fumadocsTags > 0 && !tagged.length,
+    `the search records hold no tag of a Fortran component, which fumadocs' own options keep: ${tagged.slice(0, 3)}`);
+  eq(changed, [], "the search records are fumadocs' own, less the Fortran components' tags");
+  // norm2_parallel's entry (generated, above): its heading, its Calls line with the name and without the card, and its
+  // arguments' docs
+  const callsLine = /^\*\*Calls:\*\* .*$/m.exec(generated)?.[0] ?? '';
+  const callsText = callsLine.replace(/<FortranRef\b(?:\s+\w+(?:="[^"]*")?)*\s*>([\s\S]*?)<\/FortranRef>/g, '$1');
+  const argDocs = [...generated.matchAll(/^<FortranArg\b[^\n]*[^/]>\n\n([\s\S]*?)\n\n<\/FortranArg>$/gm)]
+    .map((m) => m[1]);
+  const under = solver?.contents.filter((r) => r.heading === 'norm2_parallel').map((r) => r.content) ?? [];
+  ok(!!solver?.headings.some((h) => h.id === 'norm2_parallel') && callsLine.includes('<FortranRef')
+    && under.includes(callsText) && callsText.includes('`MPI_Allreduce`') && argDocs.length > 0
+    && argDocs.every((d) => under.includes(d)),
+  "norm2_parallel's records keep its heading, the MPI_Allreduce of its Calls line without the card, and its arguments'"
+    + ` docs: ${JSON.stringify(under)}`);
 }

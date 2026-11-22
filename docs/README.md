@@ -41,6 +41,11 @@ Restart the dev server after a change to the `exports` of the package's own `pac
   for the generated graphs and colours their nodes by kind; `global.css` maps them for diagrams written in pages.
   `lib/source.ts` keeps the generated pages' `fortran` front matter, and the page template passes it to
   `fortranToc()` for the letters in the table of contents.
+- `lib/source.ts` gives search the text of the Fortran components and leaves their tags out
+  (`remarkStructureOptions.filterElement`). `test/site.test.mjs` checks the pages' records against fumadocs' own,
+  reading them through `scripts/search/records.mjs`, which leaves remark-image out, as images never reach the
+  records, and `scripts/search/measure.mjs` measures the index both ways. The sidebar keeps Next's prefetch, as the
+  Showcase pages are small.
 - Links that next/link does not draw get what it would give them, the base path and, in the static export, a page's
   trailing slash, from `siteHref` in `lib/shared.ts`: those of hover cards and source headers in
   `components/mdx/fortran.tsx`, those of graph nodes in `components/mdx/mermaid.tsx`, and those of the llms files and

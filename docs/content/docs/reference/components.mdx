@@ -252,13 +252,13 @@ A label of its own, a condition, a note, and a kind the package does not know, w
 `FortranArgs` is a table in the manner of fumadocs' `TypeTable`: a title, a header row, and a `FortranArg` row for
 each argument, result, component, type parameter, type-bound procedure or enumerator. A row shows the name, the type,
 the shape (dimensions and codimensions), the intent and the attributes, and opens to its documentation, as full
-Markdown, with the whole declaration, the intent and each attribute beside its meaning, the shape in words, a
-character type's length and the cpp condition it exists under. A name in the type that `refs` lists links to its
-definition and shows a card on hover or keyboard focus; the intent, each attribute, the shape and the `*` or `:` of
-`character(*)` and `character(:)` say what they mean in a card on hover (see [Meanings](#meanings)). A type
-parameter's row reads as its declaration does: the type `integer, kind` and one attribute, `default dp`, for
-`integer, kind :: k = dp`. In a column narrower than 34rem, a row keeps its name and intent, and the rest moves into
-what it opens to.
+Markdown, with the whole declaration, the intent, a type parameter's `kind` or `len` and each attribute beside its
+meaning, the shape in words, a character type's length and the cpp condition it exists under. A name in the type
+that `refs` lists links to its definition and shows a card on hover or keyboard focus; the intent, each attribute,
+the shape, the `*` or `:` of `character(*)` and `character(:)` and the `kind` or `len` of a type parameter's type say
+what they mean in a card on hover (see [Meanings](#meanings)). A type parameter's row reads as its declaration does:
+the type `integer, kind` and one attribute, `default dp`, for `integer, kind :: k = dp`. In a column narrower than
+34rem, a row keeps its name and intent, and the rest moves into what it opens to.
 
 <Tabs items={['Preview', 'MDX']}>
 <Tab value="Preview">
@@ -402,9 +402,9 @@ The kind of the entries.
 
 Leave a blank line after an opening `<FortranArg>` and before its closing tag, so that what is between them is read
 as Markdown. A row opens when it has more to say than its cells: a doc, a declaration, a shape, a condition, a `*` or
-`:` length, or an intent (`in`, `out` or `inout`) or an attribute, whose meanings it says in words for the keyboard
-and screen readers, as `info` does. A row with none of these, such as a result's with only its type, does not open,
-and its `result` pill says what it means on hover alone.
+`:` length, or an intent (`in`, `out` or `inout`), an attribute or a type parameter's `kind` or `len`, whose meanings
+it says in words for the keyboard and screen readers, as `info` does. A row with none of these, such as a result's
+with only its type, does not open, and its `result` pill says what it means on hover alone.
 
 </Tab>
 </Tabs>
@@ -443,7 +443,7 @@ and its `result` pill says what it means on hover alone.
     type: {
       type: 'string',
       description:
-        "The type, as declared: integer, real(dp), type(MPI_Comm), class(*) and so on, or a type parameter's, such as integer, kind. The * or : of character(*) and character(:) says what it means on hover, and an opened row gives the length of any character type: assumed, deferred, as written, or 1, the default. The * of a result's character(*), an obsolescent form, says that it takes the length the caller declares for the function.",
+        "The type, as declared: integer, real(dp), type(MPI_Comm), class(*) and so on, or a type parameter's, such as integer, kind, whose kind or len says what it means on hover and in the opened row. The * or : of character(*) and character(:) says what it means on hover, and an opened row gives the length of any character type: assumed, deferred, as written, or 1, the default. The * of a result's character(*), an obsolescent form, says that it takes the length the caller declares for the function.",
     },
     dims: {
       type: 'string',
@@ -502,11 +502,12 @@ and its `result` pill says what it means on hover alone.
 
 ## Meanings
 
-A badge, an intent, an attribute, a condition, a shape and the `*` or `:` of `character(*)` and `character(:)` say
-what they mean in a card while the pointer is on them, in the look of the hover cards. In the Arguments table of
-[FortranArgs and FortranArg](#fortranargs-and-fortranarg), `allocatable` says "Allocated at run time, by allocate or
-on assignment, and freed by deallocate (a local one also on return)", `(lda,*)` "rank 2, assumed size", and the `*`
-of `character(*)` "Assumed length (len=\*): taken from the actual argument".
+A badge, an intent, an attribute, a condition, a shape, the `*` or `:` of `character(*)` and `character(:)` and the
+`kind` or `len` of a type parameter's `integer, kind` say what they mean in a card while the pointer is on them, in
+the look of the hover cards. In the Arguments table of [FortranArgs and FortranArg](#fortranargs-and-fortranarg),
+`allocatable` says "Allocated at run time, by allocate or on assignment, and freed by deallocate (a local one also on
+return)", `(lda,*)` "rank 2, assumed size", and the `*` of `character(*)` "Assumed length (len=\*): taken from the
+actual argument".
 
 The meanings are written once, in `fumadocs-fortran/style.css`. The components name each one's term in a `data-term`
 attribute, and what goes with it in `data-arg` (`self` in `pass(self)`, `dp` in `default dp`, `USE_MPI` in
@@ -516,9 +517,10 @@ in `data-arg`. A term the stylesheet has no meaning for, such as a site's own ba
 badge with a `title`, whose card holds the title alone.
 
 The cards are for the pointer: Tab does not stop at a pill, which has no native tooltip either, and in current
-browsers screen readers do not read a card with its row. So a row with an intent or an attribute opens, if only to
-say the same for the keyboard and screen readers: its intent in words, each attribute beside its meaning, and its
-shape, length and condition. A badge's meaning is for the pointer alone; its `title` is text in the badge, which
+browsers screen readers do not read a card with its row. So a row with an intent, an attribute or a type parameter's
+`kind` or `len` opens, if only to say the same for the keyboard and screen readers: its intent and its type
+parameter's `kind` or `len` in words, each attribute beside its meaning, and its shape, length and condition. A
+badge's meaning is for the pointer alone; its `title` is text in the badge, which
 screen readers read with it. On a touch screen, a tap on a pill in a row opens the row, which says what the pill
 means, so the pill shows no card there. Where the browser has CSS anchor positioning, a card is placed against what
 it explains and the screen, as a hover card is; elsewhere the card of a pill in the table's last columns opens
@@ -538,8 +540,8 @@ This site gives the HDF5 badge above its meaning:
 ```
 
 and `[data-term='default'][data-arg] { --fdf-mean: "Defaults to " attr(data-arg); }` would reword the card of
-`default dp`. A rule for a term rewords what an opened row says of it as well, as its Intent and Length lines and its
-list of attributes show the same meanings. A shape's card is reworded one shape at a time, as with
+`default dp`. A rule for a term rewords what an opened row says of it as well, as its Intent, Type parameter and
+Length lines and its list of attributes show the same meanings. A shape's card is reworded one shape at a time, as with
 `[data-term='shape'][data-arg='rank 2, assumed size']`, and its Shape line not at all. A badge with a condition says
 so on a line under its meaning, "Only when the preprocessor condition USE_MPI holds": that line is `--fdf-also`,
 which `[data-term='mpi'][data-arg] { --fdf-also: "\A Only in builds with " attr(data-arg); }` would reword for the
@@ -559,7 +561,8 @@ MPI badge. The terms the stylesheet has meanings for are:
   `pass` (for `pass(self)`) and `non_overridable`, and CUDA Fortran's `device`, `managed` and `pinned`; `default` for
   `default dp`, `init` for `= 0` and `pointer-init` for `=> null()`;
 - `when` for a condition, `shape` for a shape, with its words in `data-arg`, `assumed-length` and `deferred-length`
-  for the `*` and `:` of a character length, and `assumed-length-result` for the `*` of a function's result.
+  for the `*` and `:` of a character length, `assumed-length-result` for the `*` of a function's result, and `kind`
+  and `len`, as for an attribute, for the word of a type parameter's type, as in `integer, kind`.
 
 ## FortranRef
 
@@ -568,7 +571,7 @@ in code, a line of text, and a muted note. The rows use it for kind names and de
 the library routines it names (see [Library names](#library-names)); in text it stands on its own. Hover over these
 names, or reach them with Tab:
 
-{/* the examples are expressions, so that search, which keeps a paragraph's elements as tags, leaves them out */}
+{/* the examples are expressions, which search leaves out */}
 <p>
   {<><FortranRef href="/docs/showcase/modern/solver_kernels#abstract_matrix" title="type, abstract :: abstract_matrix" detail="An abstract matrix type.">abstract_matrix</FortranRef> is the type the matrices of the Showcase extend.</>}
 </p>
@@ -578,7 +581,7 @@ names, or reach them with Tab:
 </p>
 
 <p>
-  {<>The Showcase's <code>solve_dense_real</code> calls <FortranRef href="https://www.netlib.org/lapack/explore-html/d8/da6/group__gesv_ga831ce6a40e7fd16295752d18aed2d541.html#ga831ce6a40e7fd16295752d18aed2d541" title="subroutine dgesv (LAPACK)" detail="Computes the solution to system of linear equations A * X = B for GE matrices"><code>dgesv</code></FortranRef>, as its "Calls:" line shows.</>}
+  {<>The Showcase's <code>solve_dense_real</code> calls <FortranRef href="https://netlib.org/lapack/explore-html/d8/da6/group__gesv_ga831ce6a40e7fd16295752d18aed2d541.html#ga831ce6a40e7fd16295752d18aed2d541" title="subroutine dgesv (LAPACK)" detail="Computes the solution to system of linear equations A * X = B for GE matrices"><code>dgesv</code></FortranRef>, as its "Calls:" line shows.</>}
 </p>
 
 ```mdx
@@ -586,7 +589,7 @@ names, or reach them with Tab:
   detail="An abstract matrix type.">abstract_matrix</FortranRef> is the type the matrices of the Showcase extend.
 
 **Calls:** <FortranRef
-  href="https://www.netlib.org/lapack/explore-html/d8/da6/group__gesv_ga831ce6a40e7fd16295752d18aed2d541.html#ga831ce6a40e7fd16295752d18aed2d541"
+  href="https://netlib.org/lapack/explore-html/d8/da6/group__gesv_ga831ce6a40e7fd16295752d18aed2d541.html#ga831ce6a40e7fd16295752d18aed2d541"
   title="subroutine dgesv (LAPACK)"
   detail="Computes the solution to system of linear equations A * X = B for GE matrices">`dgesv`</FortranRef>
 ```
@@ -603,8 +606,9 @@ line, from the start of either. Cards are not printed.
 ### Library names
 
 The package ships a registry of the names of HPC libraries (`registry/`): BLAS and LAPACK, ScaLAPACK with PBLAS,
-BLACS, its tools and REDIST, MPI, OpenMP, OpenACC and the Fortran intrinsics. The generator gives their names cards
-from it:
+BLACS, its tools and REDIST, and the routines it writes in C for Fortran to call (`?lamov`, `pcrot`, `pzrot`, the
+`p?laiect`, `p?lasnbt` and `p?lachkieee` routines, `reshape`, `sl_gridreshape`, `PB_topget`, `PB_topset` and
+`PB_freebuf`), MPI, OpenMP, OpenACC and the Fortran intrinsics. The generator gives their names cards from it:
 
 - **Calls.** In the "Calls:" line of a procedure or a program, a library subroutine is a `FortranRef`, as `dgesv`
   above: its kind, name and library, the registry's summary and a link to its documentation, each where there is
@@ -618,7 +622,10 @@ from it:
   gfortran's manual for one that fortran-lang.org lacks (`random_init`, `split`). A routine with no page to link to,
   such as the intrinsic `tokenize` or MPI's predefined callbacks, has a card without a link, a button. A routine that
   a use statement renames is looked up by its own name. The line lists `CALL` statements, so a function such as
-  `dnrm2` has no card, though the call graphs draw it.
+  `dnrm2` has no card, though the call graphs draw it. A site chooses other pages with `hpc.links`, or `--links`, by
+  library: `lapack` and `scalapack` take `netlib` or `mkl`, `mpi` `openmpi`, `mpich` or `standard`, `openmp` `5.2`,
+  `6.0`, `6.1` or `libgomp`, `openacc` `spec` or `libgomp`, and `intrinsics` `fortran-lang` or `gfortran`
+  (`--links lapack=mkl,mpi=mpich`); a name its provider has no page for links as by default.
 - **Types and kinds.** In a row, the derived types of `mpi_f08` (`type(MPI_Comm)`, `MPI_Datatype`, `MPI_Request`,
   `MPI_Status`, …) and the kinds of `omp_lib` or `omp_lib_kinds` (`integer(omp_lock_kind)`) have a card when the
   declaration's scope uses the module, by `use` (`use, intrinsic :: omp_lib` too), an `only` list or a rename,
@@ -632,10 +639,13 @@ from it:
   its own types. An interface body that only describes a library routine, as code writes one for `dgesv`, does not
   count: a call links to it when it has a heading, and has the library's card when it has none. A `pointer`
   statement on its name makes it a procedure pointer, which does. A `CALL` of a name the registry has as a function,
-  or of an intrinsic's name that another module's use statement gives, names some other subroutine and has no card.
+  or of an intrinsic's name that another module's use statement gives, names some other subroutine and has no card,
+  unless the registry has a subroutine of the name: `call reshape` is ScaLAPACK's `reshape`, of its tools, not the
+  intrinsic function.
 
 The registry is read when the pages are generated, the first time a page needs it. Without it, the names are shown
-as code, with no card, and the graphs leave LAPACK and ScaLAPACK grey.
+as code, with no card, and the graphs leave LAPACK and ScaLAPACK grey. `hpc.cards: false`, or
+`--library-cards none`, leaves the names as code, with no card, and keeps the graphs' colours.
 
 ### Props of FortranRef
 
@@ -820,17 +830,20 @@ flowchart LR
   inheritance is the types it extends, up to the root, and every type that extends it. A procedure's calls are what
   it calls, two steps deep through the project's procedures, and what calls it. The overview has every module,
   submodule and program, with one node for each HPC library they use. A graph draws at most 40 nodes, the last of
-  them standing for the rest ("… 12 more"), and a project of more than 80 units has no overview graph. From
-  JavaScript, `graphs: { depth, maxNodes }` changes the two steps and the 40 nodes, and `maxNodes` the 80 units as
-  well.
+  them standing for the rest ("… 12 more"): the routines from outside the project go first, however many callers
+  they have, the farthest first, then the farthest of the rest. A project of more than 80 units has no overview
+  graph. From JavaScript, `graphs: { depth, maxNodes }` changes the two steps and the 40 nodes, and `maxNodes` the 80
+  units as well.
 - **Calls.** A call is a `CALL` statement or a function reference, resolved as Fortran resolves it: through `use`,
   renames, host association, generic interfaces and submodules. A type-bound one (`call m%solve(b)`,
   `n = m%order()`) is drawn when `m` is a dummy argument, a function result or a module variable, whose type the
   model knows, and not through a local variable, as the model keeps no local declarations. Intrinsic procedures are
   left out, and a function reference to a name the project does not declare is drawn only when the name is a known
-  library's, such as LAPACK's `dlamch`, as it might as well be an array. A `CALL` of a name that only an intrinsic
-  function has names some other routine, drawn as one from outside the project (ScaLAPACK's own `RESHAPE`), and a
-  call through a procedure pointer the caller declares is not drawn.
+  library's, such as LAPACK's `dlamch`, as it might as well be an array. A node bears the name as the source first
+  writes it, so fixed-form code's `DLAMCH` stands beside its `DGEMM`. A `CALL` of a name that only an intrinsic
+  function has names some other routine, drawn as one from outside the project; the registry knows ScaLAPACK's own
+  `reshape`, which `call reshape` draws in ScaLAPACK's colour. A call through a procedure pointer the caller declares
+  is not drawn.
 - **Shapes.** A module and a type are boxes, a submodule a box with double sides, a program a stadium, a procedure a
   rounded box and a generic interface or binding a hexagon. A module or routine from outside the project is a rounded
   box. The graph's subject has a heavier border.
