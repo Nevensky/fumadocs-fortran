@@ -2,7 +2,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { extractFiles, parseSource, detectForm, evaluate, parseDirective, readEvents } from '../src/index.js';
+import { extractFiles, parseSource, detectForm, evaluate, parseDirective } from '../src/index.js';
+import { readEvents } from '../src/source/reader.js';
 import { canon, lower, splitTop, scanComment, matchClose } from '../src/parse/text.js';
 import { macroTable, preprocess, CondTable } from '../src/source/cpp.js';
 import { parseDeclaration } from '../src/parse/decl.js';

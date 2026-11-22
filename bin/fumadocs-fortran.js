@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The fumadocs-fortran command line. M0 has `dump`; init, generate, check and doctor arrive with v0.1.
+// The fumadocs-fortran command line: dump prints the model of Fortran sources, generate writes their API reference.
 
 import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
@@ -22,12 +22,12 @@ Options for dump:
   --summary            print counts per file instead of JSON
   -o, --out FILE       write the JSON to FILE
 
-Options for generate (and -D, -I, --all-branches, --form, --exclude as for dump):
+Options for generate (and -D, -I, --all-branches, --form, --fixed-length, --exclude as for dump):
   -o, --out DIR        the content folder to write (default content/docs/api)
   --base-url URL       the URL of that folder (default /docs/api)
   --title TEXT         the overview page's title
   --display LIST       access levels to show, comma-separated (default public,protected)
-  --repo URL           link each entity to its lines in this repository (GitHub or GitLab)
+  --repo URL           link each entity to its lines in this GitHub repository (URL/blob/REV/FILE#L10-L20)
   --rev REV            the branch, tag or commit for those links (default main)
   --math MODE          katex (default): $…$ maths for remark-math and rehype-katex; code: maths shown as code,
                        for a site without them
@@ -175,11 +175,15 @@ if (opts.cmd === 'dump') {
     hpc: { links: opts.links, cards: opts.cards !== 'none' },
   });
   const warn = r.ir.diagnostics.length;
-  process.stdout.write(`${r.written.length} files (${r.changed.length} changed, ${r.removed.length} removed) from ${r.ir.files.length} sources in ${(performance.now() - t0).toFixed(0)} ms${warn ? `; ${warn} diagnostics` : ''}\n`);
+  const ms = (performance.now() - t0).toFixed(0);
+  process.stdout.write(`${count(r.written.length, 'file')} (${r.changed.length} changed, ${r.removed.length} removed) from ${count(r.ir.files.length, 'source')} in ${ms} ms${warn ? `; ${count(warn, 'diagnostic')}` : ''}\n`);
   for (const d of r.ir.diagnostics.slice(0, 20)) process.stderr.write(`${d.file}:${d.line}: ${d.severity}: ${d.message} [${d.code}]\n`);
-} else if (['init', 'check', 'doctor'].includes(opts.cmd)) {
-  fail(`${opts.cmd} is not implemented yet (it arrives with v0.1)`);
-} else fail(`unknown command ${opts.cmd}`);
+} else fail(`unknown command ${opts.cmd}; the commands are dump and generate`);
+
+/** `1 file`, `2 files`: a count and its noun. */
+function count(n, one, many = `${one}s`) {
+  return `${n} ${n === 1 ? one : many}`;
+}
 
 function summary(ir, ms) {
   const per = new Map(ir.files.map((f) => [f.path, { units: 0, procs: 0, types: 0, ifaces: 0, args: 0 }]));
@@ -201,5 +205,8 @@ function summary(ir, ms) {
   const width = rows[0].map((_, i) => Math.max(...rows.map((r) => String(r[i]).length)));
   const fmt = (r) => r.map((x, i) => (i === 0 ? String(x).padEnd(width[i]) : String(x).padStart(width[i]))).join('  ');
   const warn = ir.diagnostics.length;
-  return `${rows.map(fmt).join('\n')}\n\n${ir.files.length} files, ${lines} lines, ${Object.keys(ir.entities).length} entities, ${warn} diagnostics, ${ms.toFixed(0)} ms\n`;
+  const entities = Object.keys(ir.entities).length;
+  const total = [count(ir.files.length, 'file'), count(lines, 'line'), count(entities, 'entity', 'entities'),
+    count(warn, 'diagnostic'), `${ms.toFixed(0)} ms`];
+  return `${rows.map(fmt).join('\n')}\n\n${total.join(', ')}\n`;
 }

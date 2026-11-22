@@ -1,6 +1,6 @@
 // Compiler directives: OpenMP, OpenACC, CUDA Fortran and vendor sentinels. The reader finds them; this module names the
 // construct (`parallel do`, `declare target`, `end parallel`) and keeps the clauses as text. The word lists cover
-// OpenMP 6.1 and OpenACC 3.4; the HPC registry (v0.3) gives the full lists and their meaning.
+// OpenMP 6.1 and OpenACC 3.4; the HPC registry (registry/) gives the full lists and their meaning.
 
 /** Sentinel → directive family. `$` is OpenMP conditional compilation (`!$ code`), not a directive. */
 export const FAMILY = { omp: 'omp', ompx: 'omp', acc: 'acc', cuf: 'cuf', $: 'cond' };

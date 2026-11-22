@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { Metadata } from 'next';
 import Link from 'next/link';
-import { highlight } from 'fumadocs-core/highlight';
+import { getHighlighter, highlight } from 'fumadocs-core/highlight';
+import { Card, Cards } from 'fumadocs-ui/components/card';
 import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
 import {
   FortranArg,
@@ -13,10 +15,15 @@ import {
   FortranSource,
   type FortranRefTarget,
 } from 'fumadocs-fortran/react';
-import { Credits } from '@/components/credits';
+import { fortranLanguages, transformerFortranDirectives } from 'fumadocs-fortran/shiki';
 import { Mermaid } from '@/components/mdx/mermaid';
-import { getShowcaseUrl } from '@/lib/source';
-import { gitConfig, githubUrl } from '@/lib/shared';
+import { changelogRoute, gitConfig, githubUrl, siteHref, siteOpenGraph, statusSentence } from '@/lib/shared';
+
+// the home page's address, as the site links it (metadataBase gives it its origin); its title is the root layout's
+export const metadata: Metadata = {
+  alternates: { canonical: siteHref('/') },
+  openGraph: { ...siteOpenGraph(), url: siteHref('/') },
+};
 
 // a procedure from examples/modern/src/modern_ford.F90, shortened, with its FORD doc comments
 const SOURCE = `!> 2-norm reduced across OpenMP threads and MPI ranks.
@@ -30,11 +37,11 @@ function norm2_parallel(x &
   type(MPI_Comm), intent(in) :: comm !! communicator
 #endif
   real(dp) :: nrm !! the global 2-norm
-  ...
+  ! …
   !$omp parallel do reduction(+:s)
-  ...
+  ! …
   call MPI_Allreduce(MPI_IN_PLACE, s, 1, MPI_DOUBLE_PRECISION, MPI_SUM, comm)
-  ...
+  ! …
 end function norm2_parallel`;
 
 const FILE = 'examples/modern/src/modern_ford.F90';
@@ -84,13 +91,22 @@ function readFunction(file: string, name: string) {
   };
 }
 
-/** The code highlighted as the generated page's source block shows it, numbered from `line`. */
-function codeBlock(code: string, line: number) {
+/**
+ * Fortran highlighted as the site's code blocks are: with fumadocs-fortran/shiki's grammars, which read `!$omp` as a
+ * directive where Shiki's own read it as a comment, and the transformer that marks a directive's line (fdf-directive,
+ * which fumadocs-fortran/style.css tints). With `line`, as the generated page's source block shows it, numbered from
+ * that line of the file.
+ */
+async function fortran(code: string, line?: number) {
+  // fumadocs' highlighter, which highlight() uses, with the package's grammars added (once: a loaded one is kept)
+  await getHighlighter('js', { langs: fortranLanguages });
+  const numbers = line === undefined ? {} : { 'data-line-numbers': true, 'data-line-numbers-start': line };
   return highlight(code, {
-    lang: 'f90',
+    lang: 'fortran',
+    transformers: [transformerFortranDirectives()],
     components: {
       pre: ({ className, style, children }) => (
-        <CodeBlock className={className} style={style} data-line-numbers data-line-numbers-start={line}>
+        <CodeBlock className={className} style={style} {...numbers}>
           <Pre>{children}</Pre>
         </CodeBlock>
       ),
@@ -99,18 +115,21 @@ function codeBlock(code: string, line: number) {
 }
 
 const FEATURES: [string, string][] = [
-  ['Its own parser', 'Written in plain JavaScript with no dependencies, so it needs no Python, no compiler and no build of your code.'],
+  ['Its own parser', 'Written in plain JavaScript with no dependencies, so it needs no Python, no compiler and no build of your code. Sources written for fypp need fypp first.'],
   ['The comments you have', 'FORD, Doxygen and LAPACK doc comments are read as they are, with Markdown and maths.'],
-  ['HPC aware', 'OpenMP and OpenACC directives, MPI, coarrays and CUDA Fortran show as badges, what exists only under #ifdef USE_MPI says so, on the entity and on each argument, and calls into BLAS, LAPACK, ScaLAPACK and MPI link to their documentation.'],
+  ['HPC aware', 'OpenMP and OpenACC directives, MPI, coarrays and CUDA Fortran show as badges, what exists only under #ifdef USE_MPI says so, on the entity and on each argument, and calls into BLAS, LAPACK, ScaLAPACK, MPI, OpenMP and OpenACC link to their documentation.'],
   ['Arguments in full', 'Arguments, results and components are rows that open to their docs in full Markdown and their declarations; names show a card on hover, and every badge and attribute says what it means.'],
   ['Graphs and source', 'Dependency, inheritance and call graphs as Mermaid, and the code of each entry in a block that opens, numbered as in its file.'],
-  ['Plain MDX pages', "fumadocs builds the reference like hand-written pages: search, a table of contents with each entry's kind, and static export included."],
+  ['Plain MDX pages', "Fumadocs builds the reference like hand-written pages: search, a table of contents with each entry's kind, and static export included."],
 ];
 
+const primary = 'rounded-full bg-fd-primary px-5 py-2.5 text-sm font-medium text-fd-primary-foreground transition-opacity hover:opacity-90';
+const secondary = 'rounded-full border px-5 py-2.5 text-sm font-medium transition-colors hover:bg-fd-accent';
+
 export default async function HomePage() {
-  const showcase = getShowcaseUrl() ?? '/docs';
   const fn = readFunction(FILE, NAME);
-  const code = fn && (await codeBlock(fn.code, fn.line));
+  const written = await fortran(SOURCE);
+  const code = fn && (await fortran(fn.code, fn.line));
   // the hover card of dp, as the generator writes it for a kind that a use statement renames
   const dp: Record<string, FortranRefTarget> = {
     dp: {
@@ -130,34 +149,38 @@ export default async function HomePage() {
     },
   };
 
+  // HomeLayout gives the page its <main>; the skip link of (home)/layout.tsx leads to this element
   return (
-    <main className="flex flex-1 flex-col">
+    <div id="content" className="flex flex-1 flex-col">
       <section className="mx-auto w-full max-w-5xl px-4 pt-16 pb-12 text-center">
-        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Fortran API reference for fumadocs</h1>
+        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Fortran API reference for Fumadocs</h1>
         <p className="mx-auto mt-5 max-w-2xl text-lg text-fd-muted-foreground">
           fumadocs-fortran reads your Fortran and the doc comments it already has, and writes the API reference as MDX
           pages that build with the rest of your site.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <Link href="/docs" className="rounded-full bg-fd-primary px-5 py-2.5 text-sm font-medium text-fd-primary-foreground transition-opacity hover:opacity-90">
-            Introduction
+          <Link href="/docs/get-started" className={primary}>
+            Get started
           </Link>
-          <Link href={showcase} className="rounded-full border px-5 py-2.5 text-sm font-medium transition-colors hover:bg-fd-accent">
+          <Link href="/docs/showcase" className={secondary}>
             Showcase
           </Link>
-          <a href={githubUrl} className="rounded-full border px-5 py-2.5 text-sm font-medium transition-colors hover:bg-fd-accent">
+          <a href={githubUrl} className={secondary}>
             GitHub
           </a>
         </div>
-        <p className="mt-6 text-sm text-fd-muted-foreground">In development: this site is the first slice of v0.1.</p>
+        <p className="mx-auto mt-6 max-w-2xl text-sm text-fd-muted-foreground">
+          {statusSentence}{' '}
+          <Link href={changelogRoute} className="underline underline-offset-4 hover:text-fd-foreground">
+            Changelog
+          </Link>
+        </p>
       </section>
 
       {/* side by side only where the rendered entry gets the 34rem its tables need for all their columns */}
       <section className="mx-auto grid w-full max-w-6xl items-start gap-6 px-4 pb-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <figure className="min-w-0">
-          <pre className="overflow-x-auto rounded-xl border bg-fd-card p-4 text-left font-mono text-[13px] leading-relaxed">
-            {SOURCE}
-          </pre>
+        <figure className="min-w-0 [&>figure]:my-0">
+          {written}
           <figcaption className="mt-2 text-sm text-fd-muted-foreground">The Fortran, as written</figcaption>
         </figure>
         <figure className="min-w-0">
@@ -218,27 +241,41 @@ export default async function HomePage() {
         </figure>
       </section>
 
+      <section className="mx-auto w-full max-w-5xl px-4 pb-16">
+        <h2 className="mb-6 text-center text-2xl font-semibold tracking-tight">Where to start</h2>
+        <Cards className="sm:grid-cols-3">
+          <Card title="Start a site" href="/docs/get-started">
+            Your Fortran sources in a Fumadocs site made for them, from the first command to the reference in your browser.
+          </Card>
+          <Card title="Add it to your Fumadocs site" href="/docs/guides/site-setup">
+            The packages, components and settings the generated pages need, with maths and graphs.
+          </Card>
+          <Card title="Coming from FORD or Doxygen" href="/docs/guides/from-ford-doxygen">
+            What carries over from a FORD project file or a Doxyfile, and what works differently.
+          </Card>
+        </Cards>
+      </section>
+
       <section className="border-t bg-fd-card/40">
         <div className="mx-auto w-full max-w-5xl px-4 py-16">
           <div className="grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map(([title, text]) => (
               <div key={title}>
-                <h3 className="font-semibold">{title}</h3>
+                <h2 className="font-semibold">{title}</h2>
                 <p className="mt-2 text-sm text-fd-muted-foreground">{text}</p>
               </div>
             ))}
           </div>
           <div className="mt-14 flex flex-wrap justify-center gap-3">
-            <Link href="/docs/reference/components" className="rounded-full bg-fd-primary px-5 py-2.5 text-sm font-medium text-fd-primary-foreground transition-opacity hover:opacity-90">
-              See the components
+            <Link href="/docs/get-started" className={primary}>
+              Get started
+            </Link>
+            <Link href="/docs/showcase" className={secondary}>
+              Showcase
             </Link>
           </div>
         </div>
       </section>
-
-      <footer className="border-t px-4 py-8 text-center">
-        <Credits />
-      </footer>
-    </main>
+    </div>
   );
 }

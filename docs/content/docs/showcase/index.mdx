@@ -1,0 +1,58 @@
+---
+title: Showcase
+description: The reference generated for examples/modern, the project's own example, beside its sources.
+---
+
+The pages under examples/modern are what fumadocs-fortran writes for the example in the repository's
+`examples/modern/src`, with nothing edited by hand. [Example sources](/docs/showcase/sources) shows the Fortran they
+come from, so that a procedure's entry can be compared with its code.
+
+## What the example holds
+
+Three files of 520 lines, written to use what the generator reads:
+
+- `modern_ford.F90`, 295 lines in free form with cpp conditions and FORD comments: the module solver_kernels, its
+  submodule solver_kernels_lapack and the program demo, with derived types, interfaces, OpenMP and OpenACC
+  directives, MPI calls under `#ifdef USE_MPI`, coarrays and maths in the comments;
+- `modern_doxygen.f90`, 61 lines in free form with Doxygen comments: the module eigen_wrappers, which calls BLAS and
+  LAPACK;
+- `tridiag.f`, 164 lines in fixed form with LAPACK-style comments: the external subroutine DTRIDS, whose page is named
+  gtsv after its `\ingroup gtsv`.
+
+It has no CUDA Fortran, no include files, no fypp and no block data.
+
+## The pages
+
+- [examples/modern](/docs/showcase/modern), the overview: a card for each page, and a graph of the units and the HPC
+  modules they use;
+- [solver_kernels](/docs/showcase/modern/solver_kernels), the largest page, with types, interfaces, OpenMP regions,
+  MPI and coarrays;
+- [solver_kernels_lapack](/docs/showcase/modern/solver_kernels_lapack), the submodule with the LAPACK solves;
+- [eigen_wrappers](/docs/showcase/modern/eigen_wrappers), from Doxygen comments;
+- [demo](/docs/showcase/modern/demo), the program, which calls ScaLAPACK;
+- [gtsv](/docs/showcase/modern/gtsv), the page of the external subroutine DTRIDS;
+- [Example sources](/docs/showcase/sources), the three files.
+
+## How it is generated
+
+`docs/scripts/gen-showcase.mjs` calls `generate()` of the [JavaScript API](/docs/reference/javascript) with these
+options:
+
+<include lang="js" meta='title="docs/scripts/gen-showcase.mjs"'>../../../scripts/gen-showcase.mjs#generate</include>
+
+`_OPENMP` and `USE_MPI` are defined, so the pages show what the example has under `#ifdef _OPENMP` and
+`#ifdef USE_MPI`: the use of omp_lib and mpi_f08, the MPI badge and the `comm` argument of norm2_parallel, which a
+build without these macros leaves out. Private entities are shown as well as public and protected ones. From the
+repository's top folder, this command writes the same pages, but for the overview's description, which has no flag:
+
+```bash
+node bin/fumadocs-fortran.js generate examples/modern/src -o docs/content/docs/showcase/modern \
+  --base-url /docs/showcase/modern --title examples/modern -D_OPENMP -DUSE_MPI \
+  --display public,protected,private --repo https://github.com/Nevensky/fumadocs-fortran
+```
+
+## Licence
+
+The example is under the MIT licence, as the rest of the repository is. The pages also show material from other
+projects under their own licences: the HPC registry's names and summaries of library routines, whose notices are in
+`registry/NOTICE`, and the code blocks' grammars, whose notice is in `shiki/NOTICE`.

@@ -118,6 +118,8 @@ jobs:
   docs:
     name: Docs
     runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -129,10 +131,19 @@ jobs:
         run: |
           node docs/scripts/gen-showcase.mjs
           git diff --exit-code -- docs/content/docs/showcase
+      # the README and the contributor guide: their prose, their links (absolute, as they are read on GitHub, on npm
+      # and on the site), the README's install line against Get started's, and the code-to-page map; the build's
+      # prebuild runs it again, and here it fails before the install
+      - name: Check the README and the contributor guide
+        run: node docs/scripts/check-readme.mjs
       - run: npm ci
         working-directory: docs
-      - name: Build the static site
+      # npm run build first checks the pages against the code (prebuild: the check script of docs/package.json), then
+      # builds under a base path, as docs.yml builds it for GitHub Pages, and checks every link, anchor and page action
+      # of the export under that base path (postbuild: docs/scripts/check-links.mjs)
+      - name: Check the pages, build the static site under /fumadocs-fortran and check its links
         run: npm run build
         working-directory: docs
         env:
           DOCS_EXPORT: '1'
+          NEXT_PUBLIC_BASE_PATH: /fumadocs-fortran

@@ -1,196 +1,91 @@
 # fumadocs-fortran
 
-Fortran API reference for [fumadocs](https://fumadocs.dev). It reads Fortran sources with its own parser, written in
-plain JavaScript with no dependencies, and will write the API reference as MDX pages that a fumadocs site builds like
-its hand-written pages. It reads the doc comments projects already have, in FORD, Doxygen and LAPACK style, and it
-understands HPC code: OpenMP and OpenACC directives, MPI and coarrays, and calls into BLAS, LAPACK and ScaLAPACK.
+Fortran API reference for [Fumadocs](https://www.fumadocs.dev/). It reads Fortran sources with its own parser, written
+in plain JavaScript with no dependencies, and writes their API reference as MDX pages that a Fumadocs site builds like
+its hand-written pages. It reads the doc comments that projects write in FORD, Doxygen and LAPACK style, and it
+understands high-performance computing (HPC) code: OpenMP and OpenACC directives, MPI and coarrays, the conditions of
+the C preprocessor (cpp), and calls into BLAS, LAPACK and ScaLAPACK.
 
-**Status: in development.** The parser is done and checked (milestone M0). The doc-comment engine, page generation
-and the documentation site (v0.1) are in progress: `generate` already writes the pages for the example in
-`examples/modern`.
+**Pre-release.** fumadocs-fortran installs from GitHub, and its pages, options and components can change in any 0.x
+version.
 
-## What works now
+The documentation is at [nevensky.github.io/fumadocs-fortran](https://nevensky.github.io/fumadocs-fortran/).
 
-It is not published to npm yet. Install it from GitHub:
+## Install
+
+The package needs Node.js 18 or later, and npm runs Git to install it from GitHub. A Fumadocs site needs Node.js 22.22
+or a later 22 release, or Node.js 24.11 or later. Install the package in the site's folder, such as `docs/` in your
+project:
 
 ```bash
 npm install github:Nevensky/fumadocs-fortran --allow-git=root
 ```
 
-```bash
-npx fumadocs-fortran dump --summary src/
-```
+npm 12 installs a package from GitHub only with `--allow-git=root`; npm 10 and 11 do not need the flag, and npm
+11.12.1 refuses the install even with it
+([Troubleshooting](https://nevensky.github.io/fumadocs-fortran/docs/guides/troubleshooting/#eallowgit-non-root)). To
+pin a commit, write it after a `#`: `github:Nevensky/fumadocs-fortran#<commit>`.
 
-```bash
-npx fumadocs-fortran dump -D_OPENMP -DUSE_MPI -I include src/ -o model.json
-```
+[Get started](https://nevensky.github.io/fumadocs-fortran/docs/get-started/) creates the site and writes the
+reference into it, in six steps.
 
-`dump` prints the intermediate model: every module, procedure, type, interface and variable with its arguments,
-types, attributes, cpp conditions, directives, calls and doc comments. `fumadocs-fortran dump --help` lists the
-options.
+## Documentation
 
-```bash
-npx fumadocs-fortran generate src/ -o content/docs/api --base-url /docs/api -D_OPENMP
-```
+- [Get started](https://nevensky.github.io/fumadocs-fortran/docs/get-started/): from the Fortran in your `src/` to its
+  API reference in a Fumadocs site of your own.
+- [Set up your site](https://nevensky.github.io/fumadocs-fortran/docs/guides/site-setup/): the components, maths,
+  graphs, Fortran code blocks and kind letters in a Fumadocs site, and its search index and prefetch on
+  [large references](https://nevensky.github.io/fumadocs-fortran/docs/guides/site-setup/#large).
+- [Generate the reference](https://nevensky.github.io/fumadocs-fortran/docs/guides/generate/): the build to document,
+  with its cpp macros and include folders, what the pages show, the links to your repository, and running it again.
+- [Move from FORD or Doxygen](https://nevensky.github.io/fumadocs-fortran/docs/guides/from-ford-doxygen/): what carries
+  over from a FORD project file or a Doxyfile, and what works differently.
+- [Publish on GitHub Pages](https://nevensky.github.io/fumadocs-fortran/docs/guides/github-pages/): the site at your
+  repository's GitHub Pages address, built by a workflow.
+- [Troubleshooting](https://nevensky.github.io/fumadocs-fortran/docs/guides/troubleshooting/): each message or symptom,
+  its cause and its fix.
+- [Command line](https://nevensky.github.io/fumadocs-fortran/docs/reference/cli/): `dump` and `generate`, with every
+  option, default, message and exit code.
+- [JavaScript API](https://nevensky.github.io/fumadocs-fortran/docs/reference/javascript/): the exported functions,
+  `generate`, `extract` and `parseSource` among them, and the options that have no flag.
+- [Doc comments](https://nevensky.github.io/fumadocs-fortran/docs/reference/doc-comments/): what is read in FORD,
+  Doxygen and LAPACK style, and what it becomes.
+- [Components](https://nevensky.github.io/fumadocs-fortran/docs/reference/components/): the badges, the tables whose
+  rows open, the hover cards and meanings, the library cards from the HPC registry, the source blocks and graphs, and
+  their styling.
+- [Highlighting](https://nevensky.github.io/fumadocs-fortran/docs/reference/highlighting/): `fumadocs-fortran/shiki`,
+  Shiki grammars for Fortran in free and fixed form that highlight OpenMP, OpenACC, CUDA Fortran and compiler
+  directives, and fypp, in any Fumadocs or Shiki site.
+- [Generated files](https://nevensky.github.io/fumadocs-fortran/docs/reference/generated-files/): every file
+  `generate` writes, its name, front matter and anchors, and how a later run treats it.
+- [How it works](https://nevensky.github.io/fumadocs-fortran/docs/how-it-works/): from the sources to the pages, one
+  build at a time, the library names, the graphs and what the model leaves out.
+- [Showcase](https://nevensky.github.io/fumadocs-fortran/docs/showcase/): the reference generated for
+  `examples/modern`, beside its sources.
+- [Changelog](https://nevensky.github.io/fumadocs-fortran/docs/changelog/) and
+  [Contributing](https://nevensky.github.io/fumadocs-fortran/docs/contributing/).
 
-`generate` writes the API reference as MDX pages into a fumadocs content folder: one page per module, submodule and
-program, external procedures grouped as LAPACK groups them, and the `meta.json` files of the sidebar. The pages use
-the components from `fumadocs-fortran/react`; register them with `fortranComponents` and import
-`fumadocs-fortran/style.css`.
-
-LaTeX in doc comments (`$…$`, `$$…$$`, `\( \)`, `\[ \]`, `\begin{equation}`, Doxygen's `\f$` and `\f[`) renders with
-KaTeX. Add remark-math and rehype-katex to the site, with the macros for the commands Fortran docs write that KaTeX
-lacks (the physics package and others), and import `katex/dist/katex.css`:
-
-```ts
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
-import { katexMacros } from 'fumadocs-fortran/math';
-
-// in defineDocs: docs.mdxOptions
-applyMdxPreset({
-  remarkPlugins: [remarkMath],
-  rehypePlugins: (defaults) => [[rehypeKatex, { macros: { ...katexMacros } }], ...defaults],
-});
-```
-
-A site without them can show the maths as code instead: `generate --math code`.
-
-Arguments, results and components are tables whose rows open to their documentation and declaration. Kind names and
-derived types in them link to their definitions, with a card on hover or keyboard focus, and every badge, intent,
-attribute, shape and type parameter's `kind` or `len` says what it means in a card on hover; an opened row lists the
-meanings of its intent, type parameter, attributes, shape and length, for the keyboard and screen readers, while a
-badge's meaning is for the pointer alone. The registry of HPC library names that the package ships (`registry/`)
-gives cards to the libraries' names: in a procedure's "Calls:" line, a BLAS, LAPACK, ScaLAPACK (the routines it
-writes in C for Fortran, such as `pcrot` and `reshape`, included), MPI, OpenMP or OpenACC routine has a card with its
-library and, where the registry has them, its kind, a summary and a link to its documentation, and in the tables
-mpi_f08's types (`type(MPI_Comm)`) and omp_lib's kinds have theirs; a project's own names always win.
-`--links mpi=mpich,openmp=6.0` (`hpc.links` in JavaScript) chooses the pages the cards link to, by library, and
-`--library-cards none` (`hpc.cards: false`) leaves the names as code; `generate --help` lists the providers. Each
-entry's source code is in a block that opens, with line numbers, read from the files parsed wherever they lie
-(`--source link` only links to the lines). Modules, types and procedures have dependency, inheritance and call
-graphs, written as ` ```mermaid ` blocks: add fumadocs' `remarkMdxMermaid` and a `Mermaid` component to the site, or
-leave them out with `--graphs none`. Calls into BLAS, LAPACK, ScaLAPACK, MPI, OpenMP, OpenACC, CUDA and the coarray
-collectives are drawn in their library's colour (the JavaScript option `graphs.classify` takes the registry's
-place). Graphs drawn by [Pele](https://github.com/obsidianmd/pele) take the theme's colours from
-`fumadocs-fortran/style.css`. A page's front matter says what each heading is, for the letters (`t` type,
-`s` subroutine, `f` function, …) that `fortranToc()` puts in the table of contents.
-[Components](https://nevensky.github.io/fumadocs-fortran/docs/reference/components) shows how to set these up.
-
-From JavaScript:
-
-```js
-import { extract, parseSource } from 'fumadocs-fortran';
-
-const model = await extract({ sources: ['src'], cpp: { macros: { _OPENMP: 1 } } });
-const one = parseSource('subroutine hello(n)\n  integer, intent(in) :: n\nend subroutine\n');
-```
-
-It needs Node 18 or later.
-
-## Highlighting Fortran code blocks
-
-`fumadocs-fortran/shiki` has Shiki grammars for Fortran, in free and fixed form. Unlike Shiki's own, they highlight
-OpenMP, OpenACC, CUDA Fortran and compiler directives rather than reading them as comments, and fypp too. Give them
-to fumadocs' `rehypeCode` with fumadocs' default options as the base:
-
-```ts
-import { rehypeCodeDefaultOptions } from 'fumadocs-core/mdx-plugins';
-import { fortranRehypeCode } from 'fumadocs-fortran/shiki';
-
-// in defineDocs: docs.mdxOptions
-applyMdxPreset({
-  rehypeCodeOptions: fortranRehypeCode(rehypeCodeDefaultOptions),
-});
-```
-
-Every Fortran fence then uses them (`fortran`, `f90`, `f77` and Shiki's other Fortran ids), directive lines are tinted
-by `fumadocs-fortran/style.css`, and fumadocs' `[!code highlight]` notations work in `!` comments. With Shiki alone,
-load `fortranLanguages` and add the transformers `transformerFortranDirectives()` and `transformerFortranNotation()`.
-
-## Search and prefetch on large references
-
-fumadocs indexes a page's headings and paragraphs for search. For the pages of a fumadocs-mdx collection, it keeps the
-element of each component in the records as an HTML tag with its text attributes, so a statically exported site
-ships every badge, source header and argument row without docs to each reader, and the search dialog shows them as
-chips. Give the Fortran components their text instead:
-
-```ts
-// in defineDocs: docs.mdxOptions (in source.config.ts, defineConfig's mdxOptions take the same option)
-applyMdxPreset({
-  remarkStructureOptions: {
-    // the elements of other components stay tags, as by default; HTML elements give their text
-    filterElement: (node) => /^(?!Fortran[A-Z])[A-Z][\w$]*$/.test(node.name ?? ''),
-  },
-});
-```
-
-Headings, argument docs and the names on "Calls:" lines stay searchable, while badges, source headers, the rows of
-undocumented arguments and the words only their attributes hold, such as an argument's type, leave the index. The
-option replaces fumadocs' own choice for every element, which is why it keeps the other components, the capitalised
-names, itself. With it, the documentation site's index is 24% smaller (18% gzipped), and that of stdlib's pages 73%
-(64% gzipped).
-
-Next.js prefetches the page behind each link in view, and fumadocs' sidebar keeps Next's default. On a site with large
-reference pages (a first visit to stdlib's `stdlib_ansi` page prefetched 10.3 MB gzipped with the pages' source
-blocks and graphs, and 1.4 MB without either), turn the sidebar's prefetch off:
-
-```tsx
-// app/docs/layout.tsx
-<DocsLayout tree={source.getPageTree()} sidebar={{ prefetch: false }} {...baseOptions()}>
-  {children}
-</DocsLayout>
-```
-
-Its links then load a page when they are clicked, not when they come into view or are hovered. The previous and next
-links under a page, its breadcrumbs, the links in its text, the navigation title and the sidebar's tab switcher (root
-folders) still prefetch. Next prefetches the links in view and under the pointer only in production builds, so
-measure one. The documentation site keeps the default, as its pages are small.
-
-## Development
-
-The scripts run in Docker, so the machine needs no Node: `scripts/dev.sh` runs a command in a `node:24-bookworm`
-container with the repository mounted.
-
-```bash
-scripts/dev.sh npm test
-```
-
-```bash
-scripts/fetch-corpus.sh
-```
-
-```bash
-scripts/dev.sh node scripts/gate.mjs
-```
-
-`fetch-corpus.sh` fetches the public test corpora at pinned commits into `.corpus/`. These are Reference-LAPACK,
-ScaLAPACK, json-fortran, Quantum ESPRESSO, stdlib, Wannier90 and miniWeather, and they are never committed.
-`gate.mjs` then checks the parser against them.
-
-`scripts/build-grammars.mjs` builds the Shiki grammars in `shiki/` from tm-grammars, and `npm run test:shiki` tests
-them with Shiki (and through fumadocs-core, when it is installed). These tools are not dependencies of the package:
-install the versions that `.github/workflows/ci.yml` installs, with `npm install --no-save`.
-
-Two further checks run on demand:
-- `scripts/oracle/ford.sh` runs FORD 7.0.13 in Docker, and `scripts/oracle/compare-ford.mjs` compares every dummy
-  argument with FORD's, field by field. The FORD script is GPL-3.0-or-later, like FORD, and is not part of the
-  package.
-- `scripts/search/measure.mjs` measures the static search index of a generated reference, Reference-LAPACK's library
-  by default, with fumadocs' own index builder: under fumadocs' defaults and under the docs site's MDX options.
-  `--sample N` measures N pages of a large corpus. It needs the docs site's `node_modules`, which `scripts/docs.sh`
-  keeps in a Docker volume:
-
-  ```bash
-  docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD":/work \
-    -v fdf-docs-node-modules:/work/docs/node_modules -w /work node:24-bookworm \
-    node scripts/search/measure.mjs .corpus/stdlib src -I include --sample 10
-  ```
+`fumadocs-fortran/math` gives a site `katexMacros`, the commands Fortran doc comments write that KaTeX lacks, for
+rehype-katex; [Set up your site](https://nevensky.github.io/fumadocs-fortran/docs/guides/site-setup/) shows where it
+goes.
 
 ## Licence
 
-MIT. The package also ships material from other projects under their own licences: the HPC registry draws on
-Reference-LAPACK, ScaLAPACK, Open MPI, LLVM and others (BSD-style licences, MIT, Apache-2.0 with the LLVM
-exception), and the code-block grammars on vscode-fortran-support (MIT). Their notices are in `registry/NOTICE` and
-`shiki/NOTICE`.
-Test corpora keep their own licences and are only fetched, never committed or shipped.
+MIT ([LICENSE](https://github.com/Nevensky/fumadocs-fortran/blob/main/LICENSE)). The package also ships material from
+other projects under their own licences: the HPC registry draws on Reference-LAPACK, ScaLAPACK, Open MPI, LLVM and
+others (BSD-style licences, MIT, Apache-2.0 with the LLVM exception), and the code-block grammars on
+vscode-fortran-support (MIT). Their notices are in
+[registry/NOTICE](https://github.com/Nevensky/fumadocs-fortran/blob/main/registry/NOTICE) and
+[shiki/NOTICE](https://github.com/Nevensky/fumadocs-fortran/blob/main/shiki/NOTICE), and
+[registry/SOURCES.md](https://github.com/Nevensky/fumadocs-fortran/blob/main/registry/SOURCES.md) lists the registry's
+sources. Test corpora keep their own licences and are only fetched, never committed or shipped.
+
+## Citing, issues and contributing
+
+- To cite fumadocs-fortran, use
+  [CITATION.cff](https://github.com/Nevensky/fumadocs-fortran/blob/main/CITATION.cff), or GitHub's "Cite this
+  repository".
+- Report a problem in the [issues](https://github.com/Nevensky/fumadocs-fortran/issues); for one in the
+  documentation, use its [form](https://github.com/Nevensky/fumadocs-fortran/issues/new?template=documentation.yml).
+- [docs/CONTRIBUTING.md](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/CONTRIBUTING.md) says how to work
+  on the package and its documentation.

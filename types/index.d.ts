@@ -31,20 +31,25 @@ export interface ExtractOptions {
   freeExtensions?: string[];
   /** Fixed-form line length: 72 (default), 132, or 0 for no limit. */
   fixedLength?: number;
-  /** Doc-comment marks; an empty string switches one off. */
+  /** Doc-comment marks, each the character after a comment's `!`; an empty string switches one off. */
   marks?: Partial<Marks>;
 }
 
+/**
+ * The doc-comment marks: each is the one character that follows a comment's `!`, as FORD's settings of the same names
+ * are, so `docmark: '!'` reads `!!` comments. A fixed-form comment line (`C`, `c` or `*` in column 1) is a doc comment
+ * only as Doxygen's `C>` or `C<`, whatever the marks.
+ */
 export interface Marks {
-  /** `!!` by default: documents the item before it. */
+  /** `'!'` by default, for `!!`: documents the item before it. */
   docmark: string;
-  /** `!>` by default: documents the item after it. */
+  /** `'>'` by default, for `!>`: documents the item after it. */
   predocmark: string;
-  /** `!*` by default: like docmark, and absorbs the plain comment lines that follow. */
+  /** `'*'` by default, for `!*`: like docmark, and absorbs the plain comment lines that follow. */
   docmarkAlt: string;
-  /** `!|` by default: like predocmark, and absorbs the plain comment lines that follow. */
+  /** `'|'` by default, for `!|`: like predocmark, and absorbs the plain comment lines that follow. */
   predocmarkAlt: string;
-  /** `!<` by default (Doxygen): documents the item before it. */
+  /** `'<'` by default, for Doxygen's `!<`: documents the item before it. */
   postmark: string;
 }
 
@@ -103,7 +108,27 @@ export interface RenderedDoc {
 }
 
 /** Renders the raw doc blocks of one entity in the style they were written in (FORD, Doxygen or LAPACK). */
-export declare function renderDoc(blocks: DocBlock[] | undefined, options?: { resolve?: (name: string, child?: string) => string | null; style?: 'ford' | 'doxygen' | 'lapack'; name?: string; math?: 'katex' | 'code' }): RenderedDoc;
+export declare function renderDoc(blocks: DocBlock[] | undefined, options?: RenderDocOptions): RenderedDoc;
+
+export interface RenderDocOptions {
+  /**
+   * The URL of a name the doc links to (FORD's `[[name]]` and `[[name:child]]`, Doxygen's `\ref` and `\see`), or null
+   * when it is unknown; the name is then shown as code.
+   */
+  resolve?: (name: string, child?: string) => string | null;
+  /** The style the doc is read in. Default: the one its text shows. */
+  style?: 'ford' | 'doxygen' | 'lapack';
+  /** The entity's name: a Doxygen `\brief` that only repeats it (BLAS's `\brief \b DGEMM`) is not the summary. */
+  name?: string;
+  /** `katex` (default) writes $…$ for remark-math; `code` shows maths as code. */
+  math?: 'katex' | 'code';
+  /** A prefix for the doc's footnote and link labels, unique on the page, so that two docs' labels do not clash. */
+  ns?: string;
+  /** Reads FORD's `{!file!}` includes; without it they are dropped. */
+  include?: (file: string) => string | null;
+  /** FORD's `|name|` aliases; a name not here stays as written. */
+  aliases?: Record<string, string>;
+}
 
 export interface PageOptions {
   /** The URL of the output folder. Default: `/docs/api`. */
@@ -281,7 +306,7 @@ export interface FortranFrontmatter {
  * A type parameter's row reads as its declaration: the type `integer, kind` (or `integer, len`) and one attribute,
  * `default dp`, for `integer, kind :: k = dp`.
  */
-export declare function buildPages(ir: FortranIR, options?: PageOptions): { pages: GeneratedPage[]; metas: Array<{ path: string; data: { title: string; pages: string[] } }> };
+export declare function buildPages(ir: FortranIR, options?: PageOptions): { pages: GeneratedPage[]; metas: Array<{ path: string; data: { title: string; defaultOpen?: boolean; pages: string[] } }> };
 
 /** Writes pages into a content folder; a manifest lets later runs delete only their own stale files. */
 export declare function writePages(result: { pages: GeneratedPage[]; metas: Array<{ path: string; data: object }> }, outDir: string): { written: string[]; changed: string[]; removed: string[] };
@@ -305,11 +330,17 @@ export declare function prettyCond(conditions: string[]): string;
 /** KaTeX macros for the commands Fortran docs write that KaTeX lacks, and TeX that KaTeX renders. */
 export { katexMacros, normaliseTex } from './math.js';
 
-/** Escapes plain text (Doxygen and LAPACK prose) for MDX. */
-export declare function escapeText(text: string): string;
+/**
+ * Escapes plain text (Doxygen and LAPACK prose) for MDX. A bare URL becomes a link, unless `links` is false (for the
+ * text of a link).
+ */
+export declare function escapeText(text: string, options?: { links?: boolean }): string;
 
-/** Makes Markdown safe for MDX while keeping it Markdown. */
-export declare function safeMarkdown(markdown: string): string;
+/**
+ * Makes Markdown safe for MDX while keeping it Markdown. `math: 'code'` makes a ```` ```math ```` block a text block,
+ * for a site without rehype-katex.
+ */
+export declare function safeMarkdown(markdown: string, options?: { math?: 'katex' | 'code' }): string;
 
 // ---------------------------------------------------------------- the model
 

@@ -1,0 +1,216 @@
+---
+title: Move from FORD or Doxygen
+description: A FORD project file or a Doxyfile as flags, what works differently and replacing a published site.
+---
+
+The doc comments stay as they are: `generate` reads FORD's, Doxygen's and LAPACK's. The settings of a FORD project
+file or a Doxyfile become flags of `generate`, and a few of them options of a `generate()` script. FORD or Doxygen can
+keep running beside it while you compare the two references and bring the hand-written pages over.
+
+## What carries over [#carries-over]
+
+- The marks of both: `!!`, `!<` and `!>`, FORD's `!*` and `!|`, and in fixed form `C>`, `c>` and `*>` for the item
+  after them and `C<`, `c<` and `*<` for the one before
+  ([Where comments attach](/docs/reference/doc-comments#where-comments-attach)).
+- FORD's Markdown, its metadata lines, `@note` … `@endnote` and the other environments, `[[name]]` links, `{!file!}`
+  includes and maths.
+- Doxygen's commands, such as `\brief`, `\param[in]`, `\return`, `\note`, `\see`, `\verbatim` and `\f$`, and
+  `\ingroup`, which groups external procedures into pages.
+- LAPACK's comments: `*>` blocks whose argument docs are `\verbatim` blocks, with the intents of `\param[in]`.
+
+[Doc comments](/docs/reference/doc-comments) has what each becomes on a page.
+
+## What works differently [#differences]
+
+- The pages are part of a Fumadocs site, beside its hand-written pages, rather than a site of their own. A module,
+  submodule, program or block data unit has a page, and its types, interfaces, procedures and variables are entries on
+  it, where FORD writes a page for each procedure, type and interface. External procedures share pages, grouped by
+  `\ingroup` or else by file.
+- There is no project file: the settings are flags, and a `generate()` script takes those that have none.
+- The folder of `-o` belongs to the generator, which deletes only the files its last run wrote; FORD empties its
+  output folder first.
+- The code is read through the command's own preprocessor, with no macro defined but those of `-D`. FORD's default
+  preprocessor, `pcpp -D__GFORTRAN__ --passthru-comments`, defines `__GFORTRAN__`, so the same build needs
+  `-D __GFORTRAN__`.
+- FORD's metadata keys `display`, `source`, `graph`, `proc_internals`, `summary`, `title`, `category` and `media_dir`
+  are read and dropped: a doc comment's `display: private` shows nothing more
+  ([Metadata](/docs/reference/doc-comments#metadata)).
+- In a Doxygen comment, `\brief`, `\param`, `\note` and the other sections run on to the next command, blank lines
+  included, where Doxygen ends them at a blank line ([Commands](/docs/reference/doc-comments#commands)). A command of
+  your own, which Doxygen's `ALIASES` defines, stays in the text as written.
+- The graphs are Mermaid, drawn as SVG by the site's build with no Graphviz, of 40 nodes at most.
+- COMMON blocks and NAMELIST groups are read, and shown on no page; ENTRY statements are passed over; a BLOCK DATA
+  unit's page has its doc comment and its lines, without the common blocks it fills.
+
+## From a FORD project file [#ford]
+
+The settings of a project file that decide what is read and shown, by their names in FORD 7.0.13, and the flag or
+option of `generate` for each. Same means that it does what FORD's setting does; nearest, that it comes closest; none,
+that there is no such setting.
+
+| FORD | `generate` | Match |
+| --- | --- | --- |
+| `src_dir` | the paths after the command, as `generate src lib` | same |
+| `exclude`, `exclude_dir` | `--exclude`, once a pattern, of a path from the top folder: `--exclude src/old.f90`, `--exclude 'src/tests/**'` ([--exclude](/docs/reference/cli#exclude)) | nearest |
+| `extensions`, `fixed_extensions` | no flag: the command reads [its own extensions](/docs/reference/cli#paths), and a file you name whatever its extension; `--form` reads every file in one form; in JavaScript, `extensions`, `fixedExtensions` and `freeExtensions` | nearest |
+| `fpp_extensions` | none needed: a file is preprocessed when it holds a directive | none |
+| `preprocess` | `true`, the default, is what the command does; `false` comes closest to `--all-branches`, which keeps every branch, each entry with its condition | nearest |
+| `preprocessor` | none: the command's own preprocessor ([Preprocessor](/docs/reference/cli#preprocessor)); for FORD's default, add `-D __GFORTRAN__` | none |
+| `macro` | `-D NAME[=VALUE]`, once a macro | same |
+| `include` | `-I DIR`, once a folder | same |
+| `fixed_length_limit` | `true`, the default, is `--fixed-length 72`, the default; `false` is `--fixed-length 0` | same |
+| `display` | `--display`, comma-separated, as `--display public,protected,private`; `protected` matches nothing, as a protected variable is public | nearest |
+| `source` | `--source embed`, the default, where FORD's is `false`: the lines of each entry under it, not at the foot of a page | nearest |
+| `graph` | `--graphs mermaid`, the default, where FORD's is `false`; `false` is `--graphs none` | nearest |
+| `graph_maxdepth`, `graph_maxnodes` | the JavaScript option `graphs`, as `{ depth: 3, maxNodes: 60 }`: 2 and 40 by default | nearest |
+| `proc_internals` | none: the local variables and types of procedures are not shown | none |
+| `hide_undoc` | none: every entry shows, documented or not | none |
+| `sort` | none: the entries of a kind come in source order, as with FORD's default `src` | none |
+| `output_dir` | `-o DIR`, with `--base-url URL` ([Place the reference](/docs/guides/generate#place)) | nearest |
+| `project` | the site's name ([Tidy the template](/docs/guides/site-setup#tidy)), and `--title` for the overview | nearest |
+| `summary` | the JavaScript option `description`, the overview's | nearest |
+| `project_github` | `--repo` and `--rev`: each entry links to its lines, where FORD links the repository from its header | nearest |
+| `md_base_dir` | none: `{!file!}` includes are read from the folder the command runs in, and only from under it | none |
+| `page_dir` | MDX pages of the site, ported by hand ([below](#pages)) | none |
+| `media_dir` | the site's `public/` folder ([below](#pages)) | none |
+| `alias` | the JavaScript option `aliases`, which has no built-in names: FORD's media, page and url aliases are given there too | nearest |
+| `docmark`, `predocmark`, `docmark_alt`, `predocmark_alt` | the JavaScript option `marks`, with `docmark`, `predocmark`, `docmarkAlt` and `predocmarkAlt` ([below](#marks)) | same |
+| `doxygen` | none: Doxygen's commands are always read | none |
+| `incl_src` | none: there are no pages of whole files; with `--repo`, each entry links to its lines | none |
+| `extra_mods`, `external` | none: the names of `iso_fortran_env`, `iso_c_binding`, MPI, OpenMP and the libraries of the registry have cards ([Library cards](/docs/guides/generate#library-cards)) | none |
+| `encoding` | none: a file is read as UTF-8, or as Latin-1 when it is not valid UTF-8 | none |
+| `mathjax_config` | the KaTeX macros of the site's `rehype-katex` ([Set the MDX options](/docs/guides/site-setup#mdx-options)) | nearest |
+| `md_extensions` | the remark plugins of the site | nearest |
+| `search` | the site's search | nearest |
+
+The settings of FORD's own pages, such as `css`, `favicon`, `author`, `version` and `project_website`, are the site's
+to set, in its layout.
+
+### The doc-comment marks [#marks]
+
+A project file that changes the marks needs the same marks in a `generate()` script, as there is no flag for them.
+json-fortran 9.3.1's, for one, sets `predocmark: <`, `predocmark_alt: >` and an empty `docmark_alt`, so that a block
+opened by `!>` takes in the plain `!` lines after it. With the default marks, `!>` documents only its own line, and
+235 of the 576 entities that json-fortran documents get an empty doc. Each mark is the character after the `!`, and an
+empty string switches one off:
+
+```js
+marks: { docmark: '!', predocmark: '<', docmarkAlt: '', predocmarkAlt: '>' },
+```
+
+The option goes into the script of [Options only in JavaScript](/docs/guides/generate#javascript), as
+[`marks`](/docs/reference/javascript#marks) says. Give all four as the project file has them: when two marks share a
+character, one of them is lost without a message, where FORD stops with an error. FORD's aliases go there too, as
+[`aliases`](/docs/reference/javascript#aliases).
+
+## From a Doxyfile [#doxygen]
+
+The settings of a Doxyfile, by the names of Doxygen's configuration reference, and the flag or option of `generate`
+for each, matched as above.
+
+| Doxyfile | `generate` | Match |
+| --- | --- | --- |
+| `INPUT` | the paths after the command | same |
+| `RECURSIVE` | none: a folder is always searched with the folders in it, where Doxygen's default is `NO` | none |
+| `FILE_PATTERNS`, `EXTENSION_MAPPING` | no flag: the command reads [its own extensions](/docs/reference/cli#paths), and a file you name whatever its extension; `--form` reads every file in one form; in JavaScript, `extensions`, `fixedExtensions` and `freeExtensions` | nearest |
+| `EXCLUDE`, `EXCLUDE_PATTERNS` | `--exclude`, of paths from the top folder, where `EXCLUDE_PATTERNS` matches absolute paths | nearest |
+| `EXCLUDE_SYMLINKS` | none: a folder's symbolic links are passed over, as with `YES`; a link you name is read | none |
+| `ENABLE_PREPROCESSING`, `SEARCH_INCLUDES` | none: `YES`, the default of both, is what the command does; `ENABLE_PREPROCESSING = NO` comes closest to `--all-branches` | nearest |
+| `PREDEFINED` | `-D NAME[=VALUE]`, once a macro, function-like ones included | same |
+| `INCLUDE_PATH` | `-I DIR`, once a folder | same |
+| `MACRO_EXPANSION`, `EXPAND_ONLY_PREDEF` | none: macros are always expanded, as with `MACRO_EXPANSION = YES` | none |
+| `EXTRACT_ALL` | none: every entry shows, documented or not, as with `YES` | none |
+| `EXTRACT_PRIVATE` | `--display public,protected,private` | same |
+| `HIDE_UNDOC_MEMBERS` | none | none |
+| `INLINE_SOURCES` | `--source embed`, the default: each entry's lines under it | nearest |
+| `SOURCE_BROWSER` | none: there are no pages of whole files; with `--repo`, each entry links to its lines | none |
+| `CALL_GRAPH`, `CALLER_GRAPH`, `HAVE_DOT` | `--graphs mermaid`, the default: a procedure's graph shows what it calls and what calls it, with no Graphviz | nearest |
+| `DOT_GRAPH_MAX_NODES`, `MAX_DOT_GRAPH_DEPTH` | the JavaScript option `graphs`, as `{ maxNodes: 50, depth: 3 }`: 40 and 2 by default | nearest |
+| `REFERENCES_RELATION`, `REFERENCED_BY_RELATION` | the Calls line of each procedure, and the callers in its graph | nearest |
+| `OUTPUT_DIRECTORY`, `HTML_OUTPUT` | `-o DIR`, with `--base-url URL` ([Place the reference](/docs/guides/generate#place)) | nearest |
+| `PROJECT_NAME`, `PROJECT_BRIEF` | the site's name ([Tidy the template](/docs/guides/site-setup#tidy)); `--title` and the JavaScript option `description` for the overview | nearest |
+| `OPTIMIZE_FOR_FORTRAN` | none needed | none |
+| `USE_MDFILE_AS_MAINPAGE` | the site's own pages ([below](#pages)) | none |
+| `IMAGE_PATH` | the site's `public/` folder ([below](#pages)) | none |
+| `ALIASES` | none: a command of your own stays in the text as written | none |
+| `MARKDOWN_SUPPORT` | none: the Markdown Doxygen reads is kept, such as emphasis, code spans and lists ([Doxygen](/docs/reference/doc-comments#doxygen)) | nearest |
+| `USE_MATHJAX`, `FORMULA_MACROFILE` | `--math katex`, the default, with the KaTeX macros of the site's `rehype-katex` | nearest |
+| `INPUT_ENCODING` | none: a file is read as UTF-8, or as Latin-1 when it is not valid UTF-8 | none |
+| `FULL_PATH_NAMES`, `STRIP_FROM_PATH` | none: paths are those from the folder the command runs in | nearest |
+| `SORT_MEMBER_DOCS` | none: the entries of a kind come in source order | none |
+| `GENERATE_TREEVIEW`, `SEARCHENGINE` | the site's sidebar and search | nearest |
+| `GENERATE_LATEX` | none | none |
+
+## Bring the hand-written pages [#pages]
+
+FORD's `page_dir` pages, and Doxygen's `\mainpage` and `\page`, are not read: port them by hand into MDX pages of the
+site, beside the generated folder, such as `docs/content/docs/guide.mdx`. A page written into the generated folder
+stays out of the sidebar.
+
+- A FORD page's `title:` line becomes the `title` of the page's front matter, and the order of `ordered_subpage`
+  becomes the `pages` list of the folder's `meta.json`.
+- A `[[name]]` link becomes a link to the entry, such as `[dense_matrix](/docs/api/solver_kernels#dense_matrix)`: a
+  module's page and an entry's anchor are their names in lower case.
+- `{!file!}` becomes Fumadocs' `<include>file</include>`, with the file's path from the page.
+- MDX reads `{` and `<` in text as the start of JSX: write them `\{` and `&lt;`, and an HTML comment as
+  `{/* … */}`.
+- A `\mainpage` block in a Fortran file is no page: before a module, its text becomes part of the module's
+  documentation, as text that starts with `\mainpage`, and a `\page` block that no statement follows is dropped. Move
+  them into a Markdown file, which Doxygen reads when `INPUT` lists it, or `USE_MDFILE_AS_MAINPAGE` names it, and
+  port that file.
+
+Images from `media_dir` or `IMAGE_PATH` go into the site's `public/` folder, such as `docs/public/media/`, and a page
+names each by its path on the site, `/media/logo.png`. In doc comments too, an image with a relative path or FORD's
+media alias shows as its alt text ([Images](/docs/reference/doc-comments#images)): give the site path, or have the
+JavaScript option `aliases: { media: '/media' }` write it. Doxygen's `\image html` shows its caption.
+
+## Replace a published site [#replace]
+
+A FORD or Doxygen site on GitHub Pages is often deployed from a branch, such as `gh-pages`, or from a folder of the
+default branch. [Publish on GitHub Pages](/docs/guides/github-pages) sets the repository's Pages to deploy from
+GitHub Actions. The site is then what the workflow last deployed, so its first deployment replaces the branch's site,
+at the same address; the branch stays in the repository, and nothing publishes it.
+
+Unless the site keeps the old pages, as below, their addresses answer 404 from then on, as GitHub Pages has no
+setting for redirects: FORD's pages, such as `module/solver.html`, `proc/solve.html`, `type/dense_matrix.html` and
+`sourcefile/solver.f90.html`, Doxygen's `.html` pages, and the links to them that readers and search engines keep.
+The reference's addresses are under `/docs/api/`.
+
+A site that Pages deployed from the `docs/` folder of a branch has its HTML where Get started puts the site: give the
+site's folder another name, as [Before you begin](/docs/get-started#before-you-begin) says, or move the old output.
+
+To keep the old pages while readers move, publish them with the site. The export holds a copy of the site's
+`public/` folder, so the old output copied into `docs/public/` keeps its addresses, but for its `index.html`, which
+the site's home page replaces. Rather than commit the old pages, a step of the workflow can take them from the old
+branch before the build:
+
+```yaml
+- run: |
+    git fetch --depth 1 origin gh-pages
+    mkdir -p docs/public
+    git archive FETCH_HEAD | tar -x -C docs/public
+```
+
+Take the step out when readers have moved, and the old addresses answer 404 from then on. To keep the old pages
+apart from the site's own instead, copy them into a folder, such as `docs/public/ford/`: they are then served under
+`https://OWNER.github.io/REPOSITORY/ford/`, as their links to each other are relative, and the old addresses answer
+404.
+
+## Compare the output [#compare]
+
+`dump --summary`, with the flags the tables give, counts the units, procedures, types and interfaces of each file,
+beside FORD's or Doxygen's lists of modules, types and procedures ([Check what it read](/docs/guides/generate#check)).
+Expect these differences:
+
+- the build: the macros the code tests, and those FORD's preprocessor or Doxygen's `PREDEFINED` define;
+- private entities, which `--display` shows only with `private`;
+- what a procedure declares inside it, such as its internal procedures: neither lists them, and `generate` shows them
+  in the procedure's source block and Calls line;
+- abstract interfaces, which are entries under Interfaces with an abstract interface badge;
+- type-bound procedures, which are rows of their type's table;
+- COMMON blocks, NAMELIST groups and ENTRY points, which no page shows.
+
+On json-fortran 9.3.1, FORD 7.0.13 with the project's own file writes pages for 6 modules, 3 types, 7 interfaces and
+352 procedures. `generate src -D __GFORTRAN__ --display public,protected,private`, its settings as flags, writes 6
+module pages, which hold the same 3 types, the 7 interfaces (3 generic and 4 abstract), the 352 procedures and the
+66 module variables.

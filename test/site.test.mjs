@@ -1,5 +1,6 @@
-// The docs site: what its pages say about the package against the package, its stylesheet and the generated pages,
-// and the width of the docs' prose, then its own code (docs/lib/shared.ts, docs/components/mdx): the links next/link
+// The docs site: the checks its build runs first (docs/package.json's check script), what its pages say about the
+// package against the package, its stylesheet and the generated pages, and the width of the docs' prose, then its own
+// code (docs/lib/shared.ts, docs/components/mdx): the links next/link
 // never sees, those of hover cards, source headers, graph nodes and the llms files, get what it gives the others,
 // the base path the site is served under and, in the static export, a page's trailing slash, so that a link to an
 // anchor of the page being read only scrolls; and the search records of its pages. The site's modules are bundled
@@ -7,6 +8,7 @@
 // and is skipped without them.
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
@@ -14,6 +16,31 @@ export default async function ({ ok, eq, here, out }) {
   const repo = path.join(here, '..');
   const docs = path.join(repo, 'docs');
   const read = (p) => fs.readFileSync(path.join(repo, p), 'utf8');
+
+  // ---- the docs checks, which need no packages: the site's build runs them as its prebuild (npm run check), and so
+  // does this test, with node: check-docs (the pages against the code and the house rules), gen-examples --check (Doc
+  // comments' examples), check-cli (Command line), check-api (JavaScript API) and check-readme (the README and the
+  // contributor guide)
+  const checks = (JSON.parse(read('docs/package.json')).scripts?.check ?? '').split('&&')
+    .map((c) => c.trim().split(/\s+/));
+  eq(checks.map(([node, script]) => `${node} ${script}`), ['check-docs', 'gen-examples', 'check-cli', 'check-api',
+    'check-readme'].map((n) => `node scripts/${n}.mjs`), "the site's check script runs the five docs checks");
+  for (const [, script, ...args] of checks) {
+    const r = spawnSync(process.execPath, [script, ...args], { cwd: docs, encoding: 'utf8' });
+    const said = `${r.stdout}${r.stderr}`.trim().split('\n');
+    ok(r.status === 0, `docs/${[script, ...args].join(' ')} passes: ${said.slice(-15).join('\n')}`);
+  }
+
+  // a section of a page: its heading's line (an explicit [#id] after it is left out of the match) and what follows,
+  // up to the next heading as deep or deeper
+  const sectionOf = (text, heading) => {
+    const lines = text.split('\n');
+    const at = lines.findIndex((l) => l.replace(/\s*\[#[^\]]+\]\s*$/, '') === heading);
+    if (at < 0) return '';
+    const depth = /^#+/.exec(heading)[0].length;
+    const end = lines.findIndex((l, i) => i > at && new RegExp(`^#{1,${depth}}\\s`).test(l));
+    return lines.slice(at, end < 0 ? lines.length : end).join('\n');
+  };
 
   // ---- the Components page
   const comp = read('docs/content/docs/reference/components.mdx');
@@ -33,17 +60,21 @@ export default async function ({ ok, eq, here, out }) {
   ok(refSection && !refSection.includes('<Tabs') && examples.length === 3
     && examples.reduce((n, e) => n + refsIn(e), 0) === refsIn(live),
   'the live FortranRef examples stand outside Tabs, whose box clips a card, as expressions, which search leaves out');
-  const snippet = /```tsx title="components\/mdx\/mermaid.tsx"\n([\s\S]*?)\n```/.exec(comp)?.[1] ?? '';
+  // the Mermaid component that Set up your site gives a site, in full
+  const setUp = sectionOf(read('docs/content/docs/guides/site-setup.mdx'), '## Draw the graphs');
+  const snippet = /```tsx title="(?:docs\/)?components\/mdx\/mermaid\.tsx"\n([\s\S]*?)\n```/.exec(setUp)?.[1] ?? '';
   ok(/\bcatch\b/.test(snippet) && /<CodeBlock\b/.test(snippet),
-    'the Mermaid snippet shows a diagram Pele cannot parse as its code');
+    'the Mermaid component of Set up your site shows a diagram Pele cannot parse as its code');
   const shownCss = /```css title="app\/global.css"\n(\.pele[^\n]*\{[\s\S]*?\n\})\n```/.exec(comp)?.[1];
   ok(!!shownCss && read('docs/app/global.css').includes(shownCss), "the Pele block the page shows is the site's own");
   ok(!/title: \{\s*type: 'string',\s*required: true/.test(section('### Props of FortranGraph')),
     "FortranGraph's title is optional");
   // a link without the base path leaves the site; one without the slash reloads the page it is on
-  const based = section('### A site served under a base path');
+  const publish = read('docs/content/docs/guides/github-pages.mdx');
+  const based = sectionOf(publish, "## Keep the reference's links on the site");
   ok(/off the site/.test(based) && /redirect/.test(based),
-    'the base path section says what a link lacking the base path does, and what one lacking the slash does');
+    "Publish on GitHub Pages' section on the components' links says what a link lacking the base path does, and what "
+    + 'one lacking the slash does');
   // the Styling table against style.css: a kind's variable is said to colour graph nodes when, and only when, it does
   const css = fs.readFileSync(path.join(repo, 'style.css'), 'utf8');
   const nodeRule = /\.pele \.pele-node\.fdf\w+ \{ --fdf-c: var\((--fdf-[\w-]+)\); \}/g;
@@ -135,9 +166,10 @@ export default async function ({ ok, eq, here, out }) {
   ok(['hover card', 'graphs', 'block that opens', 'table of contents'].every((w) => intro.includes(w)),
     "the Introduction's list of what a page holds names the rows' cards, the graphs, the source and the kind letters");
 
-  // ---- the prose of the docs keeps to 120 characters a line: the hand-written pages (the Showcase is generated) and
-  // the READMEs and CHANGELOG, outside code blocks, JSX lines, Markdown tables and TypeTable props, whose descriptions
-  // are a string each. PLAN.md is left out: some of its lines, older than this check, are longer.
+  // ---- the prose of the docs keeps to 120 characters a line: the hand-written pages (the Showcase's reference and its
+  // sources page are generated, its index is not), the READMEs, the contributor guide and CHANGELOG, outside code
+  // blocks, JSX lines, Markdown tables and TypeTable props, whose descriptions are a string each. PLAN.md is left out:
+  // some of its lines, older than this check, are longer.
   const longLines = (name) => {
     const out = [];
     let fence = '';
@@ -162,15 +194,18 @@ export default async function ({ ok, eq, here, out }) {
     });
     return out;
   };
+  // the generated pages, as docs/lib/source.ts's isGenerated has them
+  const generatedPage = (p) => p.startsWith('docs/content/docs/showcase/modern/')
+    || p === 'docs/content/docs/showcase/sources.mdx';
   const mdx = (dir) => fs.readdirSync(path.join(repo, dir), { withFileTypes: true }).flatMap((d) => {
     const p = `${dir}/${d.name}`;
-    if (d.isDirectory()) return p === 'docs/content/docs/showcase' ? [] : mdx(p);
-    return p.endsWith('.mdx') ? [p] : [];
+    if (d.isDirectory()) return mdx(p);
+    return p.endsWith('.mdx') && !generatedPage(p) ? [p] : [];
   });
-  const prose = [...mdx('docs/content/docs'), 'README.md', 'CHANGELOG.md', 'docs/README.md'];
+  const prose = [...mdx('docs/content/docs'), 'README.md', 'CHANGELOG.md', 'docs/README.md', 'docs/CONTRIBUTING.md'];
   const long = prose.flatMap(longLines);
-  ok(prose.includes('docs/content/docs/reference/components.mdx') && !long.length,
-    `the prose of the docs keeps to 120 characters a line: ${long}`);
+  ok(['reference/components.mdx', 'showcase/index.mdx'].every((p) => prose.includes(`docs/content/docs/${p}`))
+    && !prose.some(generatedPage) && !long.length, `the prose of the docs keeps to 120 characters a line: ${long}`);
 
   const need = createRequire(path.join(docs, 'package.json'));
   let esbuild;
@@ -321,8 +356,9 @@ export default async function ({ ok, eq, here, out }) {
     '  ~~~',
     'Inline ```code``` is no fence: [y](/docs/y).',
     '<Card title="Showcase" href="/docs/showcase/modern">',
+    'A sample in inline code, `[z](/docs/z)`, keeps its link, and [y](/docs/y) does not.',
   ];
-  // the two lines whose links are a sample's
+  // the two lines whose links are a sample's (the last line's inline code is one too: its replace finds nothing)
   const keep = new Set([2, 7]);
   const want = samples.map((l, i) => (keep.has(i) ? l : l
     .replace('(/docs/m#solve)', '(/fdf/docs/m/#solve)').replace('"/docs/m#solve"', '"/fdf/docs/m/#solve"')

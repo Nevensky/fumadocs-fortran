@@ -1,57 +1,90 @@
 ---
 title: Introduction
-description: Fortran API reference for fumadocs, written from the sources and the doc comments they already have.
+description: Fortran API reference for Fumadocs, written from the sources and the doc comments they already have.
 ---
 
-fumadocs-fortran writes the API reference of a Fortran code as MDX pages, which a fumadocs site builds like its
+fumadocs-fortran writes the API reference of a Fortran code as MDX pages, which a Fumadocs site builds like its
 hand-written ones. It reads the sources with its own parser, written in plain JavaScript with no dependencies, and the
-doc comments the code already has, in FORD, Doxygen or LAPACK style. It understands HPC code: OpenMP and OpenACC
-directives, MPI and coarrays, cpp conditions, and calls into BLAS, LAPACK and ScaLAPACK.
+doc comments the code already has, in FORD, Doxygen or LAPACK style. It shows what high-performance computing (HPC)
+codes use: OpenMP and OpenACC directives, MPI and coarrays, the conditions of the C preprocessor (cpp), and calls into
+BLAS, LAPACK and ScaLAPACK. A reference shows one build of the code, the cpp branches that its macros select:
+[Generate the reference](/docs/guides/generate#choose-the-build) says how to choose it.
 
-<Callout title="In development">
-  The parser is done and checked against public codes. Page generation and this site are the first slice of v0.1,
-  and nothing is published to npm yet.
+<Callout title="Pre-release">
+  fumadocs-fortran installs from GitHub, and its pages, options and components can change in any 0.x version. Until a
+  release is tagged, this site describes the main branch, and the [Changelog](/docs/changelog) lists what has
+  changed.
 </Callout>
 
-## Showcase
+## Find the page for your job
 
-The pages under [Showcase](/docs/showcase/modern) are generated from `examples/modern` in the repository, a small
-code written to use every feature: FORD comments in free form, Doxygen comments, a LAPACK-style routine in fixed form,
-OpenMP, OpenACC, MPI, coarrays and cpp conditions. `docs/scripts/gen-showcase.mjs` writes them, so change the
-Fortran and run it again rather than editing a page.
+- A site for your code, from your Fortran sources to the reference in your browser:
+  [Get started](/docs/get-started).
+- The reference in a Fumadocs site you have: [Set up your site](/docs/guides/site-setup).
+- Comments and settings written for FORD or Doxygen: [Move from FORD or Doxygen](/docs/guides/from-ford-doxygen).
+- The build to document, with its cpp macros and include files:
+  [Generate the reference](/docs/guides/generate#choose-the-build).
+- The site built in CI and published on GitHub Pages: [Publish on GitHub Pages](/docs/guides/github-pages).
+- The look of the pages: [Components](/docs/reference/components) and their
+  [styling variables](/docs/reference/components#styling).
+- A message or a page that shows other than it should: [Troubleshooting](/docs/guides/troubleshooting); a command or
+  an option: [Command line](/docs/reference/cli).
 
 ## What a page holds
 
-Each module, submodule and program gets a page, and each of its types, interfaces, procedures and variables a
-section under its own anchor, with:
+Each module, submodule, program and block data unit gets a page, and so do external procedures, grouped by their
+Doxygen `\ingroup` or by file. On a page, each type, interface, procedure, variable and enumeration has a section under
+its own anchor, with:
 
 - badges for its kind and for the HPC features it uses, dashed when a cpp condition decides whether it exists;
 - its signature, highlighted as Fortran;
 - its documentation, as Markdown with maths, such as $\|x\|_2 = \sqrt{\sum_i x_i^2}$;
-- its arguments, result, components or bindings as a table: a row each, with the type, shape, intent and attributes,
-  which opens to the documentation in full Markdown, the declaration, the meaning of each attribute and the shape in
-  words;
+- its arguments, result, components, type parameters or bindings as a table: a row each, with the type, shape, intent
+  and attributes, which opens to the documentation in full Markdown, the declaration, the meaning of each attribute and
+  the shape in words;
 - hover cards on the kind names and derived types in those tables, which link to their definitions, or to the
-  standards for mpi_f08's types and omp_lib's kinds, and on the BLAS, LAPACK, ScaLAPACK, MPI, OpenMP and OpenACC
-  routines it calls, which link to their documentation; every badge, intent, attribute, shape and type parameter's
-  `kind` or `len` says what it means on hover;
+  standards for mpi_f08's types and omp_lib's kinds, and on the library routines it calls (BLAS, LAPACK, ScaLAPACK,
+  MPI, OpenMP, OpenACC and Fortran's intrinsic subroutines), which link to their documentation; every badge, intent,
+  attribute, shape and type parameter's `kind` or `len` says what it means on hover;
 - graphs: a type's parents and extensions, a procedure's callers and callees, with library routines in their
   library's colour, and, on a unit's page, what it uses and what uses it, with every unit and the HPC libraries it
   uses on the overview;
-- its own code, in a block that opens, numbered as in its file and linked to its lines on GitHub (past 400 lines,
-  the link alone).
+- its own code, in a block that opens, numbered as in its file, for an entry of up to 400 lines; with `--repo`, the
+  block's header links to the lines on GitHub.
 
 The page's table of contents marks each entry with a letter for its kind: `t` a type, `s` a subroutine, `f` a
-function and so on.
+function and so on. The [Showcase](/docs/showcase) shows all of it, generated from the project's own example.
+
+## What it does not do
+
+- It reads no configuration file. The command line takes flags, and the options without one are in the
+  [JavaScript API](/docs/reference/javascript).
+- It has two commands, `dump` and `generate`, and no watch mode. `generate` prints its diagnostics and exits 0, so a
+  CI job does not stop on one.
+- It reads no fypp sources. A folder's `.fypp` files are not found, and a `.fypp` file named on the command line, or a
+  found file in fypp syntax, is skipped with a warning: run fypp first, and generate from the Fortran it writes.
+- COMMON blocks, NAMELIST groups and ENTRY points are not shown.
+- FORD's `[[name]]` links work in doc comments, not in hand-written pages.
+- Next.js is the only framework its pages are tested in.
+
+## Licence
+
+fumadocs-fortran is under the [MIT licence](https://github.com/Nevensky/fumadocs-fortran/blob/main/LICENSE). It also
+ships material from other projects under their own licences: its HPC registry, whose summaries and links the
+generated pages' cards show, draws on Reference-LAPACK, ScaLAPACK, Open MPI, the LLVM OpenMP runtime and others, and
+its code-block grammars are modified copies of fortran-lang's Fortran grammars.
+[registry/SOURCES.md](https://github.com/Nevensky/fumadocs-fortran/blob/main/registry/SOURCES.md) lists the
+registry's sources, and [registry/NOTICE](https://github.com/Nevensky/fumadocs-fortran/blob/main/registry/NOTICE)
+and [shiki/NOTICE](https://github.com/Nevensky/fumadocs-fortran/blob/main/shiki/NOTICE) give their licences.
 
 <Cards>
-  <Card title="Showcase" href="/docs/showcase/modern">
-    The API reference of `examples/modern`, generated: modules, a submodule, a program and a LAPACK-style routine.
+  <Card title="Get started" href="/docs/get-started">
+    From the Fortran in your project's `src/` to its reference in a Fumadocs site on your machine.
   </Card>
-  <Card title="Components" href="/docs/reference/components">
-    The components the pages are drawn with, each shown live with its props.
+  <Card title="Showcase" href="/docs/showcase">
+    The reference of the project's own example, generated: modules, a submodule, a program and a LAPACK-style routine.
   </Card>
-  <Card title="Source on GitHub" href="https://github.com/Nevensky/fumadocs-fortran">
-    The parser, the generator and the example code.
+  <Card title="Move from FORD or Doxygen" href="/docs/guides/from-ford-doxygen">
+    What carries over from a FORD project file or a Doxyfile, and what works differently.
   </Card>
 </Cards>

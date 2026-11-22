@@ -1,0 +1,242 @@
+---
+title: Get started
+description: The API reference of your Fortran code in a Fumadocs site on your own machine, from your own sources.
+---
+
+Create a Fumadocs site in a `docs/` folder of your project, generate the API reference of the Fortran in `src/`, and
+open it in your browser. Each module, submodule and program gets a page, with badges for its kind and for the
+high-performance computing (HPC) features it uses, argument tables, and the code of each procedure of up to 400 lines.
+
+The steps leave maths and graphs out, so that the first build needs two edits and no other packages.
+[Set up your site](/docs/guides/site-setup) adds them.
+
+<Callout title="Pre-release">
+  fumadocs-fortran installs from GitHub, and its pages, options and components can change in any 0.x version.
+</Callout>
+
+## Before you begin
+
+The site needs Node.js 22.22 or a later 22 release, or 24.11 or later, with the npm that comes with it:
+
+```bash
+node --version
+```
+
+If `node` is missing or older, install Node.js 24 from [nodejs.org](https://nodejs.org/en/download), or with
+[nvm](https://github.com/nvm-sh/nvm) or [fnm](https://github.com/Schniz/fnm), which need no administrator rights;
+[Troubleshooting](/docs/guides/troubleshooting#without-nodejs) runs the steps in Docker. npm needs Git to install
+from GitHub:
+
+```bash
+git --version
+```
+
+The steps read your Fortran from `src/`, as fpm and FORD lay it out; for another folder, write its name for `src`.
+If a `docs/` folder with files in it is already there, step 1 stops without changing anything. Give the site another
+name, such as `site`, and write it for `docs` in step 1's command, in `cd docs` and `--prefix docs`, and as the first
+folder of the paths that start with `docs/`, but not in `content/docs` or in the site's addresses.
+
+The site takes up to 900 MB of disk, and npm's cache in `~/.npm` about 600 MB. Run the commands in a terminal on
+Linux, macOS or WSL. From a remote machine, such as a cluster's login node, connect with
+`ssh -L 3000:localhost:3000 HOST`, so that the site's addresses open in your own browser.
+
+## 1. Create the site [#create-the-site]
+
+In your project's top folder, the one that holds `src/`, create the site with Fumadocs' static template:
+
+```bash
+npx --yes create-fumadocs-app@16.3.9 docs --template +next+fuma-docs-mdx+static --pm npm --no-git --install --yes
+```
+
+This runs `create-fumadocs-app` at the version these steps were tested with and installs the site's packages, which
+takes from half a minute to a few minutes. `--no-git` keeps the site in your project's repository. It prints `Done`,
+then the template's own next steps: the steps below take their place, and
+[Tidy the template](/docs/guides/site-setup#tidy) names the site. A notice of a newer npm may follow, which needs
+nothing. `docs/` then holds a Next.js site that builds as static files, for GitHub Pages or any web server.
+
+## 2. Install fumadocs-fortran [#install]
+
+Go into the site's folder, and install the package from GitHub:
+
+```bash
+cd docs
+```
+
+```bash
+npm install github:Nevensky/fumadocs-fortran --allow-git=root
+```
+
+npm 12 installs from GitHub only with `--allow-git=root`; npm 10 and 11 need no flag. npm 11 may warn that esbuild's
+install script is not covered by `allowScripts`, and npm 12 that it blocked it: the steps work either way. Check that
+the command is there:
+
+```bash
+npx fumadocs-fortran --version
+```
+
+It prints the package's version, such as `0.0.0`.
+
+## 3. Generate the reference [#generate]
+
+Go back to the top folder, so that the pages name your files as `src/…`, and see what the generator reads:
+
+```bash
+cd ..
+```
+
+```bash
+npm exec --prefix docs -- fumadocs-fortran dump --summary src
+```
+
+`npm exec --prefix docs` runs the copy installed in `docs/`. It prints a row of counts per Fortran file, and a total.
+For the three files of the example the [Showcase](/docs/showcase) is generated from, the total reads, but for the
+time:
+
+```text
+3 files, 520 lines, 47 entities, 0 diagnostics, 11 ms
+```
+
+`0 files` means that nothing was read: check the folder's name, and that you are in the top folder. Sources that need
+fypp first, such as `.fypp` files, are not read either; see
+[Choose what to show](/docs/guides/generate#what-to-show).
+
+Write the pages:
+
+```bash
+npm exec --prefix docs -- fumadocs-fortran generate src -o docs/content/docs/api --math code --graphs none
+```
+
+It prints a line such as `7 files (7 changed, 0 removed) from 3 sources in 70 ms`, and writes into
+`docs/content/docs/api/` the pages, the overview `index.mdx`, the sidebar's `meta.json`, and
+`.fumadocs-fortran.json`, the list of its files, so that a later run deletes only its own.
+
+`--math code` shows maths as code and `--graphs none` leaves the graphs out, as the site has no plugins for them. The
+pages show the code as it builds with no preprocessor macros defined, while the Showcase defines `_OPENMP` and
+`USE_MPI`; to document another build, see [Choose the build](/docs/guides/generate#choose-the-build). If the line
+ends with a number of diagnostics, the lines under it name the file and line of the first 20, such as a missing
+include file; the pages are written all the same.
+
+## 4. Register the components [#register]
+
+The pages are drawn with the components of `fumadocs-fortran/react`. Add them to the site's MDX components, after
+Fumadocs' own:
+
+```tsx title="docs/components/mdx.tsx"
+import defaultMdxComponents from 'fumadocs-ui/mdx';
+import type { MDXComponents } from 'mdx/types';
+import { fortranComponents } from 'fumadocs-fortran/react'; // [!code ++]
+
+export function getMDXComponents(components?: MDXComponents) {
+  return {
+    ...defaultMdxComponents,
+    ...fortranComponents, // [!code ++]
+    ...components,
+  } satisfies MDXComponents;
+}
+
+export const useMDXComponents = getMDXComponents;
+
+declare global {
+  type MDXProvidedComponents = ReturnType<typeof getMDXComponents>;
+}
+```
+
+Import their stylesheet in the root layout, before the site's own `global.css`:
+
+```tsx title="docs/app/layout.tsx"
+import { Inter } from 'next/font/google';
+import { Provider } from '@/components/provider';
+import 'fumadocs-fortran/style.css'; // [!code ++]
+import './global.css';
+
+const inter = Inter({
+  subsets: ['latin'],
+});
+
+export default function Layout({ children }: LayoutProps<'/'>) {
+  return (
+    <html lang="en" className={inter.className} suppressHydrationWarning>
+      <body className="flex flex-col min-h-screen">
+        <Provider>{children}</Provider>
+      </body>
+    </html>
+  );
+}
+```
+
+The marked lines are the ones to add. To change the package's colours, see
+[Styling](/docs/reference/components#styling).
+
+## 5. Open the reference [#open]
+
+Go into the site's folder, and start the development server:
+
+```bash
+cd docs
+```
+
+```bash
+npm run dev
+```
+
+It prints its address, `http://localhost:3000`, and may warn that `metadataBase` is not set, which
+[Publish on GitHub Pages](/docs/guides/github-pages) sets. Open http://localhost:3000/docs/api in your browser:
+
+- the sidebar has the template's two sample pages and an "API reference" folder, with the overview and your pages
+  under a heading for each kind;
+- the overview has a card for each page, with the summary of its doc comment, or the procedures the page holds;
+- on a module's page, each procedure has its badges, signature, documentation and argument table: point to a badge
+  or an intent to read what it means, and select a row to open it;
+- under each procedure of up to 400 lines, a block headed "Source code in" and its file opens to its lines, numbered
+  as in the file.
+
+Stop the server with Ctrl+C.
+
+## 6. Build the static site [#build]
+
+Build the site as static files, and serve them as a web server would:
+
+```bash
+npm run build
+```
+
+```bash
+npm start
+```
+
+The build takes a few seconds, writes the site into `docs/out/`, and prints the `metadataBase` warning again.
+`npm start` serves `out/` at `http://localhost:3000`. Stop it with Ctrl+C, and go back to the top folder, where the
+commands of the guides run:
+
+```bash
+cd ..
+```
+
+## What you have
+
+- `docs/` is a Fumadocs site of your project. Its `.gitignore` leaves out `node_modules/`, `.next/` and `out/`, so it
+  can be committed with the rest.
+- `docs/content/docs/api/` belongs to the generator: change the Fortran rather than the pages, and run step 3's
+  generate command again from the top folder. It rewrites the pages that changed, and deletes the files its last run
+  wrote and this run did not. Commit the folder, or generate it before each build, as
+  [Publish on GitHub Pages](/docs/guides/github-pages) does.
+- Nothing outside `docs/` changed. To start again, delete `docs/`.
+
+## Next steps
+
+<Cards>
+  <Card title="Set up your site" href="/docs/guides/site-setup">
+    Maths, graphs, Fortran code blocks and the kind letters in the table of contents.
+  </Card>
+  <Card title="Generate the reference" href="/docs/guides/generate">
+    The build to document, what to show, links to your repository and running it again.
+  </Card>
+  <Card title="Publish on GitHub Pages" href="/docs/guides/github-pages">
+    The site at your repository's GitHub Pages address, built again on every push.
+  </Card>
+  <Card title="Move from FORD or Doxygen" href="/docs/guides/from-ford-doxygen">
+    What carries over from a FORD project file or a Doxyfile, and what works differently.
+  </Card>
+</Cards>
+
+If a step failed, look up its message in [Troubleshooting](/docs/guides/troubleshooting).

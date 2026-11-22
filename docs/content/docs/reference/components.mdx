@@ -3,138 +3,19 @@ title: Components
 description: The React components the generated pages are drawn with, each shown live with its props.
 ---
 
-The generated pages use seven components from `fumadocs-fortran/react`, fumadocs' own `Callout` and `Cards`, and, for
-the graphs, a `Mermaid` component that the site provides. The components are plain `createElement` code with no
-state, effects or context and no `'use client'`, so the same set renders on the server and in client-side MDX;
-`FortranRef` uses `useId`, which server components have too, to tie a hover card to its name. Rows that open, source
-blocks, hover cards and the cards in which badges and pills say what they mean are HTML and CSS only. Every prop is a
-string, a number or a boolean, except a row's `refs`.
+The generated pages use seven components from `fumadocs-fortran/react`, Fumadocs' own `Callout`, `Cards` and `Card`,
+and, for the graphs, a `Mermaid` component that the site provides. `Callout` holds the notes and warnings of doc
+comments (see [Doc comments](/docs/reference/doc-comments#notes-and-warnings)), and the cards are the overview
+page's. The seven are plain `createElement` code with no state, effects or context and no `'use client'`, so the same
+set renders on the server and in client-side MDX. `FortranRef` uses `useId`, which server components have too, to tie
+a hover card to its name. Rows that open, source blocks, hover cards and the cards in which badges and pills say what
+they mean are HTML and CSS only. Every prop is a string, a number or a boolean, except a row's `refs`, and
+`types/react.d.ts` in the package declares them.
 
-## Set up
-
-Register them with the site's MDX components:
-
-```tsx title="components/mdx.tsx"
-import defaultMdxComponents from 'fumadocs-ui/mdx';
-import type { MDXComponents } from 'mdx/types';
-import { fortranComponents } from 'fumadocs-fortran/react';
-
-export function getMDXComponents(components?: MDXComponents) {
-  return { ...defaultMdxComponents, ...fortranComponents, ...components };
-}
-```
-
-and import the stylesheet once, in the root layout, before the site's own CSS, so that the site can change its
-colours (see [Styling](#styling)):
-
-```tsx title="app/layout.tsx"
-import 'fumadocs-fortran/style.css';
-import './global.css';
-```
-
-The pages also hold `$…$` and `$$…$$` maths, which need remark-math, rehype-katex and KaTeX's stylesheet. This
-site adds them in [`lib/source.ts`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/lib/source.ts) and
-[`app/layout.tsx`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/app/layout.tsx).
-
-### Graphs
-
-The dependency, inheritance and call graphs are ` ```mermaid ` blocks. fumadocs' `remarkMdxMermaid` turns each into
-`<Mermaid chart="…" />`, and the site draws it. This site draws them as SVG at build time with
-[Pele](https://github.com/obsidianmd/pele), so no script reaches the browser; see
-[`components/mdx/mermaid.tsx`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/components/mdx/mermaid.tsx).
-The client-side Mermaid component of fumadocs' own docs works as well. A site that draws no graphs generates without
-them: `graphs: false`, or `--graphs none`.
-
-```ts title="lib/source.ts"
-import { remarkMdxMermaid } from 'fumadocs-core/mdx-plugins';
-
-// in defineDocs({ docs: { mdxOptions: applyMdxPreset({ … }) } })
-remarkPlugins: [remarkMdxMermaid],
-```
-
-Pele throws on a diagram it cannot parse, and a ` ```mermaid ` block in a doc comment reaches the pages as it was
-written, so the component shows such a diagram as its code rather than failing the page's build:
-
-```tsx title="components/mdx/mermaid.tsx"
-import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
-import { render } from 'pele';
-
-export function Mermaid({ chart }: { chart: string }) {
-  let svg: string;
-  try {
-    svg = render(chart).svg;
-  } catch {
-    return (
-      <CodeBlock title="Mermaid">
-        <Pre>{chart}</Pre>
-      </CodeBlock>
-    );
-  }
-  return <div className="not-prose" dangerouslySetInnerHTML={{ __html: svg }} />;
-}
-```
-
-Register `Mermaid` with the other components. Pele draws with CSS variables (`--pele-fg`, `--pele-line`, `--pele-bg`
-and others), and without them for a light page: near-black arrows, which a dark theme hides, and labels in white
-boxes. `fumadocs-fortran/style.css` maps them to fumadocs' colours for the graphs in a `FortranGraph`, so that their
-lines, arrows and labels follow the light and dark themes, and colours their nodes by kind (see
-[What the graphs show](#what-the-graphs-show)). A diagram that a site writes in a page itself, a ` ```mermaid ` block
-outside a `FortranGraph`, needs the same mapping in the site's CSS. This site's:
-
-```css title="app/global.css"
-.pele:not(.fdf-graph .pele) {
-  --pele-font: var(--font-sans);
-  --pele-font-mono: var(--font-mono);
-  --pele-bg: var(--color-fd-background);
-  --pele-fg: var(--color-fd-foreground);
-  --pele-muted: var(--color-fd-muted-foreground);
-  --pele-line: var(--color-fd-muted-foreground);
-  --pele-surface: var(--color-fd-card);
-  --pele-surface-alt: var(--color-fd-secondary);
-  --pele-border: var(--color-fd-border);
-  --pele-accent: var(--color-fd-primary);
-}
-```
-
-A plain `.pele` rule outside any `@layer` would apply to the generated graphs as well, as the stylesheet's mapping has
-no specificity and is in no cascade layer: it is how a site changes their lines and labels.
-
-### Letters in the table of contents
-
-A generated page says what each heading is, in its front matter, and `fortranToc()` puts a letter for it in the
-table of contents: `t` for a type, `s` a subroutine, `f` a function and so on. The page schema has to keep the
-`fortran` field, which fumadocs' default schema drops. The schema is written with zod 4, which fumadocs-core lists
-only as an optional peer dependency, so a site without it installs it (`npm install zod@4`):
-
-```ts title="lib/source.ts"
-import { pageSchema } from 'fumadocs-core/source/schema';
-import { z } from 'zod';
-
-// in defineDocs({ docs: { … } })
-schema: pageSchema.extend({
-  fortran: z.object({ kind: z.string().optional(), toc: z.record(z.string(), z.string()).optional() }).optional(),
-}),
-```
-
-```tsx title="app/docs/[[...slug]]/page.tsx"
-import { fortranToc } from 'fumadocs-fortran/react';
-
-<DocsPage toc={fortranToc(page.data.toc, page.data.fortran?.toc)} full={page.data.full}>
-```
-
-### A site served under a base path
-
-Markdown links go through the site's link component, which writes them as Next.js writes its own: with the
-`basePath`, and, in a static export with `trailingSlash`, with the slash a page's address ends in
-(`…/solver_kernels/#dense_matrix`). A hover card's link, a source header's and a graph node's are plain links that it
-never sees. On a site served from a sub-path, such as a GitHub Pages project site, or exported with `trailingSlash`,
-give the links among them that start with `/` the same: without the base path they lead off the site, and without
-the slash a link to an anchor of the page being read loads the page again, through a redirect, instead of scrolling
-to it. This site does it with `siteHref` in
-[`lib/shared.ts`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/lib/shared.ts): for the components in
-[`components/mdx/fortran.tsx`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/components/mdx/fortran.tsx),
-which the site registers in their place, for the graphs in its `Mermaid`, and for the llms files and the pages'
-Markdown copies in `lib/source.ts`.
+[Set up your site](/docs/guides/site-setup) registers the components, imports their stylesheet and adds the `Mermaid`
+component. The links of hover cards, source headers and graph nodes are plain links, which a site served under a base
+path passes through a function of its own: [Publish on GitHub Pages](/docs/guides/github-pages#links) shows how.
+This page draws each component live, as this site registers them.
 
 ## FortranBadges and FortranBadge
 
@@ -190,7 +71,7 @@ Attributes
 <FortranBadge kind="deprecated" />
 </FortranBadges>
 
-A label of its own, a condition, a note, and a kind the package does not know, which this site gives a meaning
+A label of its own, a condition, a note and a kind the package does not know, which this site gives a meaning
 
 <FortranBadges>
 <FortranBadge kind="omp" label="OpenMP parallel region" />
@@ -215,6 +96,12 @@ A label of its own, a condition, a note, and a kind the package does not know, w
 
 </Tab>
 </Tabs>
+
+The generator writes the kinds of entity and of block data, `omp`, `acc`, `offload`, `mpi`, `coarray`, `cuda`, `cpp`,
+`bindc`, the procedure prefixes (`pure`, `impure`, `elemental`, `recursive`, `non-recursive` and `simple`),
+`abstract`, `private` and `parameter`. The kinds `blas`, `lapack`, `scalapack`, `deferred`, `public` and
+`deprecated` have a colour or label and a meaning for hand-written pages, and no generated page uses them: a deferred
+binding says so in its row's attributes.
 
 ### Props of FortranBadge
 
@@ -245,16 +132,16 @@ A label of its own, a condition, a note, and a kind the package does not know, w
   }}
 />
 
-`FortranBadges` takes only `children`: the badges.
+`FortranBadges` takes only `children`: the badges. A `FortranBadge` with no kind, label or condition draws nothing.
 
 ## FortranArgs and FortranArg
 
-`FortranArgs` is a table in the manner of fumadocs' `TypeTable`: a title, a header row, and a `FortranArg` row for
+`FortranArgs` is a table in the manner of Fumadocs' `TypeTable`: a title, a header row and a `FortranArg` row for
 each argument, result, component, type parameter, type-bound procedure or enumerator. A row shows the name, the type,
-the shape (dimensions and codimensions), the intent and the attributes, and opens to its documentation, as full
+the shape (dimensions and codimensions), the intent and the attributes. It opens to its documentation, as full
 Markdown, with the whole declaration, the intent, a type parameter's `kind` or `len` and each attribute beside its
 meaning, the shape in words, a character type's length and the cpp condition it exists under. A name in the type
-that `refs` lists links to its definition and shows a card on hover or keyboard focus; the intent, each attribute,
+that `refs` lists links to its definition and shows a card on hover or keyboard focus. The intent, each attribute,
 the shape, the `*` or `:` of `character(*)` and `character(:)` and the `kind` or `len` of a type parameter's type say
 what they mean in a card on hover (see [Meanings](#meanings)). A type parameter's row reads as its declaration does:
 the type `integer, kind` and one attribute, `default dp`, for `integer, kind :: k = dp`. In a column narrower than
@@ -400,11 +287,11 @@ The kind of the entries.
 </FortranArgs>
 ```
 
-Leave a blank line after an opening `<FortranArg>` and before its closing tag, so that what is between them is read
-as Markdown. A row opens when it has more to say than its cells: a doc, a declaration, a shape, a condition, a `*` or
-`:` length, or an intent (`in`, `out` or `inout`), an attribute or a type parameter's `kind` or `len`, whose meanings
-it says in words for the keyboard and screen readers, as `info` does. A row with none of these, such as a result's
-with only its type, does not open, and its `result` pill says what it means on hover alone.
+Leave a blank line after an opening `<FortranArg>` and before its closing tag, so that what is between them is read as
+Markdown. A row opens when it has more to say than its cells: a doc, a declaration, a shape, a condition, a `*` or `:`
+length, or an intent (`in`, `out` or `inout`), an attribute or a type parameter's `kind` or `len`. It says the meanings
+of these in words for the keyboard and screen readers, as `info` does. A row with none of these, such as a result's with
+only its type, does not open, and its `result` pill says what it means on hover alone.
 
 </Tab>
 </Tabs>
@@ -422,7 +309,7 @@ with only its type, does not open, and its `result` pill says what it means on h
       type: 'string',
       default: 'type shape intent attrs',
       description:
-        'The columns to show besides the name, space-separated, drawn in that order. The generator lists only those some row fills, and an empty string shows the names alone.',
+        'The columns to show besides the name, space- or comma-separated (in an MDX expression, an array of them works too). They are drawn in the order type, shape, intent, attrs, whatever the order given. The generator lists only those some row fills, and an empty string shows the names alone.',
     },
     children: {
       type: 'ReactNode',
@@ -491,7 +378,7 @@ with only its type, does not open, and its `result` pill says what it means on h
     refs: {
       type: 'Record<string, { href?: string; title: string; detail?: string; note?: string }>',
       description:
-        "Names in the type that link and have a hover card, by name: each whole-word occurrence, in any case, becomes a FortranRef. An object, or the same as JSON text. The generator gives one for each kind name and derived type it can place, mpi_f08's types and omp_lib's kinds included.",
+        "Names in the type that link and have a hover card, by name: each whole-word occurrence, in any case, becomes a FortranRef. An object, or the same as JSON text; text that is not JSON gives no cards. The generator gives one for each kind name and derived type it can place, mpi_f08's types and omp_lib's kinds included.",
     },
     children: {
       type: 'ReactNode',
@@ -502,34 +389,33 @@ with only its type, does not open, and its `result` pill says what it means on h
 
 ## Meanings
 
-A badge, an intent, an attribute, a condition, a shape, the `*` or `:` of `character(*)` and `character(:)` and the
-`kind` or `len` of a type parameter's `integer, kind` say what they mean in a card while the pointer is on them, in
-the look of the hover cards. In the Arguments table of [FortranArgs and FortranArg](#fortranargs-and-fortranarg),
-`allocatable` says "Allocated at run time, by allocate or on assignment, and freed by deallocate (a local one also on
-return)", `(lda,*)` "rank 2, assumed size", and the `*` of `character(*)` "Assumed length (len=\*): taken from the
-actual argument".
+A badge, an intent, an attribute, a condition and a shape say what they mean in a card while the pointer is on them,
+in the look of the hover cards. So do the `*` or `:` of `character(*)` and `character(:)`, and the `kind` or `len` of
+a type parameter's `integer, kind`. In the Arguments table of
+[FortranArgs and FortranArg](#fortranargs-and-fortranarg), `allocatable` says "Allocated at run time, by allocate or
+on assignment, and freed by deallocate (a local one also on return)". There `(lda,*)` says "rank 2, assumed size", and
+the `*` of `character(*)` "Assumed length (len=\*): taken from the actual argument".
 
 The meanings are written once, in `fumadocs-fortran/style.css`. The components name each one's term in a `data-term`
 attribute, and what goes with it in `data-arg` (`self` in `pass(self)`, `dp` in `default dp`, `USE_MPI` in
-`when USE_MPI`), and the stylesheet draws the card for the term, so that a page of thousands of pills holds no meaning
+`when USE_MPI`). The stylesheet draws the card for the term, so that a page of thousands of pills holds no meaning
 twice. A shape is the exception: its words are the components' own, in English, made from the dimensions and written
 in `data-arg`. A term the stylesheet has no meaning for, such as a site's own badge kind, shows no card, but for a
 badge with a `title`, whose card holds the title alone.
 
-The cards are for the pointer: Tab does not stop at a pill, which has no native tooltip either, and in current
-browsers screen readers do not read a card with its row. So a row with an intent, an attribute or a type parameter's
-`kind` or `len` opens, if only to say the same for the keyboard and screen readers: its intent and its type
-parameter's `kind` or `len` in words, each attribute beside its meaning, and its shape, length and condition. A
-badge's meaning is for the pointer alone; its `title` is text in the badge, which
-screen readers read with it. On a touch screen, a tap on a pill in a row opens the row, which says what the pill
-means, so the pill shows no card there. Where the browser has CSS anchor positioning, a card is placed against what
-it explains and the screen, as a hover card is; elsewhere the card of a pill in the table's last columns opens
-towards the table, and a badge's below its row of badges, from the row's start, so that it stays on a phone's
-screen. Cards are not printed, and an opened row prints its meanings.
+The cards are for the pointer: Tab does not stop at a pill, which has no native tooltip either, and screen readers do
+not read a card with its row. So a row with an intent, an attribute or a type parameter's `kind` or `len` opens, if
+only to say the same for the keyboard and screen readers. It gives its intent and its type parameter's `kind` or `len`
+in words, each attribute beside its meaning, and its shape, length and condition. A badge's meaning is for the pointer
+alone; its `title` is text in the badge, which screen readers read with it. On a touch screen, a tap on a pill in a
+row opens the row, which says what the pill means, so the pill shows no card there. Where the browser has CSS anchor
+positioning, a card is placed against what it explains and the screen, as a hover card is. Elsewhere the card of a
+pill in the table's last columns opens towards the table, and a badge's below its row of badges, from the row's
+start, so that it stays on a phone's screen. Cards are not printed, and an opened row prints its meanings.
 
 A site gives a term a meaning, or one in its own words or language, with a rule in its own CSS. The stylesheet's
 meanings are in `:where()`, which has no specificity, and in no cascade layer, so a rule on `[data-term='…']` outside
-any `@layer` wins wherever the site's CSS comes; inside one, such as Tailwind's `@layer base` or `@layer components`,
+any `@layer` wins wherever the site's CSS comes. Inside one, such as Tailwind's `@layer base` or `@layer components`,
 it loses to the stylesheet's meaning, whatever its specificity. `attr(data-arg)` puts in what goes with the term.
 This site gives the HDF5 badge above its meaning:
 
@@ -567,9 +453,9 @@ MPI badge. The terms the stylesheet has meanings for are:
 ## FortranRef
 
 A name that links to its definition and shows a card while it is hovered or has the keyboard's focus: a first line
-in code, a line of text, and a muted note. The rows use it for kind names and derived types, and a "Calls:" line for
-the library routines it names (see [Library names](#library-names)); in text it stands on its own. Hover over these
-names, or reach them with Tab:
+in code, a line of text and a muted note. The rows use it for kind names and derived types, and a "Calls:" line for
+the library routines it names (see [Library names](/docs/how-it-works#library-names)); in text it stands on its own.
+Hover over these names, or reach them with Tab:
 
 {/* the examples are expressions, which search leaves out */}
 <p>
@@ -599,53 +485,15 @@ Without `href` the name is a button that does nothing, which the keyboard reache
 has the focus. For screen readers the card describes its name (`aria-describedby`) and has no text of its own
 (`aria-hidden`), so that a row is read without it. The card is CSS only: it hides when the pointer or the focus
 leaves the name, and Escape cannot dismiss it. Where the browser has CSS anchor positioning, the card is placed
-against its name and the screen, on the side where it fits. Elsewhere it opens below the name, or, so that it stays
-on a phone's screen, below the field of an opened row or the paragraph of running text it is in, such as a "Calls:"
-line, from the start of either. Cards are not printed.
+against its name and the screen, on the side where it fits. Elsewhere it opens below the name. In an opened row, or
+in a paragraph of running text such as a "Calls:" line, it opens below the row's field or the paragraph instead, from
+its start, so that it stays on a phone's screen. Cards are not printed. A `FortranRef` without a name draws nothing.
 
 ### Library names
 
-The package ships a registry of the names of HPC libraries (`registry/`): BLAS and LAPACK, ScaLAPACK with PBLAS,
-BLACS, its tools and REDIST, and the routines it writes in C for Fortran to call (`?lamov`, `pcrot`, `pzrot`, the
-`p?laiect`, `p?lasnbt` and `p?lachkieee` routines, `reshape`, `sl_gridreshape`, `PB_topget`, `PB_topset` and
-`PB_freebuf`), MPI, OpenMP, OpenACC and the Fortran intrinsics. The generator gives their names cards from it:
-
-- **Calls.** In the "Calls:" line of a procedure or a program, a library subroutine is a `FortranRef`, as `dgesv`
-  above: its kind, name and library, the registry's summary and a link to its documentation, each where there is
-  one. The registry has a summary for every subroutine of BLAS, LAPACK, MPI and the intrinsics, for all of
-  ScaLAPACK's but two, and for the most used of OpenMP and OpenACC. BLAS, LAPACK and ScaLAPACK routines link to
-  Netlib or, when the code uses one of MKL's modules (`lapack95`, `blas95`, `f95_precision`, `mkl_*`), to Intel
-  oneMKL's page for the routine (BLACS, the tools and REDIST stay on Netlib; the address is made from the routine's
-  name and not checked, as intel.com refuses scripts); MPI's to Open MPI 5.0's manual, or to Open MPI's development
-  manual for a newer one that 5.0 lacks; OpenMP's to the 5.2 specification (a later one for a routine 5.2 lacks);
-  OpenACC's to the 3.4 specification; and an intrinsic subroutine, such as `co_sum`, to fortran-lang.org, or to
-  gfortran's manual for one that fortran-lang.org lacks (`random_init`, `split`). A routine with no page to link to,
-  such as the intrinsic `tokenize` or MPI's predefined callbacks, has a card without a link, a button. A routine that
-  a use statement renames is looked up by its own name. The line lists `CALL` statements, so a function such as
-  `dnrm2` has no card, though the call graphs draw it. A site chooses other pages with `hpc.links`, or `--links`, by
-  library: `lapack` and `scalapack` take `netlib` or `mkl`, `mpi` `openmpi`, `mpich` or `standard`, `openmp` `5.2`,
-  `6.0`, `6.1` or `libgomp`, `openacc` `spec` or `libgomp`, and `intrinsics` `fortran-lang` or `gfortran`
-  (`--links lapack=mkl,mpi=mpich`); a name its provider has no page for links as by default.
-- **Types and kinds.** In a row, the derived types of `mpi_f08` (`type(MPI_Comm)`, `MPI_Datatype`, `MPI_Request`,
-  `MPI_Status`, …) and the kinds of `omp_lib` or `omp_lib_kinds` (`integer(omp_lock_kind)`) have a card when the
-  declaration's scope uses the module, by `use` (`use, intrinsic :: omp_lib` too), an `only` list or a rename,
-  through its host or through a module of the project that passes the name on: the registry's line on the name, a
-  link to the MPI 5.0 standard or the OpenMP specification, and the use statement it comes from. `use mpi`, whose
-  handles are integers, gives none.
-- **The project wins.** A procedure, generic interface or variable of the project, shown or not, a dummy argument in
-  scope, or a procedure pointer the caller declares (in a `BLOCK`, in its specification part or in its host's) is
-  never taken for a library's: the project's own `dgemm` keeps its link, or stays code when it has no heading, a
-  call through such a pointer has no card, and a module of the project named `mpi_f08`, such as a serial stub, gives
-  its own types. An interface body that only describes a library routine, as code writes one for `dgesv`, does not
-  count: a call links to it when it has a heading, and has the library's card when it has none. A `pointer`
-  statement on its name makes it a procedure pointer, which does. A `CALL` of a name the registry has as a function,
-  or of an intrinsic's name that another module's use statement gives, names some other subroutine and has no card,
-  unless the registry has a subroutine of the name: `call reshape` is ScaLAPACK's `reshape`, of its tools, not the
-  intrinsic function.
-
-The registry is read when the pages are generated, the first time a page needs it. Without it, the names are shown
-as code, with no card, and the graphs leave LAPACK and ScaLAPACK grey. `hpc.cards: false`, or
-`--library-cards none`, leaves the names as code, with no card, and keeps the graphs' colours.
+The cards of library routines in "Calls:" lines, and of `mpi_f08`'s types and `omp_lib`'s kinds in the rows, come
+from the registry of HPC library names that the package ships. [How it works](/docs/how-it-works#library-names) says
+what it holds, where its cards link and how a site chooses other pages or leaves the cards out.
 
 ### Props of FortranRef
 
@@ -654,7 +502,7 @@ as code, with no card, and the graphs leave LAPACK and ScaLAPACK grey. `hpc.card
     href: {
       type: 'string',
       description:
-        'Where the name links: a heading of the reference, or a page about the name. Without it the name is a button that only shows the card.',
+        'Where the name links: a heading of the reference, or a page about the name. A link with a scheme other than http, https or mailto, such as javascript:, is dropped. Without a link the name is a button that only shows the card.',
     },
     title: {
       type: 'string',
@@ -681,9 +529,10 @@ as code, with no card, and the graphs leave LAPACK and ScaLAPACK grey. `hpc.card
 An entity's source: "Source code in" its file, its lines and a link to them. With a code block inside, it is a block
 that opens to the code, numbered from the entity's first line; without one, the line alone, which links when `href`
 is given. The generator puts in the code of each procedure, type, interface, variable and enum of up to 400 lines,
-and links modules, submodules and programs; `source: 'link'`, or `--source link`, only links. It reads the code from
-the files it parsed, those it was given and the files they include, wherever they lie, so that
-`fumadocs-fortran generate ../src` run in a site's folder embeds it too.
+and only links modules, submodules, programs and block data units; `source: 'link'`, or `--source link`, only links.
+It reads the code from the files it parsed and the files they include, wherever they lie. The file names, and the
+links that `--repo` gives, are relative to the folder `generate` runs in, so run it from the repository root (see
+[Generate the reference](/docs/guides/generate)).
 
 <Tabs items={['Preview', 'MDX']}>
 <Tab value="Preview">
@@ -719,7 +568,7 @@ the files it parsed, those it was given and the files they include, wherever the
 
 ```f90 lineNumbers=166
   subroutine check_length(n, m, what)
-  …
+  ! …
   end subroutine check_length
 ```
 
@@ -756,7 +605,8 @@ the files it parsed, those it was given and the files they include, wherever the
     },
     href: {
       type: 'string',
-      description: 'Where the lines can be read, such as the file on GitHub with #L166-L171. Its host names the link.',
+      description:
+        'Where the lines can be read, such as the file on GitHub with #L166-L171. The link is named after its host: GitHub, GitLab, Codeberg, Bitbucket or sourcehut, any other host by its name, and a path on the site Open. A link with a scheme other than http, https or mailto is dropped.',
     },
     children: {
       type: 'ReactNode',
@@ -765,11 +615,15 @@ the files it parsed, those it was given and the files they include, wherever the
   }}
 />
 
+A `FortranSource` with neither a file nor a link draws nothing.
+
 ## FortranGraph
 
 A graph, with an optional title: an open card, or, with `collapsed`, a block that opens to it. The generator draws a
 unit's dependencies and the overview's units open, the overview's with no title, under a heading of its own, and a
-type's inheritance and the calls of a procedure, a program or a generic collapsed.
+type's inheritance and the calls of a procedure, a program or a generic collapsed. The graph inside is a
+` ```mermaid ` block, which Fumadocs' `remarkMdxMermaid` turns into a `Mermaid` element and the site's `Mermaid`
+component draws (see [Set up your site](/docs/guides/site-setup#graphs)).
 
 <Tabs items={['Preview', 'MDX']}>
 <Tab value="Preview">
@@ -825,56 +679,8 @@ flowchart LR
 
 ### What the graphs show
 
-- **Graphs.** A unit's dependencies are the modules that it and everything in it use, followed two steps deep
-  through the project's modules, then what uses it, and its submodules or, for a submodule, its parents. A type's
-  inheritance is the types it extends, up to the root, and every type that extends it. A procedure's calls are what
-  it calls, two steps deep through the project's procedures, and what calls it. The overview has every module,
-  submodule and program, with one node for each HPC library they use. A graph draws at most 40 nodes, the last of
-  them standing for the rest ("… 12 more"): the routines from outside the project go first, however many callers
-  they have, the farthest first, then the farthest of the rest. A project of more than 80 units has no overview
-  graph. From JavaScript, `graphs: { depth, maxNodes }` changes the two steps and the 40 nodes, and `maxNodes` the 80
-  units as well.
-- **Calls.** A call is a `CALL` statement or a function reference, resolved as Fortran resolves it: through `use`,
-  renames, host association, generic interfaces and submodules. A type-bound one (`call m%solve(b)`,
-  `n = m%order()`) is drawn when `m` is a dummy argument, a function result or a module variable, whose type the
-  model knows, and not through a local variable, as the model keeps no local declarations. Intrinsic procedures are
-  left out, and a function reference to a name the project does not declare is drawn only when the name is a known
-  library's, such as LAPACK's `dlamch`, as it might as well be an array. A node bears the name as the source first
-  writes it, so fixed-form code's `DLAMCH` stands beside its `DGEMM`. A `CALL` of a name that only an intrinsic
-  function has names some other routine, drawn as one from outside the project; the registry knows ScaLAPACK's own
-  `reshape`, which `call reshape` draws in ScaLAPACK's colour. A call through a procedure pointer the caller declares
-  is not drawn.
-- **Shapes.** A module and a type are boxes, a submodule a box with double sides, a program a stadium, a procedure a
-  rounded box and a generic interface or binding a hexagon. A module or routine from outside the project is a rounded
-  box. The graph's subject has a heavier border.
-- **Colours.** Each kind of the project's entities has a colour: modules, submodules, programs, procedures (functions
-  and subroutines alike), generics and types; an abstract type has a dashed border in the type's colour. A routine or
-  module from outside the project takes its library's colour:
-  - BLAS, LAPACK and ScaLAPACK: the routines the registry of library names knows (see
-    [Library names](#library-names)), BLAS first, so that the BLAS routines Reference-LAPACK ships stay BLAS, and
-    PBLAS, BLACS, ScaLAPACK's tools and REDIST with ScaLAPACK;
-  - MPI: `mpi_*` routines, and the modules `mpi`, `mpi_f08` and `mpif`;
-  - OpenMP: `omp_*`, `omp_lib` and `omp_lib_kinds`; OpenACC: `acc_*` and `openacc`;
-  - CUDA: routines whose names start with `cuda`, `cublas`, `cufft`, `curand`, `cusparse` or `cusolver`, in any case,
-    and the modules `cudafor`, `cublas`, `cufft`, `curand`, `cusparse` and `cusolverDn`;
-  - the coarray collectives (`co_sum`, `co_min`, `co_max`, `co_reduce`, `co_broadcast`).
-
-  `graphs.classify`, a JavaScript option of `generate()` and `buildPages()`, takes the registry's place: it names the
-  library of a routine the project does not define from its lower-case name, such as
-  `(name) => (MYLIB.has(name) ? 'lapack' : null)` with a set of names; the CLI has no such option. With it, or
-  without the registry, the names alone still tell MPI, OpenMP, OpenACC, CUDA, the coarray collectives and BLAS. The
-  other routines and modules from outside the project are grey and dashed, and the intrinsic modules
-  (`iso_fortran_env`, `iso_c_binding`, the IEEE modules) grey.
-- **Edges.** An arrow is a use, an extension (from a type to its parent) or a call. A label on it is the cpp condition
-  it holds under, which a `use` statement or a `CALL` statement gives; a function reference is never labelled, as the
-  parser keeps no condition for it. A dotted arrow goes from a generic to its specific procedures, and one labelled
-  "submodule of" from a submodule to its parent.
-- **Links.** A node links to the heading that documents it; a routine from outside the project links to the interface
-  body that documents it, if there is one.
-
-The Mermaid holds fixed mid tones for each kind of node, which read on light and dark backgrounds whatever draws them.
-With Pele, `fumadocs-fortran/style.css` draws the nodes in the theme's colours instead, from the variables under
-[Styling](#styling), and the lines, arrows and labels in fumadocs' (see [Graphs](#graphs)).
+What each graph draws, how far it reaches, its limit of 40 nodes, and the shapes and colours of its nodes are on
+[How it works](/docs/how-it-works#graphs); the colours' variables are under [Styling](#styling).
 
 ### Props of FortranGraph
 
@@ -897,11 +703,16 @@ With Pele, `fumadocs-fortran/style.css` draws the nodes in the theme's colours i
   }}
 />
 
+A `FortranGraph` without a diagram draws nothing.
+
 ## fortranToc
 
-`fortranToc(toc, kinds)` returns fumadocs' table of contents with a letter before each entry whose anchor `kinds`
-names: a generated page's front matter `fortran.toc`. Wire it in as in
-[Letters in the table of contents](#letters-in-the-table-of-contents); entries it has no kind for stay as they are.
+`fortranToc(toc, kinds)` returns Fumadocs' table of contents with a letter before each entry whose anchor `kinds`
+names. `kinds` maps anchors, without `#`, to kinds, as a generated page's front matter `fortran.toc` does; a
+percent-encoded anchor is looked up decoded too. An entry it has no kind for stays as it is, and without `kinds` it
+returns `toc` itself. The letter is hidden from screen readers, which read the entry's title alone.
+[Set up your site](/docs/guides/site-setup#kind-letters) wires it into the page template, with the page schema's
+`fortran` field.
 
 <div className="not-prose flex flex-wrap gap-x-5 gap-y-2 text-sm">
   <span className="fdf-toc"><span className="fdf-toc-kind fdf-toc-module">mod</span><span className="fdf-toc-name">module</span></span>
@@ -916,28 +727,12 @@ names: a generated page's front matter `fortran.toc`. Wire it in as in
   <span className="fdf-toc"><span className="fdf-toc-kind fdf-toc-enum">e</span><span className="fdf-toc-name">enum</span></span>
 </div>
 
-## Notes and warnings
-
-FORD's `@note`, `@warning`, `@bug` and `@todo`, and their Doxygen counterparts, become fumadocs' own `Callout`, which
-every fumadocs site already registers:
-
-<Callout type="info" title="Note">
-  A FORD `@note` becomes a callout like this one.
-</Callout>
-
-<Callout type="warn" title="Warning">
-  So does a `@warning`.
-</Callout>
-
-<Callout type="error" title="Bug">
-  And a `@bug`.
-</Callout>
-
 ## fortranComponents
 
 `fortranComponents` holds all seven, `{ FortranBadges, FortranBadge, FortranArgs, FortranArg, FortranRef,
-FortranSource, FortranGraph }`, to spread into `getMDXComponents()` as in [Set up](#set-up). Each is also a named
-export, for use in TSX, with its props' types: this site's home page draws a procedure with them.
+FortranSource, FortranGraph }`, to spread into `getMDXComponents()`:
+`{ ...defaultMdxComponents, ...fortranComponents, ...components }`. Each is also a named export, for use in TSX,
+with its props' types: this site's home page draws a procedure with them.
 
 ```tsx
 import {
@@ -953,8 +748,9 @@ import {
 
 ## Styling
 
-`fumadocs-fortran/style.css` is plain CSS on `.fdf-*` classes, built on fumadocs' colour variables, so it follows
-the site's theme in light and dark mode. It needs no Tailwind `@source` line. Sites can change these colours:
+`fumadocs-fortran/style.css` is plain CSS on `.fdf-*` classes, built on Fumadocs' colour variables
+(`--color-fd-*`), so it follows the site's light and dark themes: its dark values apply under a `.dark` class, which
+Fumadocs puts on `<html>`. It needs no Tailwind `@source` line. Sites can change these colours:
 
 | Variable | Colours |
 | --- | --- |
@@ -970,10 +766,10 @@ the site's theme in light and dark mode. It needs no Tailwind `@source` line. Si
 | `--fdf-k-function`, `--fdf-k-variable`, `--fdf-k-parameter`, `--fdf-k-enum` | the letters `f`, `v`, `p` and `e` in the table of contents |
 
 Each is one mid tone for both themes: the text mixes it with black in light mode and with white in dark mode, and
-the tint and the border are made from it. The grey of what lies outside the project is fumadocs' muted foreground.
-Set them on `:root`, outside any `@layer`, in CSS that comes after the stylesheet, such as the site's own
-`app/global.css` imported after it, as in [Set up](#set-up) (the stylesheet is in no cascade layer, and its values
-beat a layered rule's):
+the tint and the border are made from it. The grey of what lies outside the project is Fumadocs' muted foreground.
+The stylesheet's values are in `:where(:root)`, which has no specificity, and in no cascade layer, so a site's own
+`:root` rule outside any `@layer` wins wherever its CSS comes, and one inside a layer, such as Tailwind's, loses to
+them:
 
 ```css title="app/global.css"
 :root {
@@ -982,7 +778,51 @@ beat a layered rule's):
 ```
 
 The meanings of badges and pills are custom properties too, one per term: [Meanings](#meanings) says how to add or
-reword one.
+reword one. The stylesheet's other custom properties are its own working values:
+
+- `--fdf-text-mix`, `--fdf-text-share` and `--fdf-fill-share`, how the text and the tints are made from a tone, set
+  on `:root` for the light theme and on `.dark` for the dark one;
+- `--fdf-shadow-sm` and `--fdf-shadow-md`, the shadows of an open row and of a hover card, set the same way;
+- `--fdf-mono`, `--fdf-line` and `--fdf-quiet`, the code font, the lines and the muted text, which each part works out
+  from Fumadocs' `--font-mono`, `--color-fd-border` and muted foreground;
+- `--fdf-col-name`, `--fdf-col-type`, `--fdf-col-shape`, `--fdf-col-intent` and `--fdf-col-attrs`, the widths of an
+  argument table's columns, set on the table and emptied for a column it leaves out;
+- `--fdf-c`, the tone a badge, an intent, a letter, a graph node or a directive line takes from its kind;
+- `--fdf-mean` and `--fdf-also`, the meanings and a badge's condition line.
+
+Three classes are hooks for a site's own CSS, as the stylesheet gives them no style. Every badge has
+`.fdf-kind-<kind>` (`.fdf-kind-hdf5` for the one above), which has a style only for the HPC kinds. A row that exists
+only under a cpp condition has `.fdf-arg-conditional`, and an intent's arrow `.fdf-intent-arrow`.
+
+### Graphs
+
+Pele, which this site draws the graphs with, takes its fonts and colours from `--pele-*` variables, and without them
+draws for a light page: near-black arrows, which a dark theme hides, and labels in white boxes. The stylesheet maps
+them to Fumadocs' fonts and colours for the graphs in a `FortranGraph`, so that their lines, arrows and labels follow
+the light and dark themes, and draws their nodes in the tones of the table above. The Mermaid itself holds fixed mid
+tones for each kind of node, which read on light and dark backgrounds whatever draws them. A diagram that a site
+writes in a page itself, a ` ```mermaid ` block outside a `FortranGraph`, needs the same mapping in the site's CSS.
+This site's:
+
+```css title="app/global.css"
+.pele:not(.fdf-graph .pele) {
+  --pele-font: var(--font-sans);
+  --pele-font-mono: var(--font-mono);
+  --pele-bg: var(--color-fd-background);
+  --pele-fg: var(--color-fd-foreground);
+  --pele-muted: var(--color-fd-muted-foreground);
+  --pele-line: var(--color-fd-muted-foreground);
+  --pele-surface: var(--color-fd-card);
+  --pele-surface-alt: var(--color-fd-secondary);
+  --pele-border: var(--color-fd-border);
+  --pele-accent: var(--color-fd-primary);
+}
+```
+
+A plain `.pele` rule outside any `@layer` would apply to the generated graphs as well, as the stylesheet's mapping has
+no specificity and is in no cascade layer: it is how a site changes their lines and labels.
+
+### Print and right to left
 
 On paper, every row is printed open, with its documentation, its declaration and the meanings of its pills; source
 blocks and graphs are printed as they are on the screen, open or closed, and cards not at all. On a right-to-left

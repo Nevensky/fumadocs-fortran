@@ -1,53 +1,194 @@
-# Builds the documentation as a static site and publishes it on GitHub Pages, at https://<owner>.github.io/<repo>/.
-# Enable it once in the repository's Settings → Pages → Build and deployment → Source: GitHub Actions.
+# The documentation site on GitHub Pages, at the address the repository's Pages settings give it
+# (https://<owner>.github.io/<repository>/). Turn Pages on once: Settings → Pages → Build and deployment → Source:
+# GitHub Actions. Until then, configure-pages fails with "Get Pages site failed".
+#
+# A deploy follows a push to main that passed CI (workflow_run), or a run started by hand (workflow_dispatch). It first
+# runs Get started as a reader would, then builds the static site, whose postbuild checks every link, anchor and page
+# action of the export (docs/scripts/check-links.mjs), and only then uploads and deploys it. Once a week, and by hand
+# with "weekly", the Get started test runs in other ways instead (the latest create-fumadocs-app, Node.js 22 and 26,
+# the page's GitHub install line itself), and reports without deploying.
 name: Docs site
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      weekly:
+        description: Run the weekly Get started legs instead of deploying
+        type: boolean
+        default: false
+  schedule:
+    # Mondays, after CI's own weekly run
+    - cron: '41 5 * * 1'
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+
+# One deployment at a time, in order, and none cancelled once started. A run that deploys nothing (the weekly legs, a
+# CI run that failed or was not a push to main, a run by hand on another branch) gets a group of its own, so that it
+# never cancels a deployment waiting for its turn.
 concurrency:
-  group: pages
+  group: >-
+    ${{ ((github.event_name == 'workflow_dispatch' && !inputs.weekly && github.ref == 'refs/heads/main')
+    || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    && github.event.workflow_run.event == 'push')) && 'pages' || format('docs-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
-  build:
+  get-started:
+    name: Get started, as a reader runs it
+    # after CI passed on a push to main (not on a pull request, or CI's own weekly run), or by hand
+    if: >-
+      (github.event_name == 'workflow_dispatch' && !inputs.weekly)
+      || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # the commit CI tested; on a workflow_run, github.sha is main's head, which may have moved on
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
+      # the page's commands in an empty folder whose src/ is a copy of examples/modern/src, with this commit packed by
+      # npm pack in place of the page's GitHub install line, and then the guides' phases on the site they made
+      - name: Run the page's commands
+        run: node docs/scripts/test-get-started.mjs --work "$RUNNER_TEMP/get-started"
+      # the work folder stays only when a check fails; its logs/report.txt lists every block, command and check
+      - name: Keep the logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: get-started
+          path: ${{ runner.temp }}/get-started/logs
+          if-no-files-found: ignore
+
+  build:
+    name: Build the site
+    needs: get-started
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # configure-pages reads the Pages site's address
+      pages: read
+    steps:
+      # the site's base path (/<repository> for a project site, none on a custom domain) and its origin
+      - id: pages
+        uses: actions/configure-pages@v6
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # the whole history, for the dates a page's last change gives
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
           cache: npm
           cache-dependency-path: docs/package-lock.json
       - run: npm ci
         working-directory: docs
-      # the Showcase pages are committed, but generating them again keeps the deployed site in step with the sources
+      # the Showcase pages are committed, and CI fails when they differ from what the generator writes; generating them
+      # again keeps a run started by hand in step with the sources too
       - name: Generate the Showcase
         run: node docs/scripts/gen-showcase.mjs
-      - run: npm run build
+      # postbuild: docs/scripts/check-links.mjs checks out/ under the base path, and fails the job on a problem
+      - name: Build the static site and check its links
+        run: npm run build
         working-directory: docs
         env:
           DOCS_EXPORT: '1'
-          NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
-          NEXT_PUBLIC_SITE_URL: https://${{ github.repository_owner }}.github.io
-      - uses: actions/configure-pages@v6
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          NEXT_PUBLIC_SITE_URL: ${{ steps.pages.outputs.origin }}
       - uses: actions/upload-pages-artifact@v5
         with:
           path: docs/out
 
   deploy:
+    name: Deploy
     needs: build
+    # a run by hand on another branch builds and checks, and deploys nothing
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      # proves to Pages that the deployment comes from this workflow
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
         uses: actions/deploy-pages@v5
+
+  weekly:
+    name: Get started, weekly (${{ matrix.leg }})
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.weekly)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # the latest create-fumadocs-app in place of the page's pinned one: a failure here is template drift
+          - leg: create-fumadocs-app@latest
+            node: 24
+            args: --scaffold latest
+          # Node.js 22, the oldest release line the page names, and 26, the newest
+          - leg: Node.js 22
+            node: 22
+            args: ''
+          - leg: Node.js 26
+            node: 26
+            args: ''
+          # the page's own install line, as a reader runs it: only once npm can fetch the repository
+          - leg: GitHub install
+            node: 24
+            args: --github
+            github: true
+          - leg: GitHub install, npm 12
+            node: 24
+            npm: 12
+            args: --github
+            github: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install npm ${{ matrix.npm }}
+        if: matrix.npm
+        run: npm install --global npm@${{ matrix.npm }}
+      # npm installs the package from GitHub only while the repository is public. github.event.repository.private is
+      # no test of that here: a scheduled run's event has no repository field, and GitHub's loose == takes the missing
+      # value for false.
+      - name: Check that the repository is public
+        id: visibility
+        if: matrix.github
+        run: |
+          public="$(gh api "repos/$GITHUB_REPOSITORY" --jq '.private == false')"
+          echo "public=$public" >> "$GITHUB_OUTPUT"
+          if [ "$public" != true ]; then
+            echo "::notice::The repository is private, so npm cannot install it from GitHub: this leg is skipped."
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Run the page's commands
+        if: ${{ !matrix.github || steps.visibility.outputs.public == 'true' }}
+        run: node docs/scripts/test-get-started.mjs --work "$RUNNER_TEMP/get-started" ${{ matrix.args }}
+      - name: Keep the logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: get-started-weekly-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/get-started/logs
+          if-no-files-found: ignore

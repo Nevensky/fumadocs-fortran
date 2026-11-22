@@ -7,19 +7,23 @@ import { fileURLToPath } from 'node:url';
 import { generate } from '../../src/index.js';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
+// The options, which the Showcase's own page (content/docs/showcase/index.mdx) shows from this region: keep it to the
+// generate() call. The folder starts closed in the sidebar, under the Showcase page (no defaultOpen).
+// #region generate
 const r = await generate({
   root,
   sources: ['examples/modern/src'],
-  // the HPC guards examples/modern uses; init writes the ones a project uses into its config
+  // the HPC guards examples/modern uses, -D_OPENMP and -DUSE_MPI on the command line
   cpp: { macros: { _OPENMP: 1, USE_MPI: 1 } },
   out: 'docs/content/docs/showcase/modern',
   baseUrl: '/docs/showcase/modern',
   title: 'examples/modern',
-  description: 'The API reference fumadocs-fortran generates for examples/modern: a FORD-documented module with OpenMP, OpenACC, MPI and coarrays, a Doxygen-documented module, and a LAPACK-style fixed-form routine.',
+  // the overview's description, which has no flag
+  description: 'The reference generated for examples/modern: FORD, Doxygen and LAPACK comments, OpenMP, OpenACC and MPI.',
   display: ['public', 'protected', 'private'],
   repo: { url: 'https://github.com/Nevensky/fumadocs-fortran', rev: 'main' },
-  defaultOpen: true,
 });
+// #endregion generate
 console.log(`showcase: ${r.written.length} files (${r.changed.length} changed, ${r.removed.length} removed), ${r.ir.diagnostics.length} diagnostics`);
 for (const d of r.ir.diagnostics) console.log(`  ${d.file}:${d.line}: ${d.message}`);
 

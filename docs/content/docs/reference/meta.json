@@ -1,4 +1,4 @@
 {
   "title": "Reference",
-  "pages": ["components", "highlighting"]
+  "pages": ["cli", "javascript", "doc-comments", "components", "highlighting", "generated-files"]
 }

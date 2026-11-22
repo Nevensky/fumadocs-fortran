@@ -1,0 +1,278 @@
+---
+title: Generated files
+description: "The files generate writes: pages, their names, anchors and front matter, meta.json and the manifest."
+---
+
+Every file `fumadocs-fortran generate` writes, how each is named, what a page holds and how a later run treats the
+files it finds. [Generate the reference](/docs/guides/generate) says where to put the folder and when to run the
+command again; this page describes what is in the folder.
+
+## The output folder
+
+`generate` writes into the folder that `-o` names, `content/docs/api` by default, relative to the folder it runs in,
+and makes the folder if it is missing. It writes, all at the top of the folder:
+
+- `index.mdx`, the overview;
+- a page for each module, submodule, program and block data unit, and one for each group of external procedures;
+- `meta.json`, the folder's entry in the sidebar;
+- `.fumadocs-fortran.json`, the manifest of what it wrote.
+
+The Showcase's folder, which `docs/scripts/gen-showcase.mjs` writes from `examples/modern`, holds two modules, a
+submodule, a program and a group of external procedures:
+
+<Files>
+  <Folder name="showcase/modern" defaultOpen>
+    <File name=".fumadocs-fortran.json" />
+    <File name="demo.mdx" />
+    <File name="eigen_wrappers.mdx" />
+    <File name="gtsv.mdx" />
+    <File name="index.mdx" />
+    <File name="meta.json" />
+    <File name="solver_kernels.mdx" />
+    <File name="solver_kernels_lapack.mdx" />
+  </Folder>
+</Files>
+
+The line `generate` prints counts the pages and `meta.json`, without the manifest. Run on `examples/modern/src` a
+second time, with no source changed, it prints `7 files (0 changed, 0 removed) from 3 sources` and the time it took.
+
+## Page names
+
+A page's file name, without `.mdx`, is the last part of its address, after the folder's `--base-url` (`/docs/api` by
+default): `solver_kernels.mdx` is `/docs/showcase/modern/solver_kernels` on this site. It is made from the unit's name:
+
+- the name in lower case, with every run of characters other than letters, digits and `_` written as `-`;
+- `main` for an unnamed program, and `blockdata` for an unnamed block data unit;
+- for a group of external procedures, the group's name, from the `\ingroup` of their doc comments, or else the name
+  of their file without its extension.
+
+Names are given in this order: modules, submodules, programs and block data units, each kind by name, then the groups
+by name. A name taken already, or one that ends in `-` and a number, gets the kind after it. A name taken in that form
+too gets `_2`, `_3` and so on, as does a name that is its kind already, such as `blockdata`. A unit or a group named
+`index` takes its kind first, as `index.mdx` is the overview.
+
+| Units | Pages |
+| --- | --- |
+| a module `solver_kernels` | `solver_kernels.mdx` |
+| a module `solver` and a program `solver` | `solver.mdx` and `solver-program.mdx` |
+| a second program `solver` | `solver-program_2.mdx` |
+| a module `index` | `module-index.mdx` |
+| an unnamed program | `main.mdx` |
+| two unnamed block data units | `blockdata.mdx` and `blockdata_2.mdx` |
+| external procedures with `\ingroup gtsv` | `gtsv.mdx` |
+| external procedures in `fft-2.f90`, with no `\ingroup` | `fft-2-procedures.mdx` |
+
+No address ends in `-` and a number because Fumadocs' search gives the records of a page the ids of its address
+followed by `-0`, `-1` and so on. A page named so could share its id with another page's record, and the site's search
+index would not build.
+
+A page's title is the unit's name as the source writes it (`SETUP` for `BLOCK DATA SETUP`), or the group's name. An
+unnamed program's page is titled main program, and so, by a fault of the generator, is an unnamed block data unit's,
+on its page, its card and in the sidebar.
+
+## Front matter
+
+The page of a unit or a group starts with its title, its description and a `fortran` field, each string in double
+quotes:
+
+```yaml title="solver_kernels.mdx"
+---
+title: "solver_kernels"
+description: "Dense and banded linear-algebra kernels for a small solver: matrix types, products threaded with OpenMP and offloaded with OpenACC, norms reduced over MPI ranks, and LAPACK-backed solves."
+fortran:
+  kind: "module"
+  toc:
+    "color": "type"
+    "abstract_matrix": "type"
+    "dense_matrix": "type"
+    "banded_matrix": "type"
+    "matvec_iface": "subroutine"
+    "operator-plus": "interface"
+    # …
+    "max_order": "parameter"
+    "enum-1": "enum"
+---
+```
+
+- `description` is the summary of the unit's doc comment as plain text, cut at a word near 300 characters, and is
+  left out when the unit has no doc. A group's page of one procedure has that procedure's summary, or "The external
+  procedure" and its name; a group of several has "External procedures:" and their names.
+- `fortran.kind` is `module`, `submodule`, `program`, `blockdata` or `procedures`.
+- `fortran.toc` gives each entry's anchor its kind: `type`, `interface`, `subroutine`, `function`, `variable`,
+  `parameter` or `enum`. `fortranToc` turns them into the letters of the table of contents (see
+  [Components](/docs/reference/components#fortrantoc)), for a site whose page schema keeps the field.
+
+An MDX comment, `{/* … */}`, follows the front matter. It names the files the page comes from, as
+`Generated by fumadocs-fortran from examples/modern/src/modern_ford.F90. Do not edit.`, and does not show.
+
+The overview, `index.mdx`, has a title of `--title` (API reference by default) and the description
+`Generated by fumadocs-fortran from 3 source files (520 lines).`, or the `description` option of the JavaScript API.
+It has no `fortran` field.
+
+## The sidebar
+
+`meta.json` names the folder and lists its pages, the overview first, then a separator for each kind that has pages
+(Modules, Submodules, Programs, Block data and Procedures) with its pages after it. For `examples/modern/src`,
+generated with the defaults:
+
+```json title="meta.json"
+{
+  "title": "API reference",
+  "pages": [
+    "index",
+    "---Modules---",
+    "eigen_wrappers",
+    "solver_kernels",
+    "---Submodules---",
+    "solver_kernels_lapack",
+    "---Programs---",
+    "demo",
+    "---Procedures---",
+    "gtsv"
+  ]
+}
+```
+
+The title is `--title`, API reference by default. `"defaultOpen": true`, which opens the folder in the sidebar, is
+written only when the JavaScript API's `defaultOpen` option is given. The list has no `...`, so Fumadocs leaves any
+other page in the folder out of the sidebar. A parent `meta.json` that lists its pages has to name the folder for the
+reference to show in the sidebar at all.
+
+## The manifest
+
+`.fumadocs-fortran.json` lists, in order, the files the last run wrote, itself left out. For the same run:
+
+```json title=".fumadocs-fortran.json"
+{
+  "generator": "fumadocs-fortran",
+  "files": [
+    "demo.mdx",
+    "eigen_wrappers.mdx",
+    "gtsv.mdx",
+    "index.mdx",
+    "meta.json",
+    "solver_kernels.mdx",
+    "solver_kernels_lapack.mdx"
+  ]
+}
+```
+
+It is for `generate` alone: the next run reads it to find the files it wrote before.
+
+## Later runs
+
+Each run writes the folder again from the sources, and:
+
+- leaves a file whose content has not changed as it is, with its modification time, and counts it as unchanged;
+- deletes each file the manifest lists that this run did not write, such as the page of a module that was removed or
+  renamed, and counts it as removed;
+- keeps every file the manifest does not list, such as a page written by hand, which `meta.json` leaves out of the
+  sidebar, though its address still works;
+- replaces a file that has the name of a page it writes, a hand-written one included, and lists it in the manifest
+  from then on;
+- rewrites `meta.json`, so that an edit made to it lasts only until the next run.
+
+Without its manifest, a run deletes nothing, and the pages of units that have gone stay in the folder. Keep pages
+written by hand outside the folder, and link to the reference from them.
+
+## Page layout
+
+### Unit pages
+
+A module's, submodule's, program's or block data unit's page holds, from the top:
+
+1. its badges: its kind, and the HPC models and libraries that it and its procedures use (OpenMP, OpenMP offload,
+   OpenACC, CUDA Fortran, MPI, coarrays), each once, and dashed when every use of it sits under one cpp condition;
+2. its doc comment, without a plain first paragraph that the description holds whole;
+3. for a submodule, the module it belongs to;
+4. the Uses line, the Calls line of a program and the source header, which links to the unit's lines with `--repo`;
+5. its Dependencies graph, open, and for a program its call graph, collapsed;
+6. its sections, each a `##` heading, in this order: Types, Interfaces, Procedures, Internal procedures (a program's
+   are under Procedures), Variables and Enumerations, with an entry for each entity under a `###` heading.
+
+A block data unit's page has its badge, its doc comment and its source header. The common blocks it gives initial
+values to are in the model but on no page, and so are COMMON and NAMELIST statements anywhere: see
+[How it works](/docs/how-it-works#what-the-model-leaves-out).
+
+### Pages of external procedures
+
+A group's page opens with the files its procedures come from, then has an entry for each procedure, in order of name,
+with no `##` sections.
+
+### The overview
+
+`index.mdx` has a `##` section of cards for each kind: Modules, Submodules, Programs, Block data and Procedures. Each
+card has the unit's name, the summary of its doc (or its kind, or its procedures' names) and a link to its page.
+A Dependencies section follows, with the graph of every module, submodule and program, when graphs are on and the
+project is small enough to draw (see [How it works](/docs/how-it-works#graphs)).
+
+### Entries
+
+Each entry is a `###` heading with its anchor, and no heading under it. What follows depends on the entity:
+
+- a procedure: its signature, badges, doc comment, the interface it implements (for a separate module procedure), an
+  Arguments table, a Result table or a Returns line, the Calls and Uses lines, its call graph and its source block;
+- a type: its type statement, badges, doc comment, the type it extends, the Type parameters, Components and
+  Type-bound procedures tables, a table of what it inherits from each ancestor, its final procedures, its
+  inheritance graph and its source block;
+- a generic interface: its interface block or generic statement, badges, doc comment, its specific procedures, an
+  Arguments table for each interface body, its call graph and its source block; each body of an abstract interface,
+  or of an interface block with no name, is an entry of its own, as a procedure;
+- a variable: its declaration, badges, doc comment and source block;
+- an enum: its enum block, doc comment, an Enumerators table and its source block, under a heading of its
+  enumerators' names when it has no name of its own.
+
+The source block opens to the entity's lines when it spans at most 400 of them; otherwise, and with `--source link`,
+it is the header alone, which links to the lines with `--repo`.
+[Embed one entry in another page](#embed-one-entry-in-another-page) shows one entry as it is generated.
+
+## Anchors
+
+An entry's anchor is written into its heading as an explicit id, `### check_length [#check_length]`, so it does not
+depend on how the site makes ids from headings. The heading keeps the name as the source writes it, with an
+underscore between letters or digits left unescaped, so that search finds `norm2_parallel` as one word. A link to an
+entry is the page's address and the anchor: `/docs/showcase/modern/solver_kernels#check_length`.
+
+- A name gives its anchor in lower case, with every run of characters other than letters, digits and `_` written as
+  `-`.
+- An operator gives `operator-` and a word for it: `plus`, `minus`, `times`, `divide`, `power`, `concat`, `eq`, `ne`,
+  `lt`, `le`, `gt` and `ge` for `+`, `-`, `*`, `/`, `**`, `//`, `==`, `/=`, `<`, `<=`, `>` and `>=`, or a defined
+  operator's name, as `operator-cross` for `operator(.cross.)`. `assignment(=)` gives `assignment`, and
+  `read(formatted)` gives `read-formatted`.
+- An unnamed enum gives `enum-` and its number, as `enum-1`.
+- On one page the first entity, in the order of the sections, keeps the plain anchor. Another of a different kind
+  gets its kind after it, as `point-interface` for a generic interface named like the type `point`, and another of
+  the same kind `-2`, `-3` and so on. The section headings keep `types`, `interfaces`, `procedures`,
+  `internal-procedures`, `variables` and `enumerations`, so a variable named `types` is `#types-variable`.
+
+A component, a type-bound procedure and an enumerator have no anchor of their own: a link to one leads to its type's
+or its enum's entry.
+
+## The MDX the pages use
+
+- The seven components of `fumadocs-fortran/react` (see [Components](/docs/reference/components)), Fumadocs'
+  `Callout` for the notes and warnings of doc comments, and its `Cards` and `Card` on the overview.
+- Code blocks: an `f90` block for each signature; an `f90` block, or `f77` for a file in fixed form, with
+  `lineNumbers=` and the first line, for each source block; a `mermaid` block in each `FortranGraph`; and the code
+  blocks of doc comments, in their own language when Shiki knows it, else `text`.
+- Maths as `$…$` and `$$…$$`, for `remark-math` and `rehype-katex`, or as code with `--math code`.
+- Headings with explicit ids, and MDX comments.
+
+[Set up your site](/docs/guides/site-setup) gives each of these what it needs. With `--graphs none` the pages hold no
+graphs, with `--math code` no maths and with `--source link` no code of the sources.
+
+## Embed one entry in another page
+
+Fumadocs' `<include>` embeds a part of another page, given its file and an anchor: from that heading up to the next
+heading of any level. A generated entry has no heading under its own, so the part is the whole entry. The path is
+relative to the page that holds the `<include>`. This page embeds the Showcase's `check_length`:
+
+```mdx
+<include>../showcase/modern/solver_kernels.mdx#check_length</include>
+```
+
+<include>../showcase/modern/solver_kernels.mdx#check_length</include>
+
+The site's build reads the entry from the generated page, so the embedded copy follows the sources whenever the
+reference is generated again. When the entry or its page is gone, the build stops with an error that names the
+missing section.

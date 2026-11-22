@@ -8,7 +8,7 @@
 // Doxygen and LAPACK text is not Markdown, so it is escaped as plain text: `B(LDB,*)` must not become emphasis.
 
 import { escapeText, safeMarkdown, plainText, inlineCode, stripHtmlComments, codeLang, mdLink, htmlTag, resolveTags, tidy, decodeRefs } from '../emit/mdx.js';
-import { extractMath, restoreMath, mathAsText, cleanControls } from './math.js';
+import { extractMath, restoreMath, mathAsText, cleanControls } from './math-spans.js';
 
 /**
  * @typedef {{ dir: string, line: number, lines: string[] }} DocBlock

@@ -1,6 +1,7 @@
 // LaTeX maths in doc comments: every delimiter, spans across comment lines, and the dollars that are not maths.
 import { renderDoc } from '../src/docs/index.js';
-import { extractMath, restoreMath, normaliseTex, katexMacros } from '../src/docs/math.js';
+import { extractMath, restoreMath } from '../src/docs/math-spans.js';
+import { normaliseTex, katexMacros } from '../src/docs/math.js';
 
 const ford = (text) => renderDoc([{ dir: 'after', line: 1, lines: text.split('\n').map((l) => ` ${l}`) }]).body;
 const doxy = (text, opts) => renderDoc([{ dir: 'before', line: 1, lines: text.split('\n').map((l) => ` ${l}`) }], opts);

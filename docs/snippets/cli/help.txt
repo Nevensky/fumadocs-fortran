@@ -1,0 +1,45 @@
+Usage: fumadocs-fortran <command> [options]
+
+Commands:
+  dump [paths…]        parse Fortran sources and print the intermediate model (JSON)
+  generate [paths…]    write the API reference as MDX pages into a fumadocs content folder
+
+Options for dump:
+  -D NAME[=VALUE]      define a preprocessor macro (repeatable)
+  -I DIR               add an include directory (repeatable)
+  --all-branches       keep every #if branch instead of evaluating them
+  --form free|fixed    read every file in one source form
+  --fixed-length N     fixed-form line length: 72 (default), 132, or 0 for no limit
+  --exclude GLOB       skip matching files (repeatable)
+  --summary            print counts per file instead of JSON
+  -o, --out FILE       write the JSON to FILE
+
+Options for generate (and -D, -I, --all-branches, --form, --fixed-length, --exclude as for dump):
+  -o, --out DIR        the content folder to write (default content/docs/api)
+  --base-url URL       the URL of that folder (default /docs/api)
+  --title TEXT         the overview page's title
+  --display LIST       access levels to show, comma-separated (default public,protected)
+  --repo URL           link each entity to its lines in this GitHub repository (URL/blob/REV/FILE#L10-L20)
+  --rev REV            the branch, tag or commit for those links (default main)
+  --math MODE          katex (default): $…$ maths for remark-math and rehype-katex; code: maths shown as code,
+                       for a site without them
+  --source MODE        embed (default): each procedure, type, interface, variable and enum shows its source lines in
+                       a collapsible block (up to 400 lines), read from the files parsed (those given and the files
+                       they include) wherever they lie; link: only a link to them
+  --graphs MODE        mermaid (default): dependency, inheritance and call graphs as Mermaid blocks, for a site
+                       with remarkMdxMermaid; none: no graphs
+  --library-cards MODE registry (default): the library routines in Calls lines, and mpi_f08's types and omp_lib's
+                       kinds in the tables, have hover cards from the HPC registry; none: they are plain code (the
+                       graphs keep their colours)
+  --links LIST         where those cards link, as library=provider pairs, comma-separated (mpi=mpich,openmp=6.0):
+                         lapack (BLAS and LAPACK) and scalapack (with PBLAS, BLACS, its tools and REDIST): netlib
+                           or mkl (default: mkl when the code uses Intel oneMKL's modules, else netlib)
+                         mpi: openmpi (default), mpich or standard
+                         openmp: 5.2 (default), 6.0, 6.1 or libgomp
+                         openacc: spec (default) or libgomp
+                         intrinsics: fortran-lang (default) or gfortran
+                       a name the provider has no page for links as it would by default
+  -h, --help           show this help
+  -v, --version        print the version
+
+FORD's {!file!} includes in doc comments are read relative to the current folder, and only from under it.

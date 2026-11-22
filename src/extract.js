@@ -115,7 +115,7 @@ function parseOne(abs, ctx) {
   const conds = new CondTable();
   if (/\.fypp$/i.test(abs) || IS_FYPP.test(text)) {
     info.skipped = 'fypp';
-    ctx.diagnostics.push({ code: 'fypp', severity: 'warning', file: idx, line: 1, message: 'fypp source skipped: run fypp first, or set fypp.command' });
+    ctx.diagnostics.push({ code: 'fypp', severity: 'warning', file: idx, line: 1, message: 'fypp source skipped: run fypp first, and give fumadocs-fortran the Fortran it writes' });
     return { info, roots: [], conds };
   }
   const form = resolveForm(abs, text, ctx.formOpts);

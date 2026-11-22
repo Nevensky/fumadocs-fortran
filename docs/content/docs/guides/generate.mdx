@@ -1,0 +1,397 @@
+---
+title: Generate the reference
+description: Choose the build, what to read and show, the links and the folder, and run it again as the code changes.
+---
+
+`fumadocs-fortran generate` takes its settings as flags: there is no configuration file. This page goes through them
+by task: the build to document, what was read, what to show, links to your repository and where the pages go, and
+running it again. [Command line](/docs/reference/cli) has every flag with its default, and
+[JavaScript API](/docs/reference/javascript) the options that have none.
+
+The commands run in the top folder of your project, the one that holds `src/` and the site in `docs/`, as in
+[Get started](/docs/get-started): from the site's folder, `cd ..` goes back to it. The outputs quoted are those of the
+example the [Showcase](/docs/showcase) is generated from, copied into `src/`, on the site
+[Set up your site](/docs/guides/site-setup) leaves.
+
+## Run it from the top folder [#top-folder]
+
+The model names each file by its path from the folder the command runs in. The pages show that path, the links of
+`--repo` point at it in the repository, and FORD's `{!file!}` includes are read from that folder, and only from under
+it. Run from the top folder, a file is `src/solver.F90`, as in the repository. Run from `docs/` as
+`generate ../src`, the pages name `../src/solver.F90`, the links lose their revision, as `blob/main/../src` is
+`blob/src`, and the includes are not read.
+
+`npm exec --prefix docs --` runs the copy of fumadocs-fortran installed in `docs/` from the top folder.
+
+## Keep the command in a script [#reference-script]
+
+A `reference` script in the site's `package.json` keeps the command and its flags in one place, for you and for a
+workflow. Add it from the top folder:
+
+```bash
+npm pkg set --prefix docs scripts.reference="cd .. && fumadocs-fortran generate src -o docs/content/docs/api"
+```
+
+npm runs a script in the site's folder, so the script goes up to the top folder first. With the site in another folder
+than `docs/`, change `cd ..` and the paths to match. Run it:
+
+```bash
+npm run --prefix docs reference
+```
+
+It prints the line of `generate`. After Set up your site, which generated the pages with the same flags, nothing has
+changed:
+
+```text
+7 files (0 changed, 0 removed) from 3 sources in 48 ms
+```
+
+`npm run` adds the site's `node_modules/.bin` to the script's `PATH`, so the script runs the copy installed in the
+site, and nothing is downloaded. `npm exec` and `npx` fetch a package of the name from the npm registry when it is
+not installed, after asking in a terminal and without asking in a script or in CI.
+
+### Flags for one run [#one-run]
+
+Flags after `--` are added to the script's command for that run. On a site without maths and graphs, as Get started
+leaves it:
+
+```bash
+npm run --prefix docs reference -- --math code --graphs none
+```
+
+To change the script itself, run `npm pkg set` again with the whole command: it replaces the script.
+
+## Choose the build [#choose-the-build]
+
+A reference shows one build of the code: the branches of `#if`, `#ifdef` and `#ifndef` that the macros you define
+select, as a compiler's preprocessor would. With no macro defined, a block under `#ifdef USE_MPI` is left out of the
+pages, and so are OpenMP's `!$` lines. Give the macros the build defines, as the Showcase does:
+
+```bash
+npm exec --prefix docs -- fumadocs-fortran generate src -o docs/content/docs/api -D _OPENMP -D USE_MPI
+```
+
+- `-D NAME` defines a macro as `1`, and `-D NAME=VALUE` gives it a value. A function-like macro takes its parameters
+  in the name, as `-D 'SQR(x)=((x)*(x))'` ([-D](/docs/reference/cli#define)).
+- `-D _OPENMP` is what an OpenMP compiler defines, and with it the `!$` lines of OpenMP's conditional compilation are
+  code. It defines `_OPENMP` as `1`, so a condition such as `#if _OPENMP >= 201511` needs the version:
+  `-D _OPENMP=201511`.
+- Compilers define macros of their own, such as gfortran's `__GFORTRAN__` and Intel's `__INTEL_COMPILER`. The
+  command defines none: give those the code tests, as `-D __GFORTRAN__`.
+- `-I DIR` adds a folder for `#include` and Fortran `include` files, searched after the folder of the file that
+  includes them, or before it for `#include <file>` ([-I](/docs/reference/cli#include)). A file found nowhere is an
+  `include-missing` warning, and the page is written without what the file holds: the sources of stdlib's fpm branch,
+  for one, give six such warnings and 188 entities fewer without `-I include`.
+- `--all-branches` keeps every branch instead: the reference shows all the builds at once, each entry with the
+  condition it stands under, and a procedure that both branches of an `#ifdef` and its `#else` define appears twice
+  ([--all-branches](/docs/reference/cli#all-branches)).
+
+Keep the build's flags in the reference script, so that every run documents the same build. To document two builds,
+such as the serial one and the MPI one, generate two references into two folders: see [Place the reference](#place).
+
+### Find your build's macros [#build-macros]
+
+The macros and include folders are those the build gives the compiler:
+
+- CMake: configure with `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`, and `compile_commands.json` in the build folder holds
+  the command that compiles each file, with its `-D` and `-I` flags (Makefile and Ninja generators). They come from
+  `target_compile_definitions`, `add_definitions`, `target_include_directories` and the like.
+- fpm: `fpm.toml` lists the macros under `[preprocess.cpp]`, as `macros = ["USE_MPI", "N=4"]`, and the include
+  folders under `[library]` as `include-dir`, `include` by default.
+- Make: `make -n` prints the commands make would run, with their flags, which often sit in `CPPFLAGS`, `FFLAGS` or
+  `FCFLAGS`.
+
+A header that a configure step writes, such as `config.h` from CMake's `configure_file` or from `./configure`, has to
+exist before `generate` runs: run that step first, and give the folder it writes with `-I`. Without the header, an
+`include-missing` warning names it, and the macros it defines stay undefined.
+
+### How a condition shows [#conditions]
+
+What stands under a condition says so on the page. Generated with `-D USE_MPI`, the example's `norm2_parallel` has a
+dashed badge, MPI when USE_MPI, as its MPI call stands under `#ifdef USE_MPI`; the row of its `comm` argument and the
+`mpi_f08` item of the module's Uses line end in when USE_MPI too. An entry that stands under a condition as a whole
+has a dashed conditional badge with the condition. `defined(USE_MPI)` reads as USE_MPI and `!defined(USE_MPI)` as
+not USE_MPI; other conditions read as written, such as `_OPENMP >= 201511`.
+
+## Check what it read [#check]
+
+Before generating, `dump --summary` with the same paths and flags shows what the command reads: a row per file, with
+its form and counts, and a total ([--summary](/docs/reference/cli#summary)):
+
+```bash
+npm exec --prefix docs -- fumadocs-fortran dump --summary src -D USE_MPI
+```
+
+```text
+3 files, 520 lines, 48 entities, 0 diagnostics, 9 ms
+```
+
+With no macro, the total in Get started reads 47 entities: the `comm` component of the `dense_matrix` type exists
+only in the MPI build, and the arguments go from 43 to 44 with the `comm` argument of `norm2_parallel`.
+
+`0 files` has three causes: a misspelt path, as a path that does not exist is passed over without a message; a run in
+another folder than the top folder; or a folder that holds only files the search does not read, such as `.fypp`,
+`.inc` and `.h` files ([Paths](/docs/reference/cli#paths)). A symbolic link inside a folder is passed over too: give
+its path on the command line to read it.
+
+Diagnostics are warnings, each with a file, a line and a code. `generate` prints the first 20 under its line, writes
+the pages all the same and exits with 0, so a workflow does not stop on them;
+[Diagnostics](/docs/reference/cli#diagnostics) says what each code means. An `unclosed` or `unmatched-end` warning
+often means a macro the build defines is missing, as the `end` of a unit then stands in a branch that is off.
+
+## What is read [#what-is-read]
+
+The directives the HPC badges come from:
+
+- free form: `!$omp`, `!$ompx`, `!$acc` and `!$cuf`, in any case, continued with `&` at the end of a line and the
+  same sentinel on the next;
+- fixed form: `c$omp`, `*$omp` and `!$omp`, and the same with `acc` and `cuf`, in any case, continued by a character
+  other than a blank or `0` in column 6;
+- OpenMP's conditional compilation: `!$` and a blank in free form, `c$`, `*$` or `!$` in columns 1 and 2 in fixed
+  form; the line is code with `-D _OPENMP` or `--all-branches`, and is left out otherwise;
+- the constructs of OpenMP up to 6.1, older spellings included, of OpenACC 3.4, and CUDA Fortran's `!$cuf kernel do`;
+- vendor directives: `!dir$`, `!dec$`, `!gcc$`, `!ibm$`, `!pgi$`, `!nec$`, `!cdir$`, `!mic$` and `!vd$` in free form,
+  and in fixed form `dir$`, `dec$`, `gcc$`, `ibm$`, `pgi$`, `nec$`, `mic$` and `vd$` after `c`, `C`, `*` or `!` in
+  column 1. They go into the model, and onto no page.
+
+## What the HPC badges show [#hpc-badges]
+
+Each procedure's entry has a badge for each HPC feature its code uses:
+
+| Badge | When |
+| --- | --- |
+| OpenMP parallel region | an OpenMP construct with `parallel` or `teams` and without `target`, such as `!$omp parallel do` |
+| OpenMP | other OpenMP directives and no such region, such as `!$omp simd` or `!$omp task` |
+| OpenMP offload | an OpenMP construct with `target`, such as `!$omp target teams distribute` or `!$omp declare target` |
+| OpenACC routine | `!$acc routine` and no other OpenACC directive |
+| OpenACC | any other OpenACC directive, such as `!$acc parallel loop` |
+| CUDA Fortran | a `!$cuf` directive |
+| MPI | a call of a routine whose name starts with `mpi_`, in any case; the badge's card lists the routines |
+| coarrays | an image selector such as `x[2]` in a statement, a call of `co_sum`, `co_min`, `co_max`, `co_reduce` or `co_broadcast`, or an image control statement such as `sync all`, `critical` or `event post` |
+
+A badge whose directives or calls all stand under one condition is dashed and ends in when and the condition. A
+unit's page has one badge of each kind its procedures have, those that `--display` hides included, and adds MPI for
+a use of `mpi`, `mpi_f08` or `mpif`, OpenMP for `omp_lib` or `omp_lib_kinds`, OpenACC for `openacc`, and CUDA Fortran
+for `cudafor`, `cublas`, `cufft`, `curand`, `cusparse` or `cusolverdn`. The badges of kinds and attributes, such as
+pure or bind(C), are on [Components](/docs/reference/components).
+
+## Choose what to show [#what-to-show]
+
+- Paths: give the folders and files of the code, as `generate src lib`. A folder is searched with the folders in it,
+  for the extensions [Paths](/docs/reference/cli#paths) lists, and a file you name is read whatever its extension.
+- `--exclude` passes over files and folders by a pattern of their path from the top folder, as
+  `--exclude 'src/tests/**'` or `--exclude '*_old.f90'` ([--exclude](/docs/reference/cli#exclude)).
+- `--display` chooses the access levels shown: `public,protected` by default, as in FORD. Add `private` to show the
+  private entities of modules too, as the Showcase does. `protected` matches nothing, as a variable with the
+  `protected` attribute is public ([--display](/docs/reference/cli#display)).
+- `--form free` or `--form fixed` reads every file in one form, and `--fixed-length 132`, or `0` for no limit, sets
+  where fixed-form lines end ([--form](/docs/reference/cli#form), [--fixed-length](/docs/reference/cli#fixed-length)).
+
+Code written for fypp is not read. A folder's `.fypp` files are not found, with no message, and a `.fypp` file you
+name, or a file in fypp's syntax, is skipped with the `fypp` warning. Run fypp first, into a folder of its own, and
+generate from that folder. The pages then name the files fypp wrote, and the links of `--repo` would lead to files
+that are not in the repository, so leave it out.
+
+## Link to your repository [#repository-links]
+
+`--repo` links each entry's source block to its lines on GitHub, and `--rev` names the branch, tag or commit, `main`
+by default. With the script, give them for one run, with your own repository's address:
+
+```bash
+npm run --prefix docs reference -- --repo https://github.com/OWNER/REPOSITORY --rev v1.0.0
+```
+
+The source block of `norm2_parallel` then links to
+`https://github.com/OWNER/REPOSITORY/blob/v1.0.0/src/modern_ford.F90#L195-L217`.
+
+- A tag or a commit keeps the line numbers right as the branch moves on, while a branch's lines drift from the pages
+  until they are generated again. In a GitHub Actions workflow, `--rev ${{ github.sha }}` is the commit being built,
+  as [Publish on GitHub Pages](/docs/guides/github-pages) does.
+- A default branch with another name than `main` needs `--rev`.
+- The links take GitHub's form, `URL/blob/REV/FILE#L10-L20`, for every host, so on another host, such as GitLab, they
+  may not lead to the lines ([--repo](/docs/reference/cli#repo)).
+- The file in the link is its path from the folder the command runs in, which is its path in the repository when the
+  command runs in the top folder. For a code that sits in a folder of the repository and runs from there, the
+  JavaScript option [`repo`](/docs/reference/javascript#repo) gives that folder as its `root`.
+
+## Library cards [#library-cards]
+
+Calls into the HPC libraries have cards from the package's registry. In a Calls line, a routine of BLAS, LAPACK,
+ScaLAPACK, MPI, OpenMP or OpenACC, or an intrinsic subroutine, shows its library, a summary and a link to its
+documentation on hover or keyboard focus. In the tables, the derived types of `mpi_f08`, such as `type(MPI_Comm)`, and
+the kinds of `omp_lib` have cards where the declaration's scope uses the module; `use mpi`, whose handles are integers,
+gives none. A name the code defines itself is always the code's.
+
+`--links` chooses the documentation the cards link to, by library, such as that of the MPI your readers run:
+`--links mpi=mpich,lapack=mkl`. [--links](/docs/reference/cli#links) gives each library's choices and its default.
+`--library-cards none` leaves the names as code, without cards, and the graphs keep their colours.
+
+## Code, maths and graphs [#code-maths-graphs]
+
+- `--source embed`, the default, puts the lines of each procedure, type, interface, variable and enum of up to 400
+  lines in a block that opens under its entry. `--source link` keeps only the file and lines, with a link when
+  `--repo` is given ([--source](/docs/reference/cli#source)).
+- `--math katex`, the default, writes the maths of doc comments for remark-math and rehype-katex, and `--math code`
+  shows it as code ([--math](/docs/reference/cli#math)).
+- `--graphs mermaid`, the default, adds dependency, inheritance and call graphs for `remarkMdxMermaid` and a `Mermaid`
+  component, and `--graphs none` leaves them out ([--graphs](/docs/reference/cli#graphs)).
+
+[Set up your site](/docs/guides/site-setup) adds what maths and graphs need, and its table under
+[Check the result](/docs/guides/site-setup#check) shows what each missing piece does to a page or a build.
+
+## Place the reference [#place]
+
+`-o` names the folder, and `--base-url` its address on the site. Give both: the links between the pages, the
+overview's cards and the graphs' nodes are made from the address, and they answer 404 when it is wrong. The address is
+the `baseUrl` of the site's `loader()`, `/docs` in Fumadocs' templates, then the folder's path under the content
+folder:
+
+| `-o` | `--base-url` |
+| --- | --- |
+| `docs/content/docs/api` | `/docs/api`, the default |
+| `docs/content/docs/reference/fortran` | `/docs/reference/fortran` |
+
+`--title` names the overview and the folder in the sidebar, API reference by default. When the folder's parent has a
+`meta.json` that lists its pages, as many sites' `content/docs/meta.json` does, add the folder's name to that list, or
+the reference is missing from the sidebar; the static template of Get started has none.
+
+The folder is the generator's. Each run rewrites its `meta.json` and replaces a file with the name of a page it
+writes, and a page written into the folder by hand stays out of the sidebar. Keep your own pages beside it, such as
+`docs/content/docs/guide.mdx`, and link from them to the entries: a module's page and an entry's anchor are their
+names in lower case, as `/docs/api/solver_kernels#dense_matrix` ([Generated files](/docs/reference/generated-files)
+has the rules).
+
+Two references, such as a library and its tools, or the serial build and the MPI one, go into two folders, each with
+its own `-o`, `--base-url` and `--title`. Each folder has its own manifest, so neither run deletes the other's pages.
+
+## Run it again [#run-again]
+
+Run the script again when the code changes. A run rewrites only the files whose content changed, and deletes the
+files its last run wrote and this one does not, such as the page of a module that was renamed, which the folder's
+`.fumadocs-fortran.json` lists; its line counts both. Pages written by hand are never deleted
+([Later runs](/docs/reference/generated-files#later-runs)).
+
+Change the Fortran rather than the pages. Each page holds the comment Generated by fumadocs-fortran … Do not edit,
+and the next run replaces an edit made to it.
+
+## In a workflow [#workflow]
+
+There are two ways to keep the reference in step with the code.
+
+The first generates it before each build and keeps it out of Git: add the line `/content/docs/api/` to
+`docs/.gitignore`, and run the script before `npm run build` in the workflow, as
+[Publish on GitHub Pages](/docs/guides/github-pages) does. The static template's `.gitignore` has no line break at
+its end, so the command that adds the line starts with one:
+
+```bash
+printf '\n/content/docs/api/\n' >> docs/.gitignore
+```
+
+The second commits the folder, and lets a workflow check that it is current: a job runs the script and fails when the
+folder differs from what was committed, with steps such as these after the site's packages are installed:
+
+```yaml
+- run: npm run reference
+  working-directory: docs
+- run: git diff --exit-code -- docs/content/docs/api
+```
+
+The check fails on a changed, added or removed page, since an added or removed one changes `meta.json` and the
+overview too. An update of fumadocs-fortran can change the pages as well: generate them again, and commit them with
+it.
+
+## Large codes [#large-codes]
+
+`generate` itself takes seconds on a large code; it is the site that grows, as its build compiles every page and its
+readers fetch them. Measured with the package in Docker (`node:24-bookworm`):
+
+| Code | Pages | Size of the pages | With `--source link --graphs none` |
+| --- | --- | --- | --- |
+| Reference-LAPACK 3.12.1, `BLAS/SRC` and `SRC`: 2,288 files, 947,203 lines | 601 | 25.8 MB | 11.4 MB |
+| stdlib, `src` with `-I include`: 201 files, 586,620 lines | 203 | 46.1 MB, the largest page 4.9 MB | 18.8 MB, the largest 2.6 MB |
+
+Each run of `generate` took 2 to 6 seconds, and at most 0.52 GiB of memory. `--source link` and `--graphs none` make
+the pages smaller, as the table shows.
+
+A graph draws 40 nodes at most, the last a node … N more for the rest. Past that, the routines from outside the
+project are left out first, the farthest first, and then the farthest of the rest. The overview has no graph for more
+than 80 modules, submodules and programs. The JavaScript option [`graphs`](/docs/reference/javascript#graphs) sets
+both limits.
+
+For the site's search index and the sidebar's prefetching, see [Large references](/docs/guides/site-setup#large) on
+Set up your site.
+
+### The site's build [#large-build]
+
+The build needs far more memory than `generate`. In a Docker container limited to 6 GiB (`--memory 6g`), the site of
+Get started with stdlib's reference:
+
+- with Get started's flags, `--math code --graphs none`, was stopped while Next.js compiled the pages: the build
+  printed Killed and exited with 137;
+- with `--source link` as well, compiled, and was stopped while it collected the pages' data with 10 workers;
+- with `experimental: { cpus: 2 }` in `next.config.mjs` as well, built in 2.3 minutes.
+
+json-fortran's reference, of 6 files and 17,071 lines, built in 8 seconds with at most 1.7 GiB, with maths and
+graphs.
+
+Next.js builds the pages with as many workers as the machine has processors, less one, and each worker holds pages
+in memory: `experimental.cpus` sets how many. Next.js lists the setting among its experiments when it builds:
+
+```diff title="docs/next.config.mjs"
+   reactStrictMode: true,
++  experimental: { cpus: 2 },
+ };
+```
+
+On Linux, as in Docker and in CI, the system stops a build that runs out of memory: the build prints Killed, with no
+error from Next.js, and exits with 137. A build with webpack, `next build --webpack`, can stop with
+JavaScript heap out of memory instead, when Node's heap is full: `NODE_OPTIONS=--max-old-space-size=8192` raises that
+limit to 8 GiB, on a machine that has the memory. A larger heap does not lower what the build needs: in the same
+container, stdlib's reference stopped webpack's build with the default heap and with one of 5 GiB.
+
+### The size of the site [#large-size]
+
+The export is many times the size of the pages: each page's HTML holds its content and the data Next.js renders it
+from, and that data is written again into a file of its own, for the site's navigation. stdlib's export, with
+`--source link` and `--graphs none`, is 1.3 GiB, and its largest page 66 MB (1.8 MB gzipped); json-fortran's 132 KB
+of pages export to 9.5 MB. GitHub Pages publishes a site of up to 1 GB, and a deployment times out after 10 minutes:
+check the size of the export, `du -sh out` in the site, after a build.
+
+## Options only in JavaScript [#javascript]
+
+Some options have no flag, such as the doc-comment marks and FORD's aliases, the overview's description, the folder
+open in the sidebar and the line limit of the source blocks
+([Options only in JavaScript](/docs/reference/cli#options-only-in-javascript)). A script calls `generate()` with
+them:
+
+```js title="docs/scripts/reference.mjs"
+import { fileURLToPath } from 'node:url';
+import { generate } from 'fumadocs-fortran';
+
+const r = await generate({
+  // the top folder, two up from this file: the pages and the links name the files from there
+  root: fileURLToPath(new URL('../..', import.meta.url)),
+  sources: ['src'],
+  out: 'docs/content/docs/api',
+  description: 'The modules, programs and procedures of the code, with their doc comments.',
+  defaultOpen: true,
+  sourceMaxLines: 200,
+});
+console.log(`${r.written.length} files (${r.changed.length} changed, ${r.removed.length} removed)`);
+for (const d of r.ir.diagnostics.slice(0, 20)) console.error(`${d.file}:${d.line}: ${d.message} [${d.code}]`);
+```
+
+```bash
+node docs/scripts/reference.mjs
+```
+
+```text
+7 files (2 changed, 0 removed)
+```
+
+The overview's description and the folder's `defaultOpen` changed. To make it the reference script, run
+`npm pkg set --prefix docs scripts.reference="node scripts/reference.mjs"`. A script reads no flags, so flags after
+`--` do nothing: give it the repository's links as an option, such as
+`repo: { url: 'https://github.com/OWNER/REPOSITORY', rev: process.env.GITHUB_SHA }`, where GitHub Actions sets
+`GITHUB_SHA` to the commit and its absence means `main`. [JavaScript API](/docs/reference/javascript#generate) has every
+option.

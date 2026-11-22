@@ -2,7 +2,8 @@
 # Runs the documentation site (docs/) in a Node container, for machines without Node.
 #
 #   scripts/docs.sh dev      the dev server, at http://localhost:3000/docs (Ctrl-C ends it)
-#   scripts/docs.sh build    a static export of the site, into docs/out
+#   scripts/docs.sh build    a static export of the site, into docs/out, with the checks npm run build runs before
+#                            and after it (docs/package.json: the pages against the code, then the export's links)
 #   scripts/docs.sh stop     stops the dev server, or a build, that this script started
 #
 # The repository is mounted at /work, and docs/node_modules is a named Docker volume (fdf-docs-node-modules), so the
@@ -92,7 +93,7 @@ case "$cmd" in
     prepare "$@"
     exec "$@" --name "$NAME-build" \
       -e DOCS_EXPORT=1 -e NEXT_PUBLIC_BASE_PATH -e NEXT_PUBLIC_SITE_URL \
-      "$IMAGE" node_modules/.bin/next build
+      "$IMAGE" npm run build
     ;;
   stop)
     stopped=""

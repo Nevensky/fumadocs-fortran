@@ -1,0 +1,215 @@
+---
+title: How it works
+description: "From sources to pages: the parser, one build at a time, the registry, the graphs and what is left out."
+---
+
+What happens between the Fortran sources and the pages, so that a reader can predict the pages, and where they can
+differ from what a compiler or FORD sees. The flags named here are on [Command line](/docs/reference/cli), and the
+files the last step writes are on [Generated files](/docs/reference/generated-files).
+
+## From sources to pages
+
+`fumadocs-fortran generate` reads the sources with its own parser, in plain JavaScript: it runs no compiler, no
+Python and nothing from the network. For each file it:
+
+1. finds it: a file named on the command line is read whatever its extension, and a folder is searched for files
+   with the extensions of Fortran, past folders whose name starts with a dot and `node_modules`;
+2. reads it as UTF-8, or as Latin-1 when it is not valid UTF-8, and skips it with a warning when it is a fypp
+   source, which needs fypp to run first;
+3. decides its form, free or fixed, from the extension, or from the text for `.F` and `.fpp`, unless `--form` decides
+   for every file;
+4. runs its C preprocessor (cpp) when the file has a directive: conditions are evaluated with the macros given,
+   `#include` reads the file's folder and the `-I` folders, and macros are expanded, though never inside strings or
+   comments; then Fortran `include` lines are read in;
+5. reads its statements, across continuation lines, with their comments and the directives of OpenMP, OpenACC,
+   CUDA Fortran and the compilers' own;
+6. parses them into the model: units, procedures, interfaces, types, variables and enums, with their arguments,
+   attributes, uses, calls, directives, cpp conditions and doc comments, and a diagnostic for what it cannot read.
+
+`fumadocs-fortran dump` prints this model as JSON. From it, `generate` renders each doc comment in its style (FORD,
+Doxygen or LAPACK, see [Doc comments](/docs/reference/doc-comments)), resolves the names that link, looks library
+names up in the registry, draws the graphs and writes the pages. Nothing is compiled or run, so the pages show what
+the sources say, read by the rules below. CI checks the parser against public codes at pinned commits
+(`scripts/fetch-corpus.sh` in the repository lists them), with gcc's preprocessor as the reference for cpp.
+
+## One build at a time
+
+A reference shows one build of the code: the one that the macros given with `-D` select. A condition that does not
+hold switches its branch off, and nothing in that branch reaches the model or the pages. What a branch that is on
+declares keeps its condition. Its badge is dashed and ends in "when USE_MPI", its row of a table says so, and so do
+its item in a Calls line and its edge in a graph. `defined(USE_MPI)` reads as USE_MPI, `!defined(USE_MPI)` as not
+USE_MPI, and the terms of a nested condition are joined by "and".
+
+- [`-D NAME`](/docs/reference/cli#define) defines `NAME` as 1, and `-D NAME=VALUE` as the value, function-like
+  macros such as `-D 'F(x)=x'` included.
+- OpenMP's conditional lines, `!$` in free form and `c$`, `*$` or `!$` in columns 1 and 2 of fixed form, are code
+  only when `_OPENMP` is defined, and comments otherwise, as a compiler without OpenMP reads them.
+- [`--all-branches`](/docs/reference/cli#all-branches) reads every branch, so the pages show all of them, each with
+  its condition, as `when USE_MPI` and `when not USE_MPI` side by side: no compiler builds that code at once. It also
+  makes `!$` lines code.
+
+The pages do not record the macros they were generated with: say on a page of your own which build the reference
+shows. The Showcase, for one, is generated with `_OPENMP` and `USE_MPI` defined.
+
+## Library names
+
+The package ships a registry of the names of HPC libraries (`registry/`). From it, the generator gives a hover card
+to the library routines of "Calls:" lines, and to `mpi_f08`'s types and `omp_lib`'s kinds in the tables, and colours
+the library routines of the call graphs. It holds:
+
+| Library | From | Entries |
+| --- | --- | --- |
+| BLAS and LAPACK | Reference-LAPACK 3.12.1 | 2,265 routines, 155 of them BLAS |
+| ScaLAPACK, with PBLAS, BLACS, its tools and REDIST | Reference-ScaLAPACK 2.2.2 | 1,028 routines |
+| MPI | MPI 5.0, with 4.1, and Open MPI 5.0 | 463 procedures and callbacks callable from Fortran, and the 12 derived types of `mpi_f08` |
+| OpenMP | the 6.1, 6.0 and 5.2 specifications | 469 directives, clauses, routines, environment variables, kinds and constants |
+| OpenACC | the 3.4 specification | 147 directives, clauses, routines and environment variables |
+| Fortran intrinsics | M_intrinsics | 218 procedures |
+
+ScaLAPACK's count takes in the 18 routines that its SRC and TOOLS folders and PBLAS's PTOOLS write in C for Fortran
+to call: `slamov`, `dlamov`, `clamov` and `zlamov`, `pcrot` and `pzrot`, `pslaiect`, `pdlaiectb` and `pdlaiectl`,
+`pslasnbt` and `pdlasnbt`, `pslachkieee` and `pdlachkieee`, `reshape` and `sl_gridreshape`, and `PB_topget`,
+`PB_topset` and `PB_freebuf`. The registry also holds the names of oneMKL's `lapack95` and `blas95`, OpenBLAS and
+cuBLAS, which the pages do not use. `registry/SOURCES.md` lists the sources, each pinned by version and checksum.
+
+The generator reads the registry the first time a page needs it. Without it, the names are code with no card, and
+the graphs draw LAPACK's and ScaLAPACK's routines grey.
+
+### Cards
+
+- **Calls.** In the "Calls:" line of a procedure or a program, a library subroutine is a `FortranRef`. Its card has the
+  routine's kind, name and library (`subroutine dgesv (LAPACK)`), the registry's summary of it, of at most 200
+  characters, and a link to its documentation, each where the registry has one. The registry has a summary for every
+  subroutine of BLAS, LAPACK, MPI and the intrinsics, for every subroutine of ScaLAPACK, PBLAS, BLACS, the tools and
+  REDIST but `slaqr6` and `dlaqr6`, and for 23 of OpenMP's 68 subroutines and 14 of OpenACC's 53. A routine with no page
+  to link to, such as the intrinsic `tokenize` or MPI's predefined callbacks, has a card without a link. A routine that
+  a use statement renames is looked up by its own name. The line lists `CALL` statements, so a function such as `dnrm2`
+  has no card there, though the call graphs draw it.
+- **Types and kinds.** In a table, the derived types of `mpi_f08` (`type(MPI_Comm)`, `MPI_Datatype`, `MPI_Request`,
+  `MPI_Status` and the others) and the kinds of `omp_lib` or `omp_lib_kinds` (`integer(omp_lock_kind)`) have a card
+  when the declaration's scope uses the module. It may use it by `use` (`use, intrinsic :: omp_lib` too), an `only`
+  list or a rename, through its host or through a module of the project that passes the name on. The card has the
+  registry's line on the name, a link to the MPI 5.0 standard or the OpenMP specification, and the use statement it
+  comes from. `use mpi`, whose handles are integers, gives none.
+- **The project wins.** A procedure, generic interface or variable of the project, shown or not, is never taken for a
+  library's, and neither is a dummy argument in scope or a procedure pointer the caller declares (in a `BLOCK`, in its
+  specification part or in its host's). The project's own `dgemm` keeps its link, or stays code when it has no heading,
+  and a call through such a pointer has no card. A module of the project named `mpi_f08`, such as a serial stub, gives
+  its own types. An interface body that only describes a library routine, as code writes one for `dgesv`, does not
+  count: a call links to it when it has a heading, and has the library's card when it has none. A `pointer` statement on
+  its name makes it a procedure pointer, which does. A `CALL` of a name the registry has as a function, or of an
+  intrinsic's name that another module's use statement gives, names some other subroutine and has no card. The exception
+  is a name the registry also has as a subroutine: `call reshape` is ScaLAPACK's `reshape`, of its tools, not the
+  intrinsic function.
+
+### Where the cards link
+
+Each library's cards link to the documentation that [`--links`](/docs/reference/cli#links), or `hpc.links`, chooses
+for it, and Command line gives each library's choices and its default. A name its choice has no page for links as by
+default, and the defaults have fallbacks of their own:
+
+- an MPI procedure that Open MPI 5.0's manual lacks links to Open MPI's development manual, and the derived types of
+  `mpi_f08` link to the MPI 5.0 standard, whichever MPI is chosen;
+- a name that the OpenMP 5.2 specification has no section for links to the newest specification that has one;
+- `random_init` and `split`, which fortran-lang.org lacks, link to gfortran's manual;
+- BLACS, ScaLAPACK's tools and REDIST stay on Netlib with `mkl`, as oneMKL has no pages for them.
+
+An unknown library or provider stops the run with a message. An MKL address is made from the routine's name and not
+checked, as intel.com refuses scripts.
+[`--library-cards none`](/docs/reference/cli#library-cards), or `hpc.cards: false`, leaves the names as code, with no
+card, and keeps the graphs' colours.
+
+### The registry's text on your site [#registry-text]
+
+The summaries in the cards are quoted from other projects: those of BLAS and LAPACK from Reference-LAPACK, of
+ScaLAPACK, PBLAS, its tools and REDIST from Reference-ScaLAPACK, of MPI's procedures from Open MPI's manual pages,
+and of the intrinsics from M_intrinsics. The lines on OpenMP, OpenACC, BLACS, MPI's callbacks and types, `omp_lib`'s
+kinds and a few ScaLAPACK routines written in C are the package's own. A site that publishes generated pages
+publishes these summaries too. `registry/SOURCES.md` names each source with its version and licence, and
+`registry/NOTICE` holds their copyright notices and licence texts; both ship in the package. These pages give no
+legal advice. A line in the site's footer that links the notices is one way to credit them:
+
+```tsx
+<p>
+  Library summaries from Reference-LAPACK, Reference-ScaLAPACK, Open MPI and M_intrinsics:{' '}
+  <a href="https://github.com/Nevensky/fumadocs-fortran/blob/main/registry/NOTICE">notices</a>
+</p>
+```
+
+## Graphs
+
+- **What each graph draws.** A unit's dependencies are the modules that it and everything in it use, followed two
+  steps deep through the project's modules, then what uses it, and its submodules or, for a submodule, its parents.
+  A type's inheritance is the types it extends, up to the root, and every type that extends it. A procedure's calls
+  are what it calls, two steps deep through the project's procedures, and what calls it. The overview has every
+  module, submodule and program, with one node for each HPC library they use. A graph that would hold only its
+  subject is left out.
+- **Limits.** A graph draws at most 40 nodes, the last of them standing for the rest ("… 12 more"). The routines
+  from outside the project go first, however many callers they have, the farthest first, then the farthest of the
+  rest. A project of more than 80 units has no overview graph. From JavaScript, `graphs: { depth, maxNodes }` changes
+  the two steps and the 40 nodes, and `maxNodes` the 80 units as well;
+  [`--graphs none`](/docs/reference/cli#graphs) leaves every graph out.
+- **Calls.** A call is a `CALL` statement or a function reference, resolved as Fortran resolves it: through `use`,
+  renames, host association, generic interfaces and submodules. A type-bound one (`call m%solve(b)`,
+  `n = m%order()`) is drawn when `m` is a dummy argument, a function result or a module variable, whose type the
+  model knows, and not through a local variable, as the model keeps no local declarations. Intrinsic procedures are
+  left out, and a function reference to a name the project does not declare is drawn only when the name is a known
+  library's, such as LAPACK's `dlamch`, as it might as well be an array. A node bears the name as the source first
+  writes it, so fixed-form code's `DLAMCH` stands beside its `DGEMM`. A `CALL` of a name that only an intrinsic
+  function has names some other routine, drawn as one from outside the project; the registry knows ScaLAPACK's own
+  `reshape`, which `call reshape` draws in ScaLAPACK's colour. A call through a procedure pointer the caller declares
+  is not drawn.
+- **Shapes.** A module and a type are boxes, a submodule a box with double sides, a program a stadium, a procedure a
+  rounded box and a generic interface or binding a hexagon. A module or routine from outside the project is a rounded
+  box, and a type from outside it a box. The graph's subject has a heavier border.
+- **Colours.** Each kind of the project's entities has a colour: modules, submodules, programs (block data units with
+  them), procedures (functions and subroutines alike), generics and types; an abstract type has a dashed border in
+  the type's colour. A routine or module from outside the project takes its library's colour:
+  - BLAS, LAPACK and ScaLAPACK: the routines the registry knows, BLAS first, so that the BLAS routines
+    Reference-LAPACK ships stay BLAS, and PBLAS, BLACS, ScaLAPACK's tools and REDIST with ScaLAPACK;
+  - MPI: `mpi_*` routines, and the modules `mpi`, `mpi_f08` and `mpif`;
+  - OpenMP: `omp_*`, `omp_lib` and `omp_lib_kinds`; OpenACC: `acc_*` and `openacc`;
+  - CUDA: routines whose names start with `cuda`, `cublas`, `cufft`, `curand`, `cusparse` or `cusolver`, in any case,
+    and the modules `cudafor`, `cublas`, `cufft`, `curand`, `cusparse` and `cusolverDn`;
+  - the coarray collectives (`co_sum`, `co_min`, `co_max`, `co_reduce`, `co_broadcast`).
+
+  `graphs.classify`, a JavaScript option of `generate()` and `buildPages()`, takes the registry's place. It names the
+  library of a routine the project does not define from its lower-case name, such as
+  `(name) => (MYLIB.has(name) ? 'lapack' : null)` with a set of names. The command line has no such option. With it,
+  or without the registry, the names alone still tell MPI, OpenMP, OpenACC, CUDA, the coarray collectives and BLAS.
+  The other routines and modules from outside the project are grey and dashed, and the intrinsic modules
+  (`iso_fortran_env`, `iso_c_binding`, the IEEE modules) grey.
+- **Edges.** An arrow is a use, an extension (from a type to its parent) or a call. A label on it is the cpp condition
+  it holds under, which a `use` statement or a `CALL` statement gives; a function reference is never labelled, as the
+  parser keeps no condition for it. A dotted arrow goes from a generic to its specific procedures, and one labelled
+  "submodule of" from a submodule to its parent.
+- **Links.** A node links to the heading that documents it; a routine from outside the project links to the interface
+  body that documents it, if there is one.
+
+The Mermaid holds fixed mid tones for each kind of node, which read on light and dark backgrounds whatever draws
+them. With Pele, `fumadocs-fortran/style.css` draws the nodes in the theme's colours instead, and the lines, arrows
+and labels in Fumadocs' (see [Components](/docs/reference/components#graphs)).
+
+## What the model leaves out
+
+The parser reads statements, not a compiler's semantics, and keeps what the pages need. So:
+
+- **Local declarations.** The model keeps the dummy arguments and results of procedures, the components of types
+  and the variables of modules, and not the variables a procedure or a program declares for itself. A call through a
+  local variable's type-bound procedure is not drawn, and a call through a procedure pointer the caller declares gets
+  no card and no edge.
+- **Function references in "Calls:" lines.** The line lists `CALL` statements only. Function references show in the
+  call graphs, where the model can place them.
+- **Intrinsic procedures in graphs**, which draw none but the coarray collectives. In a "Calls:" line, an intrinsic
+  subroutine such as `random_number` has its card.
+- **Protected access.** `protected` is an attribute of a variable, shown as its pill, and no access level: the model
+  has `public` and `private` only, so `protected` in `--display` matches no entity.
+- **COMMON blocks and NAMELIST groups**, which the model holds, with their members and lines, and no page shows, nor
+  the common blocks a block data unit gives initial values to.
+- **ENTRY, DATA and EQUIVALENCE statements**, which the parser skips: an ENTRY point has no entry of its own, and the
+  values of a DATA statement are not shown, though an initial value in a declaration is.
+- **Vendor directives** such as `!dir$`, `!dec$` and `!gcc$`, which the model keeps and no page shows.
+- **Branches switched off** by cpp, which are not read, and fypp sources, which are skipped.
+
+How the pages compare with FORD's and Doxygen's, and how their settings carry over, is in
+[Move from FORD or Doxygen](/docs/guides/from-ford-doxygen).

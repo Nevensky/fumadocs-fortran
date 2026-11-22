@@ -1,0 +1,34 @@
+# A problem with the documentation site or the README. A link can open this form with the page's address filled in,
+# as issues/new?template=documentation.yml&page=<address>&title=<title>: a field's id is the name of its query
+# parameter, and each value is URL-encoded.
+name: Documentation problem
+description: A page of the documentation, or the README, is wrong, unclear or missing something.
+title: 'Docs: '
+labels: [documentation]
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Page
+      description: The address of the page, or README.md.
+      placeholder: https://nevensky.github.io/fumadocs-fortran/docs/get-started/
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong
+      description: >-
+        Quote the sentence, step or example, and say what you expected to find there. For a step that failed, paste
+        the command and what it printed.
+    validations:
+      required: true
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: >-
+        For a step that failed, the output of node --version, npm --version and npx fumadocs-fortran --version.
+      render: text
+    validations:
+      required: false

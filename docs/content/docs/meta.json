@@ -1,4 +1,19 @@
 {
-  "title": "Docs",
-  "pages": ["index", "---Showcase---", "...showcase", "---Reference---", "...reference"]
+  "title": "fumadocs-fortran",
+  "description": "Fortran API reference for Fumadocs: FORD, Doxygen and LAPACK doc comments, and HPC code (OpenMP, OpenACC, MPI, BLAS, LAPACK).",
+  "pages": [
+    "index",
+    "get-started",
+    "---Guides---",
+    "...guides",
+    "---Reference---",
+    "...reference",
+    "---Concepts---",
+    "how-it-works",
+    "---Examples---",
+    "...showcase",
+    "---Project---",
+    "changelog",
+    "contributing"
+  ]
 }

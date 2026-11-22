@@ -1,0 +1,368 @@
+---
+title: Publish on GitHub Pages
+description: The site at https://OWNER.github.io/REPOSITORY/, built and published by a workflow on every push.
+---
+
+Publish the site from [Get started](/docs/get-started) as a GitHub Pages project site, at
+`https://OWNER.github.io/REPOSITORY/`, with the reference generated again on every push to `main`. GitHub Pages
+serves a public repository on every plan; a private one needs a paid plan. Paths start at your project's top folder,
+with the site in `docs/`, and the commands run there: from the site's folder, `cd ..` goes back to it.
+
+The workflow below runs the `reference` script that [Generate the reference](/docs/guides/generate#reference-script)
+adds to `docs/package.json`, so that it generates the pages with the same flags as you do.
+
+## Serve the site under the repository's name [#base-path]
+
+A project site lives under `/REPOSITORY/`, and GitHub Pages serves a page's folder, such as `docs/api/index.html`.
+Give each page a folder of its own, and take the base path from `NEXT_PUBLIC_BASE_PATH`, which the workflow sets and
+which stays unset on your machine:
+
+```js title="docs/next.config.mjs"
+import { createMDX } from 'fumadocs-mdx/next';
+
+const withMDX = createMDX();
+
+/** @type {import('next').NextConfig} */
+const config = {
+  output: 'export',
+  trailingSlash: true, // [!code ++]
+  basePath: process.env.NEXT_PUBLIC_BASE_PATH || undefined, // [!code ++]
+  reactStrictMode: true,
+};
+
+export default withMDX(config);
+```
+
+## Keep the reference's links on the site [#links]
+
+Next.js writes the base path and the trailing slash into the links of Markdown, but the components' own links are
+plain links it never sees: the cards of argument rows and of Calls lines, and the headers of source blocks. Without
+the base path, such a link leads off the site, to `https://OWNER.github.io/docs/…`; without the trailing slash, a
+link to an entry of the page being read loads the page again, through a redirect, instead of scrolling to it. An
+argument whose type the project defines, such as `type(dense_matrix)`, has a card that links to the type's entry, so
+a site needs this whenever a procedure it shows takes one. In the example the Showcase is generated from, only
+private procedures take one: generated with `--display public,protected,private`, its `solver_kernels` page has ten
+such cards. Add a `siteHref` that writes a link as Next.js would, and a `siteLinks` for the Markdown of the llms files
+and Copy Markdown:
+
+```diff title="docs/lib/shared.ts"
+ export const docsImageRoute = '/og/docs';
++
++// the sub-path the site is served under, /REPOSITORY on GitHub Pages
++export const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
++
++/** A link to the site as next/link writes it: with the base path, and the trailing slash of a page. */
++export function siteHref(href: string): string;
++export function siteHref(href: string | undefined): string | undefined;
++export function siteHref(href: string | undefined): string | undefined {
++  if (!href?.startsWith('/') || href.startsWith('//')) return href;
++  const cut = href.search(/[?#]/);
++  const path = cut < 0 ? href : href.slice(0, cut);
++  const slash = !path.endsWith('/') && !/\.[^/]+$/.test(path) ? '/' : '';
++  return basePath + path + slash + (cut < 0 ? '' : href.slice(cut));
++}
++
++// a link to the site in Markdown: a link, an href attribute, a graph node's click line
++const SITE_LINK = /(\]\(|\bhref(?:"?\s*:\s*|\s*=\s*|\s+)["'])(\/(?!\/)[^\s"'()?#]*)/g;
++
++/** Markdown whose links to the site are siteHref's, for the llms files and Copy Markdown. */
++export function siteLinks(markdown: string): string {
++  return markdown.replace(SITE_LINK, (_, before: string, path: string) => before + siteHref(path));
++}
+@@
+-  return { segments, url: getImageUrl(segments, page.locale) };
++  return { segments, url: basePath + getImageUrl(segments, page.locale) };
+```
+
+Wrap the three components that write links:
+
+```tsx title="docs/components/mdx/fortran.tsx"
+import type { ComponentProps } from 'react';
+import { FortranArg, FortranRef, FortranSource, fortranComponents, type FortranArgProps } from 'fumadocs-fortran/react';
+import { siteHref } from '@/lib/shared';
+
+// fumadocs-fortran's components, with their links to the site written by siteHref
+export const fortranMdxComponents = {
+  ...fortranComponents,
+  FortranArg: (props: ComponentProps<typeof FortranArg>) => <FortranArg {...props} refs={siteRefs(props.refs)} />,
+  FortranRef: (props: ComponentProps<typeof FortranRef>) => <FortranRef {...props} href={siteHref(props.href)} />,
+  FortranSource: (props: ComponentProps<typeof FortranSource>) => (
+    <FortranSource {...props} href={siteHref(props.href)} />
+  ),
+};
+
+/** A row's refs with siteHref's links: an object, as generated, or JSON text, which FortranArg reads too. */
+function siteRefs(refs: unknown): FortranArgProps['refs'] {
+  let r = refs;
+  if (typeof r === 'string') {
+    try {
+      r = JSON.parse(r);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return undefined;
+  return Object.fromEntries(
+    Object.entries(r).map(([name, ref]) => [
+      name,
+      ref && typeof ref === 'object' && typeof ref.href === 'string' ? { ...ref, href: siteHref(ref.href) } : ref,
+    ]),
+  );
+}
+```
+
+and register them in place of `fortranComponents`:
+
+```diff title="docs/components/mdx.tsx"
+-import { fortranComponents } from 'fumadocs-fortran/react';
++import { fortranMdxComponents } from '@/components/mdx/fortran';
+@@
+-    ...fortranComponents,
++    ...fortranMdxComponents,
+```
+
+### Graphs [#graphs]
+
+If the site draws graphs, as [Set up your site](/docs/guides/site-setup#graphs) shows, their nodes link to the
+reference too:
+
+```tsx title="docs/components/mdx/mermaid.tsx"
+import { useId } from 'react';
+import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
+import { render } from 'pele';
+import { siteHref } from '@/lib/shared'; // [!code ++]
+
+export function Mermaid({ chart }: { chart: string }) {
+  const id = useId();
+  let svg: string;
+  try {
+    svg = render(chart, { idPrefix: id }).svg;
+  } catch {
+    return (
+      <CodeBlock title="Mermaid">
+        <Pre>{chart}</Pre>
+      </CodeBlock>
+    );
+  }
+  svg = svg.replace(/(<a\b[^>]*?\shref=")([^"]*)"/g, (_, start: string, href: string) => `${start}${siteHref(href)}"`); // [!code ++]
+  return <div className="not-prose" dangerouslySetInnerHTML={{ __html: svg }} />;
+}
+```
+
+## Search, Copy Markdown and the llms files [#search]
+
+The search dialog reads its index from `/api/search` in the browser. Give it the path under the base path:
+
+```tsx title="docs/components/search.tsx"
+'use client';
+import {
+  SearchDialog,
+  SearchDialogClose,
+  SearchDialogContent,
+  SearchDialogHeader,
+  SearchDialogIcon,
+  SearchDialogInput,
+  SearchDialogList,
+  SearchDialogOverlay,
+  type SharedProps,
+} from 'fumadocs-ui/components/dialog/search';
+import { useStaticSearch } from 'fumadocs-core/search/client';
+import { useI18n } from 'fumadocs-ui/contexts/i18n';
+import { basePath } from '@/lib/shared'; // [!code ++]
+
+export default function DefaultSearchDialog(props: SharedProps) {
+  const { locale } = useI18n(); // (optional) for i18n
+  const search = useStaticSearch({
+    locale,
+    from: `${basePath}/api/search`, // [!code ++]
+  });
+
+  return (
+    <SearchDialog {...search} {...props}>
+      <SearchDialogOverlay />
+      <SearchDialogContent>
+        <SearchDialogHeader>
+          <SearchDialogIcon />
+          <SearchDialogInput />
+          <SearchDialogClose />
+        </SearchDialogHeader>
+        <SearchDialogList />
+      </SearchDialogContent>
+    </SearchDialog>
+  );
+}
+```
+
+Leave the Markdown URL of the page template's Copy Markdown and View as Markdown as it is, without the base path:
+`fumadocs-ui` adds the base path to it, and a URL that has one already gets it twice. The llms files, `llms.txt` and
+`llms-full.txt`, and the Markdown copies take their links from `lib/source.ts`:
+
+```diff title="docs/lib/source.ts"
+-import { docsRoute } from './shared';
++import { docsRoute, siteHref, siteLinks } from './shared';
+@@
+ export const docsLlms = llms(source, {
+-  renderPage: async (page) => `# ${page.data.title} (${page.url})
++  renderPage: async (page) => `# ${page.data.title} (${siteHref(page.url)})
+
+-${await page.data.getText('processed')}`,
++${siteLinks(await page.data.getText('processed'))}`,
+   // link to the files under `/llms.mdx`
+-  renderUrl: (item) => (/^\/.*\.(md|txt)$/.test(item.url) ? `/llms.mdx${item.url}` : item.url),
++  renderUrl: (item) => siteHref(/^\/.*\.(md|txt)$/.test(item.url) ? `/llms.mdx${item.url}` : item.url),
+ });
+```
+
+## The site's address and its GitHub links [#address]
+
+Open Graph images need the site's absolute address, which the workflow gives as `NEXT_PUBLIC_SITE_URL`; with it,
+the build does not warn that `metadataBase` is not set:
+
+```diff title="docs/app/layout.tsx"
+ import { Inter } from 'next/font/google';
++import type { Metadata } from 'next';
+ import { Provider } from '@/components/provider';
+@@
+ const inter = Inter({
+   subsets: ['latin'],
+ });
++
++export const metadata: Metadata = {
++  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'),
++};
+```
+
+Each page's Open in GitHub link points at `content/docs/…` of the repository, which lacks the `docs/` of the site's
+folder, and the generated pages are none to edit. Set `appName` and `gitConfig` as
+[Set up your site](/docs/guides/site-setup#tidy) shows, and change the link:
+
+```diff title="docs/app/docs/[[...slug]]/page.tsx"
+         <ViewOptionsPopover
+           markdownUrl={markdownUrl}
+-          githubUrl={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/content/docs/${encodeURI(page.path)}`}
++          githubUrl={
++            page.path.startsWith('api/')
++              ? undefined
++              : `https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/docs/content/docs/${encodeURI(page.path)}`
++          }
+         />
+```
+
+## Look at it under the base path [#preview]
+
+Before the first deploy, the development server can serve the site under the base path, as GitHub Pages will. Start
+it from the top folder with the variable the workflow sets, and your repository's name for REPOSITORY:
+
+```bash
+NEXT_PUBLIC_BASE_PATH=/REPOSITORY npm run --prefix docs dev
+```
+
+Open http://localhost:3000/REPOSITORY/docs/api/, and follow a node of a graph and a card that links to an entry: each
+link stays under `/REPOSITORY/`, and one that leaves it answers 404. Stop the server with Ctrl+C. Search and Copy
+Markdown are checked on the published site, as [Turn on GitHub Pages](#turn-on) says.
+
+## Add the workflow [#workflow]
+
+The workflow generates the reference, so the generated folder stays out of Git. Add it to the site's `.gitignore`:
+
+```diff title="docs/.gitignore"
+ .env*.local
+ .vercel
+ next-env.d.ts
++/content/docs/api/
+```
+
+Commit the site without it, and add the workflow:
+
+```yaml title=".github/workflows/docs.yml"
+name: Docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+      - id: pages
+        uses: actions/configure-pages@v6
+      - run: npm ci --allow-git=root
+        working-directory: docs
+      - run: npm run reference -- --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --rev "$GITHUB_SHA"
+        working-directory: docs
+      - run: npm run build
+        working-directory: docs
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          NEXT_PUBLIC_SITE_URL: ${{ steps.pages.outputs.origin }}
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs/out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
+```
+
+`configure-pages` gives the base path, `/REPOSITORY`, and the origin, `https://OWNER.github.io`, or those of a custom
+domain. `--repo` and `--rev` link each entity to its lines at the commit the site is built from.
+
+To keep the reference in Git instead, commit the folder, leave the generate step out of this workflow, and check
+that the folder is current, as [Generate the reference](/docs/guides/generate#workflow) shows.
+
+## Turn on GitHub Pages [#turn-on]
+
+Once, in the repository's Settings, under Pages, set Build and deployment's Source to GitHub Actions. Then push, or
+run the workflow from the Actions tab. When it has run, check the site at `https://OWNER.github.io/REPOSITORY/`: the
+reference's overview; a node of a graph, and the card of an argument whose type your code defines, whose links stay
+under `/REPOSITORY/`; search; and Copy Markdown on a page.
+
+### A site GitHub Pages already serves [#replace]
+
+GitHub Pages serves one site for a repository. The first deployment of the workflow replaces a site deployed from a
+branch, such as FORD's or Doxygen's output on `gh-pages`, and the old addresses then answer 404, as GitHub Pages has
+no redirects. Old pages copied into `docs/public/` keep their addresses, as the build copies that folder into the
+site: [Replace a published site](/docs/guides/from-ford-doxygen#replace) shows how.
+
+## The registry's text on your pages [#registry]
+
+The cards of library routines carry summaries quoted from other projects' documentation, which a published site
+publishes too. [How it works](/docs/how-it-works#registry-text) names their sources and licences,
+and suggests a credit for the site's footer.
+
+## A site made otherwise [#other-sites]
+
+A site from another template than the static one needs the static export first: `output: 'export'` in
+`next.config.mjs`, a search route that the build writes as a file (`export const revalidate = false;` and
+`export const { staticGET: GET } = createFromSource(source);` in `app/api/search/route.ts`), the static search
+client above, and no `proxy.ts`, middleware or rewrites, which an export cannot run. Without the route's change the
+build stops with Failed to collect configuration for /api/search. Fumadocs'
+[guide to static builds](https://www.fumadocs.dev/docs/next/deploying/static) has the details.
+
+## Somewhere else [#elsewhere]
+
+A site at the root of its own domain needs no base path, and any web server can serve `docs/out/`. GitLab Pages is
+not covered here, and `--repo` writes GitHub's form of a link to a file's lines.

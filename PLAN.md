@@ -237,8 +237,9 @@ and throws the whole file away when the value does not parse; here, at worst, th
 - FORD text stays Markdown. Doxygen, LAPACK and prose text is escaped as plain text, because `B(LDB,*)` would otherwise
   become emphasis; Doxygen's own Markdown is read where it cannot be LAPACK's (fences, list items, `**bold**` but not
   the exponents of `A**T`), and so are its HTML tags and character references.
-- Maths, in every comment style (`src/docs/math.js`). Spans are lifted out before escaping and put back as remark-math
-  syntax, so braces and `<` inside maths are never escaped:
+- Maths, in every comment style (`src/docs/math-spans.js`; `normaliseTex` and `katexMacros` are in `src/docs/math.js`,
+  the `fumadocs-fortran/math` entry). Spans are lifted out before escaping and put back as remark-math syntax, so
+  braces and `<` inside maths are never escaped:
   - inline: `$…$`, `\( \)`, Doxygen's `\f$ \f$` and `\f( \f)`, and reStructuredText's `:math:` role (stdlib);
   - display: `$$…$$` and `\[ \]` (on lines of their own, on one line, or with content on the delimiter lines),
     `\begin{equation|align|gather|multline|eqnarray|…}`, the environments that exist only in maths when written bare
@@ -363,13 +364,13 @@ Entity sections contain no sub-headings, so fumadocs' own `<include>…#solve</i
 - Above a size budget, the argument records are dropped (`search.granularity`), because a static export ships the whole
   index to every visitor.
 - Huge modules can be split into a page per entity (json-fortran's `json_value_module` has 247 procedures).
-- The components give the records their text, not their tags: the README shows the `filterElement` option of
+- The components give the records their text, not their tags: Set up your site shows the `filterElement` option of
   fumadocs' remark-structure that does it, as the docs site uses it (its index 24% smaller, stdlib's 73%). A heading
   keeps an underscore inside a name unescaped, so that search finds the name as one word.
 - No page's URL ends in `-` and a number, the form of the ids fumadocs gives a page's records: units of one name are
   numbered after an underscore (`miniweather-program_2`).
-- Sites with large references turn the sidebar's prefetch off (`sidebar={{ prefetch: false }}`), as the README says;
-  Next prefetches every page whose link is in view.
+- Sites with large references turn the sidebar's prefetch off (`sidebar={{ prefetch: false }}`), as Set up your site
+  says under Large references; Next prefetches every page whose link is in view.
 
 **Links** are absolute paths under `baseUrl`. `fortran-inventory.json` feeds the remark plugin and the code-block
 linker. A FORD-compatible `modules.json` lets FORD sites link into ours.

@@ -3,7 +3,7 @@
 // a site's build fails on a code block in a language its highlighter lacks. Everything that goes into a generated
 // page passes through one of these functions.
 
-import { DISPLAY_LINE } from '../docs/math.js';
+import { DISPLAY_LINE } from '../docs/math-spans.js';
 import { ENTITIES } from './entities.js';
 import { SHIKI_LANGS } from './shiki-langs.js';
 
@@ -230,7 +230,8 @@ export function stripHtmlComments(lines) {
  * - HTML tags become JSX that MDX can parse and React can render: a phrasing tag pairs within its paragraph, a block
  *   element stands as a block (end tags HTML lets an author leave out are added, as is a table's <tbody>), and
  *   anything that does not pair is shown as text.
- * Maths must be lifted out first (extractMath in src/docs/math.js): a `$` that reaches this function is a dollar.
+ * Maths must be lifted out first (extractMath in src/docs/math-spans.js): a `$` that reaches this function is a
+ * dollar.
  * @param {string} md
  * @param {{ math?: 'katex'|'code' }} [opts]
  */

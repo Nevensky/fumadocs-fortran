@@ -1,0 +1,376 @@
+---
+title: Doc comments
+description: The FORD, Doxygen and LAPACK comments the generator reads, and what each becomes on a page.
+---
+
+The generator reads the doc comments a code already has, in the style each was written in: FORD, Doxygen or LAPACK.
+It writes them into the pages as Markdown, which Fumadocs renders with the rest of the site. This page lists what it
+reads, where each comment goes and what it becomes. The Showcase shows the three styles on a larger code:
+[solver_kernels](/docs/showcase/modern/solver_kernels) is documented in FORD's,
+[eigen_wrappers](/docs/showcase/modern/eigen_wrappers) in Doxygen's and [gtsv](/docs/showcase/modern/gtsv) in
+LAPACK's.
+
+Each example below is a Fortran file and the entries `generate` writes for it: under Preview as a page shows them,
+under MDX as written. Both leave out each entry's heading and source block, and in the previews a link to another
+entry of the same file leads to that entry on this page. The package's `generate()` writes the examples from the
+files in
+[`docs/snippets/doc-comments`](https://github.com/Nevensky/fumadocs-fortran/tree/main/docs/snippets/doc-comments),
+and the site's build fails when one differs from what it writes.
+
+## Where comments attach
+
+A doc comment is a comment whose first character after the `!` is a mark. The mark says which item the comment
+documents:
+
+| Mark | Documents | Notes |
+| --- | --- | --- |
+| `!>` | the item after it | Doxygen's |
+| `!!` | the item before it | FORD's; a `!!` line right after `!>` lines carries on their block instead |
+| `!<` | the item before it | Doxygen's |
+| `!\|` | the item after it | FORD's alternate: the plain comment lines after it belong to the block too |
+| `!*` | the item before it | FORD's alternate, with the same rule |
+
+The item before a comment is what the statement above it declares, such as a procedure, a variable, an argument or
+a type. After a statement that declares nothing, such as `use` or `implicit none`, it is the module, procedure or
+type the statement is in, so FORD's `!!` lines after `implicit none` still document the module. After an
+executable statement or an `end` statement, a comment of the item before documents nothing.
+
+The item after a comment is what the next statement declares. The block waits for that statement across blank lines
+and plain comments, and is dropped when the statement is executable or an `end`.
+
+On the line of a statement, after its code, `!<`, `!!` and `!*` document what that line declares. That is every
+name a declaration such as `real :: a, b !! …` lists, or, in a declaration continued over several lines, the names
+on the comment's own line. `!>` and `!|` there are ignored.
+
+<include>../../../snippets/doc-comments/marks.mdx</include>
+
+### Fixed form
+
+In fixed form a comment line has `C`, `c`, `*` or `!` in column 1. A line that starts with `C`, `c` or `*` is a doc
+comment only as `C>`, `c>` or `*>`, which document the item after them, or as `C<`, `c<` or `*<`, which document the
+item before. A comment that starts with `!`, in column 1 or after blanks in any column but 6, takes the marks of free
+form, and a `!<` after the code of a statement works as in free form.
+
+<include>../../../snippets/doc-comments/fixed-form.mdx</include>
+
+### Where a block ends
+
+Marked comment lines in a row form a block, which ends at a blank line, at a line of code, or at a comment line
+without a mark. A block of `!|` or `!*` takes such plain comment lines in, up to a blank line or code, and an
+empty comment line in it starts another paragraph. A `!>` or `!|` line after a block of the item before starts
+another block, for the item after. Lines that come from another file, through a Fortran `include`, never join a
+block.
+
+Two kinds of marked line are not doc comments at all:
+
+- a mark followed by `$`, such as `!!$omp parallel do`: a directive or an OpenMP conditional line that was commented
+  out;
+- a banner: a mark followed directly by three or more of the characters `! * = - # ~ _ + . < > / \` and nothing
+  else, such as `!!-------` or `!>=====`.
+
+<include>../../../snippets/doc-comments/blocks.mdx</include>
+
+An item can have several blocks: one before it and one after, or two after it with a plain comment between them.
+Blocks on consecutive lines read as one paragraph, and blocks apart from each other as separate paragraphs, in the
+order of the source.
+
+### Interfaces and separate procedures
+
+- A comment before an abstract or explicit `interface` block is shown first in the entry of each procedure the block
+  declares.
+- A separate module procedure, which a submodule implements, shows the comment of its interface body when it has
+  none of its own, and its arguments take the interface's argument docs in the same way.
+- A Doxygen block that holds `\file` documents the file, and no page shows it.
+
+### Other marks
+
+The JavaScript option [`marks`](/docs/reference/javascript#marks) of `generate()` and `extract()` changes the marks;
+there is no flag for it. Its keys are FORD's settings, `docmark`, `predocmark`, `docmarkAlt` and `predocmarkAlt`
+(FORD's `docmark_alt` and `predocmark_alt`), and `postmark` for `!<`. Each is the one character after the `!` (`!`,
+`>`, `*`, `|` and `<` by default), and an empty string switches one off. The fixed-form `C>` and `C<` stay as they
+are.
+
+## How the style is chosen
+
+Each item's comment is read on its own, so one file can mix the styles. A comment is Doxygen when it holds one of
+Doxygen's commands at the start of a line or after a space:
+
+- with `\` or `@`: `brief`, `short`, `details`, `param`, `tparam`, `return`, `returns`, `retval`, `author`,
+  `authors`, `date`, `version`, `ingroup`, `defgroup`, `addtogroup`, `file`, `par`, `verbatim`, `code`, `see`, `sa`,
+  `deprecated`, `since`, `pre`, `post`, `invariant`, `copyright`, `fn`, `exception`, `throw` and `throws`;
+- with `\` only, as `@note` and its kin are FORD's: `note`, `warning`, `todo`, `bug`, `attention`, `remark`,
+  `remarks`, `li` and `arg`;
+- an inline command and the word after it: `\b`, `\c`, `\e`, `\p`, `\a` and `\em`, or the same with `@`;
+- Doxygen's maths, `\f$` or `\f[`.
+
+A Doxygen comment that also holds `\verbatim` and `\param[` is LAPACK's. It is read in the same way, and only the
+`style` that `renderDoc()` returns says `lapack`. Any other comment is FORD's.
+
+One command is enough: a FORD comment with an `@author` line is read as Doxygen. Its text is then plain text with
+Doxygen's Markdown in it. FORD's metadata lines and `[[links]]` show as written, and an `@endnote` is text.
+
+## FORD
+
+FORD's comments are Markdown, with metadata lines at the start, environments for notes and warnings, links and
+includes.
+
+### Markdown
+
+The text is Markdown as FORD's Python-Markdown reads it, made safe for MDX:
+
+- paragraphs, emphasis, lists, code spans, block quotes and tables stay Markdown;
+- a heading becomes a bold paragraph, so that the page's own headings keep their order;
+- a fenced code block keeps its language as Shiki names it, so `fortran` becomes `f90`, and a language Shiki lacks
+  becomes `text`;
+- indented code, four columns past the level of the list it is in, and a `<pre>` block become `text` blocks;
+- an HTML tag becomes JSX when it pairs within its paragraph, or stands as a block when it is a block element; a tag
+  that does not pair is text, and an HTML comment is dropped. Attributes other than the common ones, such as `style`
+  and `onclick`, are dropped, and `<https://…>` becomes a link;
+- `{`, `}` and `$` that are not maths are escaped, and so are `import` and `export` at the start of a line;
+- a `[TOC]` line is dropped;
+- footnotes and link references stay with their comment, even when a page holds several that use the same label.
+
+<include>../../../snippets/doc-comments/ford-markdown.mdx</include>
+
+### Metadata
+
+Lines of `key: value` at the very start of a comment, up to three spaces in, are metadata when the key is one of
+FORD's, in any case. A line indented four spaces or more carries on the value above it. The first other line ends
+the metadata, so a line such as `version: 2` further down is text.
+
+| Key | What it becomes |
+| --- | --- |
+| `author`, `date`, `version`, `copyright`, `license` | a small line at the end: Author, Date, Version, Copyright and Licence, in that order |
+| `deprecated` | a Deprecated callout at the top: `true`, `yes` or nothing says This is deprecated, other text is the reason, and `false` or `no` shows nothing |
+| `category`, `display`, `graph`, `proc_internals`, `source`, `summary`, `title`, `media_dir` | nothing: they are read and dropped |
+
+<include>../../../snippets/doc-comments/ford-metadata.mdx</include>
+
+### Links
+
+`[[name]]` becomes a link to the entry of `name`, with the name in code. `[[name:child]]`, shown as `name%child`,
+links to `child` among the children of `name`; a component or a type-bound procedure has no heading of its own, so
+the link leads to its type's entry. A kind in brackets, `[[name(type)]]` or `[[name(proc):child]]`, is read and has
+no effect: the name links to the entity of that name that has an entry, one on the same page first. A name with no
+entry, such as that of an entity the pages leave out (a private one, unless
+[`--display`](/docs/reference/cli#display) lists private), stays code without a link. Links are not read in code.
+
+<include>../../../snippets/doc-comments/ford-links.mdx</include>
+
+### Includes and aliases
+
+`{!file!}` is replaced by the text of the file, in a comment of any style and before the style is chosen. The file is
+read relative to the project root, which is the folder `generate` runs in, and only from under it; in JavaScript the
+root is the option [`root`](/docs/reference/javascript#root), and the option
+[`include`](/docs/reference/javascript#include) can read the files instead. An included file can include others,
+but never one that is already being included. A file that cannot be read leaves nothing, and `{!…!}` in code stays
+as written. The examples here are generated with their folder as the root, so this one reads `units.md` beside it.
+
+<include>../../../snippets/doc-comments/ford-includes.mdx</include>
+
+In a FORD comment, the `|name|` aliases are replaced with the text the JavaScript option
+[`aliases`](/docs/reference/javascript#aliases) gives each name, as `{ aliases: { solver: 'the LU solver' } }`; there
+is no flag. A name that is not there stays as written, and `\|name\|` is never replaced. FORD sets its own `|url|`,
+`|media|` and `|page|` from its `project_url`; here they are names like any other. Without an entry in `aliases` they
+stay as written, so a link through one of them leads nowhere, and an image under `|media|` shows its alt text.
+
+### Images
+
+An image from a URL, from `data:` or from a path on the site, which starts with `/`, stays an image. One from a
+relative path or from FORD's `|media|` folder becomes its alt text in italics, as a site's build would fail to find
+the file. Copy such images to the site and give their site paths.
+
+## Doxygen
+
+Doxygen's comments are plain text with commands. The text is escaped, so that `B(LDB,*)` and `a * b` stay as written,
+while an underscore inside a name, as in `norm2_parallel`, is left alone. The Markdown that Doxygen reads too is
+kept: `**bold**`, `*emphasis*`, code spans, fenced code blocks and list items.
+
+### Commands
+
+Each command starts a section of the comment, which runs to the next command, blank lines included. The commands
+`\see`, `\sa`, `\return`, `\returns`, `\note`, `\warning`, `\param`, `\pre`, `\post` and `\li` start one even in the
+middle of a line. Every command works with `@` as well as `\`. Whatever their order in the comment, the entry shows
+the summary first, then the text, the Type parameters and Exceptions lists, the callouts, the See also line and the
+small line of authors and dates.
+
+| Command | What it becomes |
+| --- | --- |
+| `\brief`, `\short` | the summary, at the top; several are joined |
+| `\details`, also written `\detail` | the text after the summary |
+| `\param name`, `\param[in] name` | the argument's doc, in its row; `[in]`, `[out]`, `[in,out]` or `[inout]` give the intent of an argument that declares none; `\param a, b` documents both |
+| `\return`, `\returns`, `\result` | the doc of a function's result row, or a Returns line for a subroutine |
+| `\retval value` | `value: text`, added to the result's doc or the Returns line |
+| `\tparam name`, `\exception name`, `\throw name`, `\throws name` | a Type parameters or Exceptions list |
+| `\note`, `\warning`, `\attention`, `\remark`, `\remarks`, `\bug`, `\todo`, `\deprecated` | a callout: see [Notes and warnings](#notes-and-warnings) |
+| `\pre`, `\post`, `\invariant` | Precondition, Postcondition or Invariant, in bold before the text |
+| `\see`, `\sa` | a See also line, word by word: a name of the code links to its entry, a URL is a link, and any other word is code |
+| `\author`, `\authors`, `\date`, `\version`, `\since`, `\copyright` | a small line at the end; several of one kind are joined |
+| `\ingroup name` | the page of an external procedure: see [Groups of external procedures](#groups-of-external-procedures) |
+| `\par title`, `\section`, `\subsection`, `\subsubsection`, `\paragraph` | the title in bold, starting a paragraph (a section's label is dropped); `\par` alone only starts one |
+
+<Callout type="warn" title="Sections run past blank lines">
+  Doxygen ends `\brief`, `\param`, `\note` and the other sections at a blank line; here they run on to the next
+  command. A `\brief` followed by a blank line and more text makes all of it the summary, and text after a `\note`
+  stays in its callout. Start the text that follows with `\details`.
+</Callout>
+
+<include>../../../snippets/doc-comments/doxygen.mdx</include>
+
+### Blocks and inline markup
+
+- `\li` and `\arg` are list items, and a line that follows one carries it on.
+- `\verbatim` … `\endverbatim` is read as LAPACK writes it (see [LAPACK](#lapack)): paragraphs at the margin are text,
+  and indented paragraphs and lists keep their layout in a `text` block.
+- `\code` … `\endcode` is a code block, in Fortran unless `\code{.py}` or the like names a language; a `<pre>` block
+  is a `text` block.
+- `\image html file "caption"` becomes the caption in italics, or the file's name; a Markdown image stays text.
+- `\copydoc`, `\copybrief` and `\copydetails name` become a line See `name`, linked to its entry when it has one.
+- Inline: `\b word` is bold, `\c word` and `\p word` code, `\e`, `\em` and `\a word` emphasis; `<b>`, `<strong>`,
+  `<i>`, `<em>`, `<tt>` and `<code>` the same; `<a href="…">` a link, except a `javascript:` one; `\ref name` a link
+  to the entry of `name`, or the name in code; `\cite key` is `[key]`; `\n` a line break. Other HTML tags become JSX
+  when they pair, and character references such as `&lt;` are decoded.
+
+<include>../../../snippets/doc-comments/doxygen-blocks.mdx</include>
+
+### Commands left out
+
+These steer Doxygen's own output, and the generator drops them: `\callgraph`, `\callergraph`, `\hidecallgraph`,
+`\hidecallergraph`, `\showinitializer`, `\hideinitializer`, `\showrefby`, `\hiderefby`, `\showrefs`, `\hiderefs`,
+`\nosubgrouping`, `\showinlinesource`, `\hideinlinesource`, `\privatesection`, `\protectedsection`,
+`\publicsection`, `\anchor name`, and `\image` for `latex`, `rtf`, `docbook` or `xml`. So are the blocks
+`\htmlonly`, `\latexonly`, `\manonly`, `\rtfonly`, `\xmlonly` and `\docbookonly`, each with what it holds.
+
+The lines of `\defgroup`, `\addtogroup`, `\fn`, `\class`, `\struct`, `\name`, `\internal`, `\endinternal`, `\cond` and
+`\endcond` are dropped too, each with the rest of its line. The lines between them stay, so the text of an
+`\internal` or `\cond` section is shown.
+
+## LAPACK
+
+LAPACK and BLAS write Doxygen with `*>` marks in fixed form: a `\brief`, a Purpose section in a `\verbatim` block, and
+a `\param` with a `\verbatim` block for each argument. The generator reads them so:
+
+- a `\brief` that only names the routine, as BLAS's `\brief \b DGEMM`, is not the summary; the first sentence of the
+  Purpose is;
+- `\par Purpose:` is the title Purpose, in bold;
+- in a `\verbatim` block, a paragraph whose lines all start at the margin is text, its lines run together;
+- a paragraph with indented lines, or with two or more lines that start with `=`, `<`, `>`, `If` or a quoted option
+  such as `'N':`, keeps its layout in a `text` block;
+- an argument's line `X is DOUBLE PRECISION array, dimension (N)` stays, in italics, at the top of the argument's
+  doc, since the dimension it gives often says more than the declaration's `*`; `N is INTEGER` and the other bare
+  types go, as the row says as much. A line that does not finish, such as one that ends in a comma or `dimension`,
+  runs on to the next;
+- `\param[in]`, `[out]` and `[in,out]` give the intents that F77 code does not declare, while the declaration shown
+  stays as written;
+- `\ingroup` names the page the routine goes on: this example's is `scalx`.
+
+The comment lines without a mark, such as `*  Arguments:` and its underline, are not read.
+
+<include>../../../snippets/doc-comments/lapack.mdx</include>
+
+## Notes and warnings
+
+FORD's environments and Doxygen's commands for notes become Fumadocs' own `Callout`, which every Fumadocs site
+registers:
+
+| FORD | Doxygen | Callout |
+| --- | --- | --- |
+| `@note` | `\note` | Note, info |
+| `@warning` | `\warning` | Warning, warn |
+| `@todo` | `\todo` | To do, info |
+| `@bug` | `\bug` | Bug, error |
+| `@history` | | History, info |
+| | `\attention` | Attention, warn |
+| | `\remark`, `\remarks` | Remark or Remarks, info |
+| `deprecated:` in the metadata | `\deprecated` | Deprecated, warn |
+
+In FORD, an environment starts at a line that begins with its marker, in any case, and takes the rest of that line.
+It ends at its end marker, such as `@endnote`, and without one at the first blank line. A marker in code is text. In
+Doxygen, a note runs to the next command; in a Doxygen comment `@note` is Doxygen's note, and `@endnote` is text.
+
+<include>../../../snippets/doc-comments/notes.mdx</include>
+
+## Arguments
+
+Arguments, results, components, type parameters, type-bound procedures and enumerators are rows of an entry's
+tables, and a row opens to the doc comment of its item. An argument's documentation is the first of:
+
+1. its own doc comment: a `!!`, `!*` or `!<` after its declaration, on the same line or below it, or a `!>` or `!|`
+   before it;
+2. for a separate module procedure, the procedure's own `\param`, then the doc of the argument in the interface
+   body, then the interface's `\param`;
+3. the procedure's `\param`, matched by name in any case.
+
+The intent is the declaration's, or else the one `\param[in]`, `[out]` or `[in,out]` gives. A function's result row
+takes the result's own doc, or else `\return`; a subroutine's `\return` is a Returns line under the arguments. A
+`\param` that names no argument is not shown. [Components](/docs/reference/components#fortranargs-and-fortranarg)
+describes the rows.
+
+## Maths
+
+LaTeX in a comment is written as `$…$` and `$$` blocks for remark-math and KaTeX, which a site sets up as
+[Set up your site](/docs/guides/site-setup) shows. These notations are read:
+
+- `$…$` and `$$…$$`, `\(…\)` and `\[…\]`, as FORD and MathJax read them;
+- `\begin{equation}`, `align`, `gather`, `multline`, `eqnarray`, `flalign`, `alignat`, `split`, `displaymath` and the
+  starred forms, and environments that exist only in maths, such as `array`, `pmatrix`, `cases` and `aligned`, with
+  no delimiters around them;
+- Doxygen's `\f$…\f$`, `\f(…\f)`, `\f[…\f]` and `\f{env}{…\f}`;
+- reStructuredText's `` :math:`…` `` and `.. math::`.
+
+Maths never crosses a blank line, and code is left alone: code spans, fenced code and Doxygen's `\verbatim` and
+`\code` blocks. A `$` stays a dollar:
+
+- after `!` or a letter or digit, as in `!$omp`;
+- in a shell variable such as `$OMP_NUM_THREADS`, and in sums of money such as `$5 or $10`;
+- in version-control keywords such as `$Id$`;
+- around text with spaces at its edges and nothing of TeX in it.
+
+The TeX is written as KaTeX takes it: `\label` goes; `_`, `&`, `%`, `#`, `$` and `^` in `\text{…}` are escaped;
+`\mbox` becomes `\text`; `eqnarray` becomes `aligned`, `multline` `gathered` and `flalign` `align`, and
+`displaymath` goes; a `split` with several `&` in a row becomes `aligned`; inline, the display environments take
+their inline forms and `\tag` goes. Display maths on a table row, a heading or a list item's own line stays inline,
+so as not to break them. Commands that KaTeX lacks, such as those of the physics package, need the macros of
+`fumadocs-fortran/math`, which the site passes to rehype-katex.
+
+With [`--math code`](/docs/reference/cli#math) (`math: 'code'`) the maths is code instead, inline and as `latex`
+blocks, for a site without remark-math. In a page's description and in hover cards, maths is its TeX, as plain text.
+
+<include>../../../snippets/doc-comments/maths.mdx</include>
+
+## The summary
+
+The first paragraph of a comment is its summary. In FORD it is the first paragraph of text, passing over a callout,
+a code block and a line that is only bold, such as **Purpose**. In Doxygen it is the `\brief`, or else the first
+sentence of the text. The summary, as plain text, is:
+
+- the description under the title of a module's, submodule's, program's or block data's page, cut at 300 characters
+  at a word; the page leaves it out of the text below when it has no markup there;
+- the text of the unit's card on the overview page;
+- the description of a page of external procedures that holds one;
+- the hover card of a type, a named constant or a type parameter where the type of a table's row names it, cut at
+  200 characters.
+
+## Groups of external procedures
+
+Procedures outside any module, submodule or program get pages of their own, one per group: the name `\ingroup` gives
+in their comments, or else their file's name without its extension. Each page has its group's name as its title and
+holds the group's procedures in the order of their names, and the pages follow the same order under Procedures in
+the sidebar. With one procedure, its summary is the page's description. A group whose name another page has taken,
+or whose name ends in a hyphen and a number, as that of a file `fft-2.f90` does, has `-procedures` after the name in
+its address (`fft-2-procedures`). The Showcase's [gtsv](/docs/showcase/modern/gtsv) page is named after the
+`\ingroup gtsv` of its routine.
+
+## What is not reported
+
+Doc comments give no diagnostic, so these show only on the page:
+
+- an unknown command, such as `\foo`, stays in the text as written;
+- a `[[name]]` or `\ref name` that names nothing with an entry is the name in code;
+- a `{!file!}` that cannot be read, or that lies outside the project root, leaves nothing;
+- a `|name|` with no alias stays as written;
+- a `\param` that names no argument is not shown;
+- a `!>` before an executable or `end` statement documents nothing, and so does a `!>` or `!|` after code on a line.
+
+[`fumadocs-fortran dump`](/docs/reference/cli#dump) prints the model, in which each entity's `doc.blocks` holds the
+comments the parser attached to it, line by line and without their marks.

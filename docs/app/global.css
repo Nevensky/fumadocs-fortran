@@ -6,6 +6,39 @@ html {
   scrollbar-gutter: stable;
 }
 
+/* Light mode: fumadocs' neutral theme gives muted text #737373, 4.35:1 on its #f5f5f5 background, and focus rings
+   #a3a3a3, 2.31:1. These give 5.43:1 (5.24:1 on a card, 4.61:1 on the accent of a hovered or selected item over the
+   background) and 4.35:1, past the 4.5:1 WCAG asks of text and the 3:1 it asks of a focus indicator; dark mode's pass
+   already. :not(.dark), as fumadocs' .dark rule has the specificity of :root, and a :root rule after it would replace
+   the dark values too. */
+:root:not(.dark) {
+  --color-fd-muted-foreground: #646464;
+  --color-fd-ring: #737373;
+}
+
+/* The skip links, hidden until they have keyboard focus, then shown at the top left: fumadocs-ui's on docs pages
+   (Skip to Content, to #nd-page), which stays hidden on its own, and the home and 404 pages' own
+   (components/skip-link.tsx) */
+a.sr-only:is([href='#nd-page'], [data-skip-link]):focus-visible {
+  position: fixed;
+  inset-block-start: 0.5rem;
+  inset-inline-start: 0.5rem;
+  z-index: 100;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+  border: 1px solid var(--color-fd-border);
+  border-radius: 0.5rem;
+  background-color: var(--color-fd-background);
+  color: var(--color-fd-foreground);
+  outline: 2px solid var(--color-fd-ring);
+  outline-offset: 2px;
+}
+
 /* Mermaid diagrams written in pages, drawn by Pele, take fumadocs' fonts and colours, so that they follow the light and
    dark themes. The generated graphs (those in a FortranGraph) take them from fumadocs-fortran/style.css, which this
    leaves alone, so that the site shows what that stylesheet gives any site. */

@@ -1,0 +1,311 @@
+---
+title: Set up your site
+description: Maths, graphs, Fortran code blocks and the kind letters for the generated pages, in your own site.
+---
+
+Turn on everything the generated pages can use: maths, dependency and call graphs, Fortran code blocks with their
+directive lines marked, and a letter for each entry's kind in the table of contents. The files are those of the site
+[Get started](/docs/get-started) makes, each in full with the lines to add marked; in another Fumadocs site, add the
+marked lines to its own files. Paths start at your project's top folder, with the site in `docs/`, and the commands
+run there: from the site's folder, `cd ..` goes back to it. [Check the result](#check) lists what each piece gives,
+and the error or symptom without it.
+
+## Install and update [#install]
+
+The generator runs on Node.js 18 or later. A site needs Node.js 22.22 or a later 22 release, or 24.11 or later:
+`create-fumadocs-app` 16.3.9 asks for `^22.18.0 || >=24.11.0`, and `fumadocs-mdx` 15.6 watches files with chokidar 6,
+which needs 22.22. `fumadocs-fortran/react` works with React 18 or later, while Fumadocs 16.19 needs React 19.2.
+
+The pages were tested on Linux, in the site `create-fumadocs-app` 16.3.9 makes: Next.js 16.4.6, `fumadocs-core` and
+`fumadocs-ui` 16.19.6, and `fumadocs-mdx` 15.6.4. This documentation site runs on `fumadocs-core` and `fumadocs-ui`
+16.19.4, and `fumadocs-mdx` 15.6.3.
+
+The package installs from GitHub with the command of [Get started](/docs/get-started#install), run in the site's
+folder. npm needs Git for it, which Docker's Node.js images whose name ends in `-slim` lack. npm 12 fetches a package
+from GitHub only with `--allow-git=root`, which npm 10 ignores and npm 11 does not need; npm 11.12.1 refuses it even
+with the flag ([Troubleshooting](/docs/guides/troubleshooting#eallowgit-non-root)). So that a later `npm install` or
+`npm ci`, such as on a fresh clone, needs no flag, write the setting into the site's `.npmrc`:
+
+```bash
+echo 'allow-git=root' >> docs/.npmrc
+```
+
+`package-lock.json` records the commit npm fetched, and `npm ci` installs that commit again. To pin another one, add
+it to the package's name: `github:Nevensky/fumadocs-fortran#` and a commit's hash. To update, run the install
+command again, then generate the pages and read what changed in them.
+
+## Install the site's packages [#packages]
+
+Maths needs remark-math, rehype-katex and KaTeX, the graphs need Pele, and the page schema zod:
+
+```bash
+npm install --prefix docs remark-math rehype-katex katex@0.16 pele zod@4
+```
+
+rehype-katex 7 renders with KaTeX 0.16, so the site's own `katex`, whose stylesheet the layout imports, stays on
+0.16: a plain `npm install katex` gives 0.19, whose stylesheet does not fit. [Pele](https://github.com/obsidianmd/pele)
+(MIT, Node.js 20 or later) draws each graph as SVG when the site is built, so no script reaches the browser.
+
+npm then reports 4 low severity vulnerabilities. They are one advisory, GHSA-238p-pmpm-9mq7 on KaTeX 0.11 to 0.18.1,
+counted for KaTeX and for the packages that depend on it: rehype-katex, remark-math and its micromark-extension-math.
+The fix npm offers, `npm audit fix --force`, installs KaTeX 0.19, which does not fit
+([Troubleshooting](/docs/guides/troubleshooting#katex-version)).
+
+## Register the components [#components]
+
+Add a `Mermaid` component to the site's MDX components, beside those of `fumadocs-fortran/react`:
+
+```tsx title="docs/components/mdx.tsx"
+import defaultMdxComponents from 'fumadocs-ui/mdx';
+import type { MDXComponents } from 'mdx/types';
+import { fortranComponents } from 'fumadocs-fortran/react';
+import { Mermaid } from '@/components/mdx/mermaid'; // [!code ++]
+
+export function getMDXComponents(components?: MDXComponents) {
+  return {
+    ...defaultMdxComponents,
+    ...fortranComponents,
+    Mermaid, // [!code ++]
+    ...components,
+  } satisfies MDXComponents;
+}
+
+export const useMDXComponents = getMDXComponents;
+
+declare global {
+  type MDXProvidedComponents = ReturnType<typeof getMDXComponents>;
+}
+```
+
+## Draw the graphs [#graphs]
+
+The graphs are ` ```mermaid ` blocks, which Fumadocs' `remarkMdxMermaid` turns into `<Mermaid chart="…" />`. The
+component draws each with Pele. It gives every graph's ids a prefix of its own, as a page holds several, and shows a
+diagram Pele cannot read, such as one written in a doc comment, as its code rather than failing the build:
+
+```tsx title="docs/components/mdx/mermaid.tsx"
+import { useId } from 'react';
+import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
+import { render } from 'pele';
+
+export function Mermaid({ chart }: { chart: string }) {
+  const id = useId();
+  let svg: string;
+  try {
+    svg = render(chart, { idPrefix: id }).svg;
+  } catch {
+    return (
+      <CodeBlock title="Mermaid">
+        <Pre>{chart}</Pre>
+      </CodeBlock>
+    );
+  }
+  return <div className="not-prose" dangerouslySetInnerHTML={{ __html: svg }} />;
+}
+```
+
+This documentation site's own component is a variant: it draws each graph a second time with Pele's `maxWidth: 320`,
+for phones, and shows the layout that fits the column. Its file is `docs/components/mdx/mermaid.tsx`
+([on GitHub](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/components/mdx/mermaid.tsx)).
+
+`fumadocs-fortran/style.css` gives the generated graphs the theme's colours. A diagram that a page writes itself, a
+` ```mermaid ` block outside a generated graph, needs the same in the site's CSS: see
+[Components](/docs/reference/components#graphs). On a site served under a base path, the links of the graphs' nodes
+need it too: [Publish on GitHub Pages](/docs/guides/github-pages#graphs) changes this file.
+
+## Import the stylesheets [#stylesheets]
+
+Import KaTeX's stylesheet in the root layout, before the package's:
+
+```tsx title="docs/app/layout.tsx"
+import { Inter } from 'next/font/google';
+import { Provider } from '@/components/provider';
+import 'katex/dist/katex.css'; // [!code ++]
+import 'fumadocs-fortran/style.css';
+import './global.css';
+
+const inter = Inter({
+  subsets: ['latin'],
+});
+
+export default function Layout({ children }: LayoutProps<'/'>) {
+  return (
+    <html lang="en" className={inter.className} suppressHydrationWarning>
+      <body className="flex flex-col min-h-screen">
+        <Provider>{children}</Provider>
+      </body>
+    </html>
+  );
+}
+```
+
+The package's colours and meanings sit in `:where()`, which has no specificity, so a rule of the site's own on
+`:root` or `[data-term]`, outside any `@layer`, wins wherever its stylesheet comes. The order decides only between
+rules that tie, such as the site's own `:where()` rules, which win when they come after the package's.
+
+## Set the MDX options [#mdx-options]
+
+The MDX options of the docs collection, in `lib/source.ts`, add maths, the graphs, the Fortran grammars and the page
+schema's `fortran` field:
+
+```ts title="docs/lib/source.ts"
+import { llms, loader } from 'fumadocs-core/source';
+import { docsRoute } from './shared';
+import { defineDocs } from 'fumadocs-mdx/macro';
+import { applyMdxPreset } from 'fumadocs-mdx/config'; // [!code ++]
+import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
+import { rehypeCodeDefaultOptions, remarkMdxMermaid } from 'fumadocs-core/mdx-plugins'; // [!code ++]
+import remarkMath from 'remark-math'; // [!code ++]
+import rehypeKatex from 'rehype-katex'; // [!code ++]
+import { z } from 'zod'; // [!code ++]
+import { katexMacros } from 'fumadocs-fortran/math'; // [!code ++]
+import { fortranRehypeCode } from 'fumadocs-fortran/shiki'; // [!code ++]
+
+const docs = defineDocs({
+  dir: 'content/docs',
+  docs: {
+    schema: pageSchema.extend({ // [!code highlight]
+      fortran: z.object({ kind: z.string().optional(), toc: z.record(z.string(), z.string()).optional() }).optional(), // [!code ++]
+    }), // [!code ++]
+    mdxOptions: applyMdxPreset({ // [!code ++]
+      remarkPlugins: [remarkMath, remarkMdxMermaid], // [!code ++]
+      rehypePlugins: (defaults) => [[rehypeKatex, { macros: { ...katexMacros } }], ...defaults], // [!code ++]
+      rehypeCodeOptions: fortranRehypeCode(rehypeCodeDefaultOptions), // [!code ++]
+      remarkStructureOptions: { filterElement: (node) => /^(?!Fortran[A-Z])[A-Z][\w$]*$/.test(node.name ?? '') }, // [!code ++]
+    }), // [!code ++]
+    postprocess: {
+      includeProcessedMarkdown: true,
+    },
+  },
+  meta: {
+    schema: metaSchema,
+  },
+});
+
+// See https://fumadocs.dev/docs/headless/source-api for more info
+export const source = loader({
+  baseUrl: docsRoute,
+  source: docs.toFumadocsSource(),
+  plugins: [],
+});
+
+export const docsLlms = llms(source, {
+  renderPage: async (page) => `# ${page.data.title} (${page.url})
+
+${await page.data.getText('processed')}`,
+  // link to the files under `/llms.mdx`
+  renderUrl: (item) => (/^\/.*\.(md|txt)$/.test(item.url) ? `/llms.mdx${item.url}` : item.url),
+});
+```
+
+What the marked lines do:
+
+- `schema` keeps the `fortran` field, which Fumadocs' page schema drops: a generated page lists its headings' kinds
+  there, for the letters.
+- `remarkPlugins` reads `$…$` and `$$…$$` maths, and turns ` ```mermaid ` blocks into the component. The two go in one
+  list, as a second `remarkPlugins` replaces the first.
+- `rehypePlugins` puts rehype-katex before Fumadocs' own plugins, so that a maths block is not highlighted as code.
+  `katexMacros` defines the commands Fortran docs write that KaTeX lacks, such as those of the physics package; KaTeX
+  adds a page's `\gdef` to the object it is given, hence the copy.
+- `rehypeCodeOptions` gives Fumadocs' code blocks the Fortran grammars of `fumadocs-fortran/shiki`, which mark
+  OpenMP, OpenACC and other directive lines, on Fumadocs' own options; see [Highlighting](/docs/reference/highlighting).
+- `remarkStructureOptions` gives the search index the text of the Fortran components rather than their tags. For
+  this documentation site, the index is 24% smaller (18% gzipped), and for stdlib's pages 73% (64% gzipped).
+
+A site that defines its collections in `source.config.ts`, rather than with the Macro API of the static template, gives
+its `defineDocs` the same `schema` and `mdxOptions`.
+
+## Show the kind letters [#kind-letters]
+
+`fortranToc` puts the letters in the table of contents of the docs pages (`t` for a type, `s` a subroutine, `f` a
+function and so on):
+
+```diff title="docs/app/docs/[[...slug]]/page.tsx"
+ import { getPageImageUrl, gitConfig } from '@/lib/shared';
++import { fortranToc } from 'fumadocs-fortran/react';
+@@
+   return (
+-    <DocsPage toc={page.data.toc} full={page.data.full}>
++    <DocsPage toc={fortranToc(page.data.toc, page.data.fortran?.toc)} full={page.data.full}>
+```
+
+## Generate with maths and graphs [#generate]
+
+Generate the pages again, without `--math code` and `--graphs none`, and build the site:
+
+```bash
+npm exec --prefix docs -- fumadocs-fortran generate src -o docs/content/docs/api
+```
+
+```bash
+npm run --prefix docs build
+```
+
+The generate line reads `7 files (6 changed, 0 removed) from 3 sources`: every page but `meta.json` changed.
+
+## Check the result [#check]
+
+Open the reference with `npm run dev` in `docs/`, as in [Get started](/docs/get-started#open). A missing piece
+stops the build with an error, or leaves a symptom on the page:
+
+| Piece | With it | Without it |
+| --- | --- | --- |
+| remark-math in `remarkPlugins` | maths set by KaTeX | the build stops: [Could not parse expression with acorn](/docs/guides/troubleshooting#acorn) |
+| `katexMacros` | `\norm{x}` and the like set | [the commands in red](/docs/guides/troubleshooting#maths) |
+| `katex/dist/katex.css` | maths laid out | [each formula twice, unstyled](/docs/guides/troubleshooting#maths) |
+| `remarkMdxMermaid` | graphs drawn | [graphs as Mermaid code](/docs/guides/troubleshooting#graphs-as-code) |
+| `Mermaid` in the components | graphs drawn | the build stops: [Expected component Mermaid to be defined](/docs/guides/troubleshooting#expected-mermaid) |
+| `fortranComponents` | badges, tables, cards | the build stops: [Expected component FortranBadge to be defined](/docs/guides/troubleshooting#expected-component) |
+| `fumadocs-fortran/style.css` | badges, tables and cards laid out | [tables without their layout](/docs/guides/troubleshooting#no-layout) |
+| `fortranRehypeCode` | directive lines tinted in source blocks | directives in the colour of comments |
+| the `fortran` field of the schema | the build passes | the build stops: [Property 'fortran' does not exist](/docs/guides/troubleshooting#ts2339) |
+| `fortranToc` | letters in the table of contents | [no letters](/docs/guides/troubleshooting#no-letters) |
+
+## Large references [#large]
+
+Next.js fetches the page behind each link in view ahead of a click, and Fumadocs' sidebar keeps that default. On a
+site with large reference pages, turn it off in the sidebar: a first visit to stdlib's `stdlib_ansi` page fetched
+10.3 MB gzipped with the pages' source blocks and graphs, and 1.4 MB without either.
+
+```diff title="docs/app/docs/layout.tsx"
+-    <DocsLayout tree={source.getPageTree()} {...baseOptions()}>
++    <DocsLayout tree={source.getPageTree()} sidebar={{ prefetch: false }} {...baseOptions()}>
+```
+
+The sidebar's links then load a page when they are clicked. The links in a page's text, its breadcrumbs, and the
+previous and next links under it still fetch ahead. Next.js does this only in a production build, so measure one.
+The generator's options for a large code are under [Large codes](/docs/guides/generate#large-codes).
+
+## Tidy the template [#tidy]
+
+Give the site its name and your repository, for the navigation bar's GitHub link and each page's Open in GitHub
+link:
+
+```diff title="docs/lib/shared.ts"
+-export const appName = 'My App';
++export const appName = 'My Fortran code';
+@@
+ export const gitConfig = {
+-  user: 'fuma-nama',
+-  repo: 'fumadocs',
++  user: 'OWNER',
++  repo: 'REPOSITORY',
+   branch: 'main',
+ };
+```
+
+The template's sample pages are `docs/content/docs/index.mdx`, the first page of the docs, and
+`docs/content/docs/test.mdx`, called Components. Make the first your introduction, with a link to `/docs/api`, and
+delete the second:
+
+```bash
+rm docs/content/docs/test.mdx
+```
+
+The home page, `docs/app/(home)/page.tsx`, links to `/docs`; point it at the reference, or write your own.
+
+## Other package managers [#package-managers]
+
+These pages use npm. pnpm, Yarn and Bun install from GitHub with their own syntax, which the pages do not test. To
+change the components' colours or the meanings their cards show, see [Styling](/docs/reference/components#styling)
+and [Meanings](/docs/reference/components#meanings).

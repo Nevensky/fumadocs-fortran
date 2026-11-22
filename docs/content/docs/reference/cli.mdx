@@ -1,0 +1,419 @@
+---
+title: Command line
+description: The two commands of fumadocs-fortran, every option with its default, the messages and the exit codes.
+---
+
+`fumadocs-fortran` has two commands: `dump` reads Fortran sources and prints what it finds in them, and `generate`
+writes their API reference as MDX pages for a Fumadocs site. Both take the same options for reading the sources.
+
+```text
+fumadocs-fortran <command> [options] [paths…]
+```
+
+The first argument that is not an option is the command, and the others are the paths to read. Options can come
+before, between or after them. An option's value is the next argument, whatever it is: write `--title "Solver API"`,
+since `--title=Solver API` is an unknown option. Only `-D` and `-I` also take their value joined to them, as in
+`-DUSE_MPI`. A command accepts the options of the other one and ignores them.
+
+Run the command from the repository root. Paths, `--exclude` patterns and `-I` folders are read from the current
+folder. The model and the pages name each file by its path from there, and so do the links of [`--repo`](#repo).
+
+The examples run from the repository root, with the package installed in the site's folder `docs/`, as
+[Get started](/docs/get-started) installs it:
+
+```bash
+npm exec --prefix docs -- fumadocs-fortran --version
+```
+
+`npm exec --prefix docs --` runs the copy installed in `docs/`. With the package in the root's own `package.json`,
+`npx fumadocs-fortran` does the same. Where the package is not installed, both fetch a package of that name from the
+npm registry, after asking in a terminal and without asking in a script or in CI, so install it first.
+
+## Help text [#help-text]
+
+`fumadocs-fortran --help` prints:
+
+<include lang="text" meta='title="fumadocs-fortran --help"'>../../../snippets/cli/help.txt</include>
+
+## dump [#dump]
+
+`dump` reads the sources, the current folder when no path is given, and prints the model it builds from them as
+JSON, indented by one space: the files it read, every entity it found and its diagnostics. The fields are those of
+[the model](/docs/reference/javascript#the-model), whose version, `irVersion`, is `1.0-draft`: they can change before
+1.0.
+
+`--summary` prints a table instead, a row per file, and a total. For the three files the Showcase is generated from,
+the [Example sources](/docs/showcase/sources), copied into `src/`:
+
+```bash
+npm exec --prefix docs -- fumadocs-fortran dump --summary src
+```
+
+```text
+file                        form  lines  units  procedures  arguments  types  interfaces
+src/modern_doxygen.f90      free     61      1           2          8      0           0
+src/modern_ford.F90     free+cpp    295      3          18         43      4           5
+src/tridiag.f              fixed    164      1           1          8      0           0
+
+3 files, 520 lines, 47 entities, 0 diagnostics, 9 ms
+```
+
+| Column | What it shows |
+| --- | --- |
+| file | The file's path from the current folder. |
+| form | `free` or `fixed`, with `+cpp` when the file holds preprocessor directives, or `skipped (fypp)` for a file in fypp syntax, which is not read. |
+| lines | The file's lines. |
+| units | Its program units: modules, submodules, programs, block data units and external procedures. |
+| procedures | Its subroutines and functions: external, module, internal and separate module procedures, and interface bodies. |
+| arguments | The dummy arguments of those procedures. |
+| types | Its derived types. |
+| interfaces | Its interface blocks. |
+
+The total counts the files, their lines, the entities of the model (program units, procedures, interfaces, types,
+components, bindings, variables and enums), the diagnostics and the time the reading took. `0 files` means that
+nothing was read: see [Paths](#paths). `dump` exits with 0 whatever its diagnostics, which are all warnings.
+
+### --summary [#summary]
+
+`dump` · default: off · JavaScript: none
+
+Prints the table above in place of the JSON. With `--summary`, `-o` writes no file.
+
+### -o, --out FILE [#out-file]
+
+`dump` · default: standard output · JavaScript: none
+
+Writes the JSON into FILE in place of standard output. In JavaScript, [`extract`](/docs/reference/javascript#extract)
+returns the model.
+
+## generate [#generate]
+
+`generate` reads the sources, the current folder when no path is given, and writes their pages into a folder of the
+site's content, `content/docs/api` unless `-o` names another:
+
+```bash
+npm exec --prefix docs -- fumadocs-fortran generate src -o docs/content/docs/api
+```
+
+```text
+7 files (7 changed, 0 removed) from 3 sources in 53 ms
+```
+
+The line counts the files written, those of them whose content changed, the files it removed and the sources it
+read. When the sources hold diagnostics, the line ends with their number, such as `; 2 diagnostics`, and the first 20
+follow on standard error, one a line, as `FILE:LINE: SEVERITY: MESSAGE [CODE]`. The pages are written all the same,
+and the command exits with 0: see [Diagnostics](#diagnostics).
+
+Into the folder go:
+
+- `index.mdx`, the overview, with a card for each page and a graph of the modules, submodules and programs;
+- a page for each module, submodule, program and block data unit, named after it in lower case;
+- pages of the external procedures, grouped by their Doxygen `\ingroup`, or else by file;
+- `meta.json`, the folder's title and the order of its pages in the sidebar;
+- `.fumadocs-fortran.json`, the manifest: the files this run wrote.
+
+Units that share a name get the name, then the name and their kind, then a number after an underscore: `demo`,
+`demo-program`, `demo-program_2`. A later run rewrites only the files whose content changed, and deletes those the
+manifest lists that it does not write. Other files in the folder stay, but the sidebar shows only the pages
+`meta.json` lists, and a file with the name of a generated page is overwritten: keep hand-written pages outside the
+folder.
+
+The pages use the components of `fumadocs-fortran/react`, and by default maths for remark-math and rehype-katex and
+graphs for `remarkMdxMermaid`: [Set up your site](/docs/guides/site-setup) adds them to a site. FORD's `{!file!}`
+includes in doc comments are read from the current folder, and only from under it.
+
+### -o, --out DIR [#out]
+
+`generate` · default: `content/docs/api` · JavaScript: [`out`](/docs/reference/javascript#out)
+
+The content folder to write, from the current folder. It is created, with the folders above it, when it does not
+exist. With the site in `docs/` and the command run from the repository root, that is `docs/content/docs/api`. When
+the folder cannot be created, as when a file of that name is in the way, the command stops with Node's error and its
+stack trace, and exits with 1.
+
+### --base-url URL [#base-url]
+
+`generate` · default: `/docs/api` · JavaScript: [`baseUrl`](/docs/reference/javascript#baseurl)
+
+The URL of the folder on the site: the `baseUrl` of the site's `loader()`, `/docs` in Fumadocs' templates, followed by
+the folder's path under the content folder. The overview's cards, the links between the pages and the graphs' nodes
+are made from it, and they answer 404 when it is wrong. A slash at its end is dropped. It leaves out the base path a
+site is served under: [Publish on GitHub Pages](/docs/guides/github-pages) shows how the site adds it.
+
+### --title TEXT [#title]
+
+`generate` · default: `API reference` · JavaScript: [`title`](/docs/reference/javascript#title)
+
+The title of the overview page, and of the folder in the sidebar.
+
+### --display LIST [#display]
+
+`generate` · default: `public,protected` · JavaScript: [`display`](/docs/reference/javascript#display)
+
+The access levels whose entities the pages show, comma-separated: `public`, `private`, or both, as
+`--display public,private`. It applies to what has an access: the entities of modules, the components and bindings
+of types, and the enumerators of enums. Program units and external procedures always show, and internal procedures
+show with their host.
+`protected`, FORD's third level, matches nothing: the model records an entity as public or private, and a variable
+with the `protected` attribute is public, so it shows with `public`. Another word matches nothing either.
+
+### --repo URL [#repo]
+
+`generate` · default: no links · JavaScript: [`repo.url`](/docs/reference/javascript#repo)
+
+Links each entity to its lines in the repository at URL, in the form GitHub uses, `URL/blob/REV/FILE#L10-L20`, where
+FILE is the file's path from the current folder. This is the form written for every host. Run the command from the
+repository root, so that the paths are the repository's.
+
+### --rev REV [#rev]
+
+`generate` · default: `main` · JavaScript: [`repo.rev`](/docs/reference/javascript#repo)
+
+The branch, tag or commit that the links of `--repo` name; without `--repo`, it does nothing. A tag or a commit keeps
+the line numbers right as the branch moves on: in a GitHub Actions workflow, `--rev ${{ github.sha }}`.
+
+### --math MODE [#math]
+
+`generate` · default: `katex` · JavaScript: [`math`](/docs/reference/javascript#math)
+
+`katex` writes the maths of doc comments as `$…$` and `$$…$$`, which the site renders with remark-math and
+rehype-katex. `code` shows it as code, for a site without them.
+
+### --source MODE [#source]
+
+`generate` · default: `embed` · JavaScript: [`source`](/docs/reference/javascript#source)
+
+`embed` puts the lines of each procedure, type, interface, variable and enum in a block that opens, numbered as in its
+file, for an entity of up to 400 lines; a longer one names its file and lines only. Program units only ever name
+theirs. The lines are read from the files parsed, those given and those they include, wherever they lie. `link`
+leaves the blocks out: each entity names its file and lines, with a link when `--repo` is given.
+
+### --graphs MODE [#graphs]
+
+`generate` · default: `mermaid` · JavaScript: [`graphs`](/docs/reference/javascript#graphs)
+
+`mermaid` adds each unit's dependencies, each type's inheritance and each procedure's calls as `` ```mermaid ``
+blocks, which the site draws with Fumadocs' `remarkMdxMermaid` and a `Mermaid` component, and the modules' graph to the
+overview. A graph draws 40 nodes at most, and the overview has none for more than 80 units; in JavaScript,
+[`graphs`](/docs/reference/javascript#graphs) sets other limits. `none` leaves the graphs out.
+
+### --library-cards MODE [#library-cards]
+
+`generate` · default: `registry` · JavaScript: [`hpc.cards`](/docs/reference/javascript#hpc)
+
+`registry` gives names from the HPC libraries a hover card from the package's registry: the library routines of the
+Calls lines, and in the tables the derived types of `mpi_f08` and the kinds of `omp_lib`. `none` leaves them as code,
+with no card; the graphs keep their colours.
+
+### --links LIST [#links]
+
+`generate`, repeatable · default: each library's, below · JavaScript: [`hpc.links`](/docs/reference/javascript#hpc)
+
+Where those cards link to, as `library=provider` pairs, comma-separated: `--links lapack=mkl,mpi=mpich`. Given more
+than once, the lists add up, and a later pair for a library wins.
+
+| Library | Providers | Default |
+| --- | --- | --- |
+| `lapack`, for BLAS and LAPACK | `netlib`, `mkl` | `mkl` when the code uses one of Intel oneMKL's modules (`lapack95`, `blas95`, `f95_precision` or one whose name starts with `mkl_`), else `netlib` |
+| `scalapack`, with PBLAS, BLACS, its tools and REDIST | `netlib`, `mkl` | as `lapack` |
+| `mpi` | `openmpi`, `mpich`, `standard` | `openmpi` |
+| `openmp` | `5.2`, `6.0`, `6.1`, `libgomp` | `5.2` |
+| `openacc` | `spec`, `libgomp` | `spec` |
+| `intrinsics` | `fortran-lang`, `gfortran` | `fortran-lang` |
+
+`netlib` links to Netlib's pages and `mkl` to Intel oneMKL's; `openmpi` to the manual of Open MPI 5.0, `mpich` to
+MPICH's, and `standard` to the MPI 5.0 standard; `5.2`, `6.0` and `6.1` to that version of the OpenMP specification,
+and `libgomp` to GCC's libgomp manual; `spec` to the OpenACC 3.4 specification; `fortran-lang` to fortran-lang.org,
+and `gfortran` to gfortran's manual. A name the provider has no page for links where it would by default.
+
+## Reading the sources [#reading-the-sources]
+
+Both commands read the sources in the same way.
+
+### Paths [#paths]
+
+`dump` and `generate`, as `[paths…]` · default: the current folder · JavaScript:
+[`sources`](/docs/reference/javascript#sources)
+
+The files and folders to read. A folder is searched with the folders under it, in the order of their names, for the
+files with the extensions below. Files and folders whose names start with a dot are passed over, and so is
+`node_modules`. A file given by name is read whatever its extension, even when an [`--exclude`](#exclude) pattern
+matches it. A path that does not exist is passed over without a message, so a misspelt folder gives `0 files`.
+
+| Form | Extensions |
+| --- | --- |
+| fixed | `.f`, `.for`, `.f77`, `.ftn`, `.FOR`, `.F77`, `.FTN` |
+| free | `.f90`, `.f95`, `.f03`, `.f08`, `.f18`, `.f23`, `.F90`, `.F95`, `.F03`, `.F08`, `.F18`, `.F23` |
+| decided from the text | `.F`, `.fpp`, `.FPP` |
+
+A folder's other files, such as `.inc`, `.h` and `.fypp` files, are not read; an include file is read where a source
+includes it. A file is read as UTF-8, or as Latin-1 when it is not valid UTF-8. A source in fypp syntax, with lines
+that start with `#:` or with `${…}$` or `@{…}@` in it, is skipped with the `fypp` warning, and so is a `.fypp` file
+given by name: run fypp first, and give the command the Fortran it writes.
+
+### --exclude GLOB [#exclude]
+
+`dump` and `generate`, repeatable · default: none · JavaScript: [`exclude`](/docs/reference/javascript#exclude)
+
+Passes over the files and folders a pattern matches, by their path from the current folder; a folder's files go with
+it. `*` matches within a name, `**` across folders and `?` one character. A pattern without a `/` matches a name at
+any depth, and one with a `/` matches from the current folder. Quote the patterns, so that the shell leaves them to
+the command:
+
+```bash
+npm exec --prefix docs -- fumadocs-fortran dump --summary src --exclude 'src/legacy/**' --exclude '*_test.f90'
+```
+
+### --form free|fixed [#form]
+
+`dump` and `generate` · default: from each file · JavaScript: [`form`](/docs/reference/javascript#form)
+
+Reads every file in one source form. Without it, the extension decides, as in the table under [Paths](#paths), and for
+`.F`, `.fpp` and `.FPP` the text does: statements that start in the first five columns and lines that end in `&`
+read as free form, comment letters in column 1 and continuation marks in column 6 as fixed form, and a text that shows
+neither as fixed form. A value other than `free` or `fixed` is ignored, without a message.
+
+### --fixed-length N [#fixed-length]
+
+`dump` and `generate` · default: `72` · JavaScript: [`fixedLength`](/docs/reference/javascript#fixedlength)
+
+Where fixed-form lines end: text after column N is ignored, as compilers ignore the sequence numbers in columns 73 to
+80. `132` suits code compiled with gfortran's `-ffixed-line-length-132`, and `0` sets no limit, as does a value that
+is not a positive number. Free-form lines have no limit. A limit that cuts the code's statements short can stop the
+command with a TypeError and exit code 1, a fault of the package: `--fixed-length 40` does so on the Showcase's
+`tridiag.f`.
+
+## Preprocessor [#preprocessor]
+
+A file that holds a preprocessor directive, a line that starts with `#` followed by `if`, `ifdef`, `ifndef`, `elif`,
+`else`, `endif`, `define`, `undef`, `include`, `line`, `error`, `pragma` or a number, is read through the command's
+own C preprocessor (cpp), with the macros `-D` defines. A file without one is read as written, and the macros are not
+expanded in it. Each entity keeps the conditions it stands under, which the pages show as badges such as
+"when USE_MPI". [Find your build's macros](/docs/guides/generate#build-macros) shows how to find those a build
+defines.
+
+### -D NAME[=VALUE] [#define]
+
+`dump` and `generate`, repeatable · default: none · JavaScript: [`cpp.macros`](/docs/reference/javascript#cpp)
+
+Defines a macro, as a compiler's `-D` does: `-D USE_MPI` defines it as `1`, `-D USE_MPI=0` as `0` and `-D USE_MPI=`
+as empty. The name can be joined to the flag, as `-DUSE_MPI`. A function-like macro has its parameters in the name:
+`-D 'SQR(x)=((x)*(x))'`.
+
+`-D _OPENMP` also makes the `!$` lines of OpenMP's conditional compilation code, as an OpenMP compiler does, and
+defines `_OPENMP` as `1`. A condition such as `#if _OPENMP >= 201511` needs the version as its value:
+`-D _OPENMP=201511`.
+
+### -I DIR [#include]
+
+`dump` and `generate`, repeatable · default: none · JavaScript: [`cpp.includeDirs`](/docs/reference/javascript#cpp)
+
+A folder to search for include files, also written `-IDIR`. `#include "file"` and Fortran's `include 'file'` look in
+the folder of the file that includes them first, then in the `-I` folders, in the order given; `#include <file>`
+looks in the `-I` folders first. A file found nowhere gives the `include-missing` warning. A file that Fortran's
+`include` brings in is read in the form of the file that includes it, and is not preprocessed.
+
+### --all-branches [#all-branches]
+
+`dump` and `generate` · default: off · JavaScript: [`cpp.keepAllBranches`](/docs/reference/javascript#cpp)
+
+Keeps every branch of each `#if` in place of evaluating the conditions, as FORD does without preprocessing, and makes
+the `!$` lines code. Each entity keeps the condition of its branch, so the pages show a module that each branch
+defines, each with its condition.
+
+### What the preprocessor reads [#what-the-preprocessor-reads]
+
+- `#if`, `#ifdef`, `#ifndef`, `#elif`, `#elifdef`, `#elifndef`, `#else` and `#endif`. A condition is an integer
+  expression of C: numbers and character constants, arithmetic, comparisons, `&&`, `||` and `!`, the bitwise
+  operators, `?:`, and `defined NAME` or `defined(NAME)`. A name that is not a macro counts as `0`, and a division by
+  zero gives `0`. A condition outside these gives the `cpp-expr` warning and counts as false.
+- `#define` and `#undef`, of object-like and function-like macros, with `...` and `__VA_ARGS__`, `#` (a parameter as a
+  string), `##` (pasting) and the `/**/` pasting of traditional cpp.
+- `#include "file"` and `#include <file>`, or a macro that names the file, to a depth of 40.
+- Line markers, `# 12 "file"` and `#line 12 "file"`, as a preprocessor's output holds them.
+- `#error`, in a branch that is on, gives the `cpp-error` warning.
+- `#pragma`, `#warning`, `#ident` and the other directives are ignored.
+
+Macros are expanded in code, and not in Fortran strings or comments. In a directive such as `!$omp parallel do`, they
+are expanded after the sentinel. The lines of a branch that is off are left out of the model, which counts them as
+the file's `inactiveLines`.
+
+## Help and version [#help-and-version]
+
+### -h, --help [#help]
+
+any command · default: off · JavaScript: none
+
+Prints the [help text](#help-text) and exits with 0, whatever the command. An option the help does not list still
+stops the command, with exit code 2. Run without a command, `fumadocs-fortran` prints the help too, and exits with 1.
+
+### -v, --version [#version]
+
+any command · default: off · JavaScript: none
+
+Prints the package's version, such as `0.0.0`, and exits with 0 without running the command.
+
+## Exit codes and messages [#exit-codes-and-messages]
+
+| Exit code | When |
+| --- | --- |
+| `0` | The command ran, whatever its diagnostics; or `--help` or `--version` was given. |
+| `1` | No command was given, so the help was printed. Or the command stopped on an error it cannot handle, such as an `-o` folder that cannot be created or a source it cannot read, and Node printed the error with its stack trace. |
+| `2` | The command line has a mistake. A message on standard error, after `fumadocs-fortran: `, says which. |
+
+The messages of exit code 2, with the parts that change in capitals:
+
+| Message | Cause |
+| --- | --- |
+| `unknown command NAME; the commands are dump and generate` | The first argument that is not an option names no command. |
+| `unknown option OPTION` | An option the help does not list, or one written as `--option=value`. |
+| `OPTION needs a value` | The option is the last argument. |
+| `--math takes katex or code` | Another value of [`--math`](#math). |
+| `--source takes embed or link` | Another value of [`--source`](#source). |
+| `--graphs takes mermaid or none` | Another value of [`--graphs`](#graphs). |
+| `--library-cards takes registry or none` | Another value of [`--library-cards`](#library-cards). |
+| `--links takes library=provider pairs, comma-separated, such as mpi=mpich, not ITEM` | An item of [`--links`](#links) without `=`, or with nothing before or after it. |
+| `--links: unknown library "NAME"; the libraries are lapack (BLAS and LAPACK), scalapack (with PBLAS, BLACS, its tools and REDIST), mpi, openmp, openacc and intrinsics` | A library `--links` does not know. |
+| `--links: LIBRARY takes PROVIDERS, not "PROVIDER"` | A provider the library does not have; the message lists those it has. |
+
+## Diagnostics [#diagnostics]
+
+What the commands cannot read in the sources they report as diagnostics, each with a code, a file and a line. All are
+warnings: the model and the pages hold what could be read, and the command exits with 0. `generate` prints the first
+20 on standard error; `dump` lists them all in its JSON, and counts them in the total of `--summary`.
+
+| Code | Message | What to do |
+| --- | --- | --- |
+| `fypp` | `fypp source skipped: run fypp first, and give fumadocs-fortran the Fortran it writes` | Run fypp, and give the command the files it writes. |
+| `parse-error` | `could not parse this statement: REASON` | A statement the parser does not handle: report it as an issue, with the statement. |
+| `unclosed` | `KIND NAME has no end statement` | A unit or procedure without its `end`, often because its `end` stands in a cpp branch that is off: check the macros `-D` defines. |
+| `unmatched-end` | `an end statement with no open KIND` | An `end` whose unit or procedure was not read, for the same reason. |
+| `cpp-unbalanced` | `#else without #if`, `#elif without #if`, `#elifdef without #if`, `#elifndef without #if`, `#endif without #if` or `N #if without #endif` | Directives that do not pair, in the file or in the files it includes. |
+| `cpp-expr` | `cannot evaluate #if EXPRESSION: REASON` | A condition outside [what the preprocessor reads](#what-the-preprocessor-reads); it counts as false. |
+| `cpp-error` | `#error TEXT` | An `#error` in a branch that is on: the macros select a build the code refuses. Define those the build defines. |
+| `cpp-include` | `cannot read #include TEXT`, or `includes nested too deeply` | An `#include` that names no file in quotes or angle brackets once its macros are expanded, or more than 40 levels of them. |
+| `include-missing` | `include file not found: FILE` | Add the folder that holds the file with [`-I`](#include). |
+| `include-depth` | `includes nested too deeply` | Fortran `include` lines more than 20 levels deep. |
+
+## Options only in JavaScript [#options-only-in-javascript]
+
+These options of [`generate()`](/docs/reference/javascript#generate) have no flag:
+
+- [`root`](/docs/reference/javascript#root), the folder that paths are read from;
+- [`extensions`](/docs/reference/javascript#extensions), [`fixedExtensions`](/docs/reference/javascript#fixedextensions)
+  and [`freeExtensions`](/docs/reference/javascript#freeextensions), the files a folder is searched for and their forms;
+- [`marks`](/docs/reference/javascript#marks), the characters that mark doc comments;
+- [`description`](/docs/reference/javascript#description) and [`defaultOpen`](/docs/reference/javascript#defaultopen),
+  the overview's description and the folder open in the sidebar;
+- [`sourceRoot`](/docs/reference/javascript#sourceroot) and
+  [`sourceMaxLines`](/docs/reference/javascript#sourcemaxlines), for the source blocks;
+- [`include`](/docs/reference/javascript#include), [`aliases`](/docs/reference/javascript#aliases) and
+  [`readSource`](/docs/reference/javascript#readsource), which read FORD's includes, replace its aliases and read the
+  source blocks;
+- [`repo.root`](/docs/reference/javascript#repo), where the model's root lies in the repository, and
+  [`graphs.depth`, `graphs.maxNodes` and `graphs.classify`](/docs/reference/javascript#graphs), how far the graphs
+  go, how many nodes they draw and which libraries the routines called come from.
+
+## Environment variables [#environment-variables]
+
+The command reads none. Node's own variables, such as `NODE_OPTIONS`, apply to it as to any Node program.

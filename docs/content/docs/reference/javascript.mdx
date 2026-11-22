@@ -1,0 +1,1155 @@
+---
+title: JavaScript API
+description: The functions, options and types of fumadocs-fortran, and of its react, math and shiki entry points.
+---
+
+The package has four entry points. Each is an ES module, and each has its types, in `types/`, which TypeScript finds
+through the package's `exports`.
+
+| Entry point | What it holds | Where it runs |
+| --- | --- | --- |
+| `fumadocs-fortran` | The generator: from Fortran sources to the model, and from the model to pages. | Node.js 18 or later |
+| `fumadocs-fortran/react` | The components the generated pages use. | A site with React 18 or later, on the server and in the browser |
+| `fumadocs-fortran/math` | The maths helpers a site's KaTeX uses. | Anywhere |
+| `fumadocs-fortran/shiki` | Shiki grammars and transformers for Fortran code blocks. | Anywhere Shiki runs |
+
+The package also exports `fumadocs-fortran/style.css`, the stylesheet of the components, and the grammars as JSON
+files, `fumadocs-fortran/shiki/*.json`. The [command line](/docs/reference/cli) runs `generate()` and `extract()`;
+some of their options have no flag, and this page is where they are set.
+
+## A script [#a-script]
+
+A script that writes the reference sits in the site's folder, where the package is installed, so that its `import`
+finds it, and takes `root` from its own place, so that it runs from any folder:
+[Options only in JavaScript](/docs/guides/generate#javascript) on Generate the reference has one, which the
+documentation's tests run. `generate` resolves whatever the diagnostics, as the command exits with 0. For a CI run
+that fails on them, end the script with `process.exitCode = r.ir.diagnostics.length ? 1 : 0;`.
+
+## generate [#generate]
+
+```ts
+import { generate } from 'fumadocs-fortran';
+
+function generate(
+  options: ExtractOptions & PageOptions & { out: string },
+): Promise<{ ir: FortranIR; pages: GeneratedPage[]; written: string[]; changed: string[]; removed: string[] }>;
+```
+
+Reads the sources into the model ([`extract`](#extract)), builds the pages ([`buildPages`](#buildpages)) and writes
+them into `out` ([`writePages`](#writepages)), as `fumadocs-fortran generate` does. It takes the
+[reading options](#reading-options) and the [page options](#page-options). Unless `include` and `readSource` say
+otherwise, it reads FORD's `{!file!}` includes from under `root`, and the source blocks from the files the model lists,
+wherever they lie. It resolves to the model, the pages and what `writePages` returns: the files written, those of
+them whose content changed and those removed, each from `out`.
+
+It rejects when `out` is missing, and when `hpc` names a library or provider it does not know, with a message that
+names them.
+
+## Reading options [#reading-options]
+
+The options of `ExtractOptions`, which [`generate`](#generate), [`extract`](#extract),
+[`extractFiles`](#extractfiles) and [`parseSource`](#parsesource) take.
+
+### root [#root]
+
+Type `string` · default: the current folder · flag: none
+
+The project folder. `sources`, `exclude`, `cpp.includeDirs` and `out` are read from it, and the model names each file
+by its path from it, which is also the path the links of [`repo`](#repo) use. FORD's includes are read from under it.
+The command line's root is the folder it runs in.
+
+### sources [#sources]
+
+Type `string[]` · default: the root · flag: `[paths…]`
+
+The files and folders to read, from the root. A folder is searched with the folders under it for the
+[`extensions`](#extensions), and a file given here is read whatever its extension.
+[Paths](/docs/reference/cli#paths) on the Command line page has the rules.
+
+### exclude [#exclude]
+
+Type `string[]` · default: none · flag: `--exclude`
+
+Glob patterns of the files and folders to pass over, from the root, as [`--exclude`](/docs/reference/cli#exclude)
+takes them. A file named in `sources` is read even when one matches it.
+
+### extensions [#extensions]
+
+Type `string[]` · default: `EXTENSIONS` · flag: none
+
+The extensions, without the dot, of the files a folder is searched for. A list given here replaces
+[`EXTENSIONS`](#extensions-constant); to add to it, spread it: `extensions: [...EXTENSIONS, 'inc']`. A file whose
+extension the forms do not know takes its form from [`fixedExtensions`](#fixedextensions) and
+[`freeExtensions`](#freeextensions), or else from its text.
+
+### cpp [#cpp]
+
+Type `object` · default: none · flags: `-D`, `-I`, `--all-branches`
+
+The preprocessor's macros and include folders, for the files that hold a directive
+([Preprocessor](/docs/reference/cli#preprocessor) on the Command line page):
+
+| `cpp` | Type | Default | Flag | Meaning |
+| --- | --- | --- | --- | --- |
+| `macros?` | `Record<string, string \| number \| boolean>` | none | `-D` | The macros by name, as `-D` defines them: `{ USE_MPI: true, _OPENMP: 201511, 'SQR(x)': '((x)*(x))' }`. `true` defines a name as 1, `''` as empty and `false` leaves it undefined. `_OPENMP` also makes the `!$` lines code. |
+| `includeDirs?` | `string[]` | none | `-I` | The folders searched for include files, from the root: after the folder of the file that includes one, or, for `#include <file>`, before it. |
+| `keepAllBranches?` | `boolean` | `false` | `--all-branches` | Keep every branch of each `#if`, and read the `!$` lines as code. |
+
+### form [#form]
+
+Type `'free' | 'fixed'` · default: from each file · flag: `--form`
+
+Reads every file in one source form. Without it, or with another value, the extension decides, or for `.F`, `.fpp`
+and `.FPP` the text, as [`resolveForm`](#resolveform) does.
+
+### fixedExtensions [#fixedextensions]
+
+Type `string[]` · default: none · flag: none
+
+Extensions, without the dot, read as fixed form, before the extensions the forms know: FORD's `fixed_extensions`.
+They decide the form, not which files a folder is searched for: add them to [`extensions`](#extensions) for that.
+
+### freeExtensions [#freeextensions]
+
+Type `string[]` · default: none · flag: none
+
+Extensions, without the dot, read as free form, after `fixedExtensions` and before the extensions the forms know.
+
+### fixedLength [#fixedlength]
+
+Type `number` · default: `72` · flag: `--fixed-length`
+
+Where fixed-form lines end: text after that column is ignored. `132` suits code compiled with gfortran's
+`-ffixed-line-length-132`, and `0` sets no limit, as does any number that is not positive.
+
+### marks [#marks]
+
+Type `Partial<Marks>` · default: `DEFAULT_MARKS` · flag: none
+
+The marks of doc comments, each the character that follows a comment's `!`, as FORD's settings of the same names:
+`docmark: '!'` reads `!!` comments. A mark not given keeps its default, and an empty string switches one off. A
+fixed-form comment line, with `C`, `c` or `*` in column 1, is a doc comment only with `>` or `<` after that letter,
+whatever the marks. [Doc comments](/docs/reference/doc-comments) shows what each mark documents.
+
+| `Marks` | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `docmark` | `string` | `'!'` | `!!`: documents the item before it. |
+| `predocmark` | `string` | `'>'` | `!>`: documents the item after it. |
+| `docmarkAlt` | `string` | `'*'` | `!*`: as `docmark`, and the plain comment lines that follow belong to it. |
+| `predocmarkAlt` | `string` | `'\|'` | `!\|`: as `predocmark`, and the plain comment lines that follow belong to it. |
+| `postmark` | `string` | `'<'` | Doxygen's `!<`: documents the item before it. |
+
+```js
+const model = await extract({ sources: ['src'], marks: { docmarkAlt: '', predocmarkAlt: '' } });
+```
+
+## Page options [#page-options]
+
+The options of `PageOptions`, which [`generate`](#generate) and [`buildPages`](#buildpages) take, and `out`, which
+only `generate` takes.
+
+### out [#out]
+
+Type `string` · default: none, as `generate` needs it · flag: `-o`
+
+The content folder to write, from the root. It is created, with the folders above it, when it does not exist.
+
+### baseUrl [#baseurl]
+
+Type `string` · default: `'/docs/api'` · flag: `--base-url`
+
+The URL of the folder on the site: the `baseUrl` of the site's `loader()` followed by the folder's path under the
+content folder, without the base path the site is served under. The cards, the links between the pages and the
+graphs' nodes are made from it. A slash at its end is dropped.
+
+### title [#title]
+
+Type `string` · default: `'API reference'` · flag: `--title`
+
+The title of the overview page, and of the folder in the sidebar.
+
+### description [#description]
+
+Type `string` · default: how many source files and lines the pages come from · flag: none
+
+The description of the overview page, under its title and in its front matter. Without it, the overview says
+`Generated by fumadocs-fortran from 3 source files (520 lines).`
+
+### display [#display]
+
+Type `Array<'public' | 'protected' | 'private'>` · default: `['public', 'protected']` · flag: `--display`
+
+The access levels whose entities the pages show. `'protected'` matches nothing, as the model records an entity as
+public or private: [`--display`](/docs/reference/cli#display) on the Command line page says more.
+
+### repo [#repo]
+
+Type `object` · default: none · flags: `--repo`, `--rev`
+
+Links each entity to its lines, as `url/blob/rev/root/file#L10-L20`, the form GitHub uses:
+
+| `repo` | Type | Default | Flag | Meaning |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | none | `--repo` | The repository, such as `https://github.com/OWNER/REPOSITORY`. |
+| `rev?` | `string` | `'main'` | `--rev` | The branch, tag or commit the links name. |
+| `root?` | `string` | none | none | Where the model's root lies in the repository, when it is a folder of it: with `root: 'code'`, the lines of `src/a.f90` link to `code/src/a.f90`. |
+
+### sourceRoot [#sourceroot]
+
+Type `string` · default: none · flag: none
+
+A folder written before each file's path in the headers of the source blocks: with `sourceRoot: 'code'`, a block of
+`src/a.f90` reads `code/src/a.f90`. The links are not changed; [`repo`](#repo)'s `root` changes them.
+
+### math [#math]
+
+Type `'katex' | 'code'` · default: `'katex'` · flag: `--math`
+
+`'katex'` writes the maths of doc comments as `$…$` and `$$…$$` for remark-math and rehype-katex; `'code'` shows it
+as code, for a site without them.
+
+### defaultOpen [#defaultopen]
+
+Type `boolean` · default: `false` · flag: none
+
+`true` writes `"defaultOpen": true` into the folder's `meta.json`, so that it starts open in the sidebar.
+
+### include [#include]
+
+Type `(file: string) => string | null` · default: in `generate`, a reader of the files under the root · flag: none
+
+Reads FORD's `{!file!}` includes: it gets the path the doc comment gives, and returns the file's text, or `null`.
+`generate` reads the path from the root, and only a file under it; without this option, `buildPages` drops the
+includes. [Doc comments](/docs/reference/doc-comments) shows where they are read.
+
+### aliases [#aliases]
+
+Type `Record<string, string>` · default: none · flag: none
+
+FORD's aliases by name: with `{ code: 'Solver' }`, `|code|` in a doc comment reads `Solver`. A name not here stays
+as written.
+
+### readSource [#readsource]
+
+Type `(file: string) => string | null` · default: in `generate`, a reader of the files the model lists · flag: none
+
+Reads a source file, by its path in the model, for the source blocks, and returns `null` when it cannot. `generate`
+reads the files the model lists, the sources and the files they include, wherever they lie, and another file, such
+as one a `#line` marker names, only from under the root. Without this option, `buildPages` writes no source blocks.
+
+### source [#source]
+
+Type `'embed' | 'link'` · default: `'embed'`, when there is a `readSource` · flag: `--source`
+
+`'embed'` puts the lines of each procedure, type, interface, variable and enum in a block that opens, for an entity
+of up to [`sourceMaxLines`](#sourcemaxlines) lines; program units only ever name their lines. `'link'` leaves the
+blocks out.
+
+### sourceMaxLines [#sourcemaxlines]
+
+Type `number` · default: `400` · flag: none
+
+The most lines an entity may span for its source to be embedded; a longer one names its lines only. `Infinity` sets
+no limit.
+
+### graphs [#graphs]
+
+Type `boolean | Pick<GraphOptions, 'depth' | 'maxNodes' | 'classify'>` · default: `true` · flag: `--graphs`
+
+`true` writes the graphs as `` ```mermaid `` blocks, and `false` leaves them out. An object writes them with its
+`depth`, `maxNodes` and `classify`, as [`buildGraphs`](#buildgraphs) takes them: without a `classify`, the HPC
+registry names the libraries of the routines called by name, LAPACK and ScaLAPACK among them.
+
+```js
+const r = await generate({ sources: ['src'], out: 'docs/content/docs/api', graphs: { depth: 1, maxNodes: 24 } });
+```
+
+### hpc [#hpc]
+
+Type `HpcPageOptions` · default: none · flags: `--links`, `--library-cards`
+
+The HPC registry in the pages: where the cards of library names link to, and whether there are cards at all.
+
+| `HpcPageOptions` | Type | Default | Flag | Meaning |
+| --- | --- | --- | --- | --- |
+| `links?` | `LinkProviders` | each library's | `--links` | The page each library's cards link to. A library or provider not listed below throws. |
+| `cards?` | `boolean` | `true` | `--library-cards` | `false` leaves library names as code: the routines of Calls lines, the types of `mpi_f08` and the kinds of `omp_lib`. The graphs keep their colours. |
+
+| `LinkProviders` | Type | Library |
+| --- | --- | --- |
+| `lapack?` | `'netlib' \| 'mkl'` | BLAS and LAPACK. |
+| `scalapack?` | `'netlib' \| 'mkl'` | ScaLAPACK, with PBLAS, BLACS, its tools and REDIST. |
+| `mpi?` | `'openmpi' \| 'mpich' \| 'standard'` | MPI. |
+| `openmp?` | `'5.2' \| '6.0' \| '6.1' \| 'libgomp'` | OpenMP. |
+| `openacc?` | `'spec' \| 'libgomp'` | OpenACC. |
+| `intrinsics?` | `'fortran-lang' \| 'gfortran'` | The intrinsic procedures. |
+
+[`--links`](/docs/reference/cli#links) on the Command line page gives each library's default and what each provider
+links to, and [Where the cards link](/docs/how-it-works#where-the-cards-link) on How it works what a name links to
+when its provider has no page for it.
+
+## Reading the sources [#reading-the-sources]
+
+### extract [#extract]
+
+```ts
+import { extract } from 'fumadocs-fortran';
+
+function extract(options?: ExtractOptions): Promise<FortranIR>;
+```
+
+Finds the sources and reads them into [the model](#the-model), with the [reading options](#reading-options): what
+`fumadocs-fortran dump` prints.
+
+```js
+const model = await extract({ sources: ['src'], cpp: { macros: { USE_MPI: true } } });
+```
+
+### extractFiles [#extractfiles]
+
+```ts
+import { extractFiles } from 'fumadocs-fortran';
+
+function extractFiles(files: string[], options?: ExtractOptions, read?: (file: string) => string): FortranIR;
+```
+
+Reads the files given, from the root, without searching folders, so `sources`, `exclude` and `extensions` do not
+apply. `read` takes a file's absolute path and returns its text, in place of [`readText`](#readtext): for sources
+held in memory. Include files are read through it too.
+
+### parseSource [#parsesource]
+
+```ts
+import { parseSource } from 'fumadocs-fortran';
+
+function parseSource(text: string, options?: ExtractOptions & { path?: string }): FortranIR;
+```
+
+Reads one source held in memory. `path` names it, `input.f90` by default, and its extension decides the form; the
+files it includes are read from the disk.
+
+```js
+const one = parseSource('subroutine hello(n)\n  integer, intent(in) :: n\nend subroutine\n');
+one.entities['procedure:hello'].args[0].intent; // 'in'
+```
+
+### discover [#discover]
+
+```ts
+import { discover } from 'fumadocs-fortran';
+
+function discover(paths: string[], options?: { root?: string; extensions?: string[]; exclude?: string[] }): string[];
+```
+
+Lists the sources under the files and folders given, as [`extract`](#extract) finds them: absolute paths, in the
+order of `paths`, and a folder's files in the order of their names. `root`, `extensions` and `exclude` are those of
+the [reading options](#reading-options).
+
+### readText [#readtext]
+
+```ts
+import { readText } from 'fumadocs-fortran';
+
+function readText(file: string): string;
+```
+
+Reads a file as UTF-8, or as Latin-1 when it is not valid UTF-8.
+
+### detectForm [#detectform]
+
+```ts
+import { detectForm } from 'fumadocs-fortran';
+
+function detectForm(text: string, fallback?: 'free' | 'fixed'): 'free' | 'fixed';
+```
+
+Decides a source's form from its text, as for a `.F` file ([`--form`](/docs/reference/cli#form) on the Command line
+page gives the signs): `fallback`, `'fixed'` by default, when the text shows neither.
+
+### formFromPath [#formfrompath]
+
+```ts
+import { formFromPath } from 'fumadocs-fortran';
+
+function formFromPath(
+  path: string,
+  options?: { fixedExtensions?: string[]; freeExtensions?: string[] },
+): 'free' | 'fixed' | null;
+```
+
+The form a file's extension implies, or `null` when the text decides: for `.F`, `.fpp` and `.FPP`, and for an
+extension it does not know. `fixedExtensions` and `freeExtensions` come before the extensions it knows.
+
+### resolveForm [#resolveform]
+
+```ts
+import { resolveForm } from 'fumadocs-fortran';
+
+function resolveForm(
+  path: string,
+  text: string,
+  options?: { form?: 'free' | 'fixed'; fixedExtensions?: string[]; freeExtensions?: string[] },
+): 'free' | 'fixed';
+```
+
+A file's form, as `extract` decides it: `form` when it is `'free'` or `'fixed'`, else the extension's, with
+`fixedExtensions` and `freeExtensions`, else the text's.
+
+### EXTENSIONS [#extensions-constant]
+
+```ts
+import { EXTENSIONS } from 'fumadocs-fortran';
+
+const EXTENSIONS: string[];
+```
+
+The extensions a folder is searched for by default, without the dot: those of the table under
+[Paths](/docs/reference/cli#paths) on the Command line page.
+
+### evaluate [#evaluate]
+
+```ts
+import { evaluate } from 'fumadocs-fortran';
+
+function evaluate(expression: string): number;
+```
+
+Evaluates an integer expression of the C preprocessor, as `#if` does once the macros are expanded:
+`evaluate('(2 + 3) * 4 > 10 && !0')` is `1`. It throws on a name, such as `defined(X)`: the preprocessor replaces
+those first.
+
+### parseDirective [#parsedirective]
+
+```ts
+import { parseDirective } from 'fumadocs-fortran';
+
+function parseDirective(
+  sentinel: string,
+  text: string,
+): { family: string; construct: string; end: boolean; clauses: string };
+```
+
+Names the construct of a compiler directive, from its sentinel, without the `!$`: `omp`, `ompx`, `acc`, `cuf`, `$`
+for a conditional line, or a vendor's, such as `dir`; and from the text after it.
+
+```js
+parseDirective('omp', ' parallel do private(i) schedule(static)');
+// { family: 'omp', construct: 'parallel do', end: false, clauses: 'private(i) schedule(static)' }
+```
+
+`family` is one of `omp`, `acc`, `cuf` and `vendor`, or `cond` for a `!$` line. A vendor directive's construct is its
+sentinel, and its clauses are its text.
+
+### DEFAULT_MARKS [#default_marks]
+
+```ts
+import { DEFAULT_MARKS } from 'fumadocs-fortran';
+
+const DEFAULT_MARKS: Marks;
+```
+
+`{ docmark: '!', predocmark: '>', docmarkAlt: '*', predocmarkAlt: '|', postmark: '<' }`: the [`marks`](#marks) by
+default.
+
+## Building the pages [#building-the-pages]
+
+### buildPages [#buildpages]
+
+```ts
+import { buildPages } from 'fumadocs-fortran';
+
+function buildPages(
+  ir: FortranIR,
+  options?: PageOptions,
+): {
+  pages: GeneratedPage[];
+  metas: Array<{ path: string; data: { title: string; defaultOpen?: boolean; pages: string[] } }>;
+};
+
+interface GeneratedPage {
+  path: string; // from the folder: index.mdx, solver_kernels.mdx
+  url: string; // the baseUrl and the page's name
+  title: string;
+  mdx: string; // the page, its front matter included
+}
+
+interface FortranFrontmatter {
+  kind: 'module' | 'submodule' | 'program' | 'blockdata' | 'procedures';
+  toc: Record<string, 'type' | 'interface' | 'subroutine' | 'function' | 'variable' | 'parameter' | 'enum'>;
+}
+```
+
+Builds the pages of a model and the folder's `meta.json`, without writing them, with the [page options](#page-options).
+It reads nothing itself: the source blocks and FORD's includes come from `readSource` and `include`. Each page but the
+overview has a `fortran` field in its front matter, a `FortranFrontmatter`: the unit's kind, or `procedures` for a
+page of external procedures, and what each `###` heading is, by its anchor, for [`fortranToc`](#fortrantoc).
+
+### writePages [#writepages]
+
+```ts
+import { writePages } from 'fumadocs-fortran';
+
+function writePages(
+  result: { pages: GeneratedPage[]; metas: Array<{ path: string; data: object }> },
+  outDir: string,
+): { written: string[]; changed: string[]; removed: string[] };
+```
+
+Writes the `pages` and `metas` of [`buildPages`](#buildpages) into `outDir`, which it creates when it does not
+exist, with the manifest, `.fumadocs-fortran.json`. A file whose content is unchanged is not rewritten, and a file
+the last manifest lists that the result lacks is deleted; other files are left alone. It returns the files written,
+those of them that changed and those removed, each from `outDir`; the manifest is in none of the lists.
+
+### buildGraphs [#buildgraphs]
+
+```ts
+import { buildGraphs } from 'fumadocs-fortran';
+
+function buildGraphs(ir: FortranIR, options?: GraphOptions): FortranGraphs;
+
+interface FortranGraphs {
+  dependencies(unit: Entity | string): string | null; // what a unit uses, to depth, what uses it, its submodules
+  inheritance(type: Entity | string): string | null; // the types a type extends, and those that extend it
+  calls(procedure: Entity | string): string | null; // its callees, to depth, and its callers
+  overview(): string | null; // every module, submodule and program, and the HPC libraries they use
+}
+```
+
+The graphs of a model, as Mermaid flowcharts, whose node classes `fumadocs-fortran/style.css` colours. Each method
+takes an entity or its id and returns the chart's source without a fence, or `null` when it would show its subject
+alone. `calls` also takes a program, and a generic interface, whose specifics it draws.
+
+| `GraphOptions` | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `url?` | `(entity: Entity) => string \| null` | no links | The entity's page URL with its anchor, for its node to link to; `null` for an entity without a heading. |
+| `shown?` | `(entity: Entity) => boolean` | every entity | The access filter: what it hides is not drawn, except what a page names anyway (a shown generic's specifics, a shown binding's procedure, a type's ancestors). |
+| `classify?` | `(name: string, how: { subroutine: boolean }) => string \| null` | MPI, OpenMP, OpenACC, CUDA, the coarray collectives and BLAS by their names | The library of a routine called by name, by its lower-case name: a family such as `lapack`, `scalapack`, `blas` or `mpi`, or a class such as `fdfLapack`; `null` when the name is not known. It is asked only for the names the project does not define. `how.subroutine` says that a `CALL` names it, or an interface body declares it a subroutine. |
+| `maxNodes?` | `number` | `40` | The most nodes a graph draws, its "… N more" node included; below 2 counts as 2. Past it, the routines from outside the project are left out first, the farthest first, then the farthest of the rest. For the overview, the most units it draws a graph of: `80` by default. |
+| `depth?` | `number` | `2` | How far uses and callees are followed. |
+
+[`buildPages`](#buildpages) passes the HPC registry's `classify`, which knows LAPACK and ScaLAPACK too, unless its
+[`graphs`](#graphs) option gives one.
+
+## Rendering text [#rendering-text]
+
+### renderDoc [#renderdoc]
+
+```ts
+import { renderDoc } from 'fumadocs-fortran';
+
+function renderDoc(blocks: DocBlock[] | undefined, options?: RenderDocOptions): RenderedDoc;
+
+interface RenderedDoc {
+  style: 'ford' | 'doxygen' | 'lapack' | 'none';
+  summary: string; // the first paragraph
+  body: string; // the whole documentation, the summary included
+  params: Record<string, string>; // Doxygen's \param docs, by lower-case name
+  paramIntents: Record<string, 'in' | 'out' | 'inout'>; // the intents \param[in], [out] and [in,out] state
+  paramTypes: Record<string, string>; // the "X is DOUBLE PRECISION array" lines of LAPACK's argument docs
+  returns?: string;
+  meta: Record<string, string>; // FORD's metadata, and Doxygen's \author, \date and the like
+  group?: string; // Doxygen's \ingroup
+  deprecated?: boolean;
+}
+```
+
+Renders the doc blocks of an entity, `entity.doc?.blocks`, as Markdown that MDX can read, in the style they are
+written in. [Doc comments](/docs/reference/doc-comments) describes the three.
+
+| `RenderDocOptions` | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `resolve?` | `(name: string, child?: string) => string \| null` | none: the names show as code | The URL of a name the doc links to: FORD's `[[name]]` and `[[name:child]]`, Doxygen's `\ref` and `\see`; `null` when it is not known. |
+| `style?` | `'ford' \| 'doxygen' \| 'lapack'` | the one the text shows | The style to read the doc in. |
+| `name?` | `string` | none | The entity's name: a Doxygen `\brief` that only repeats it, as BLAS's `\brief \b DGEMM` does, is not the summary. |
+| `math?` | `'katex' \| 'code'` | `'katex'` | `'katex'` writes `$…$` for remark-math; `'code'` shows maths as code. |
+| `ns?` | `string` | none | A prefix for the doc's footnote and link labels, unique on the page, so that two docs' labels do not clash. |
+| `include?` | `(file: string) => string \| null` | none: the includes are dropped | Reads FORD's `{!file!}` includes. |
+| `aliases?` | `Record<string, string>` | none | FORD's aliases by name. |
+
+### escapeText [#escapetext]
+
+```ts
+import { escapeText } from 'fumadocs-fortran';
+
+function escapeText(text: string, options?: { links?: boolean }): string;
+```
+
+Escapes plain text, such as Doxygen's and LAPACK's prose, so that MDX shows it as written. A bare URL becomes a link,
+unless `links` is `false`, as for the text of a link.
+
+```js
+escapeText('B(LDB,*) holds the right-hand sides, see https://netlib.org/lapack');
+// 'B(LDB,\\*) holds the right-hand sides, see [https://netlib.org/lapack](https://netlib.org/lapack)'
+```
+
+### safeMarkdown [#safemarkdown]
+
+```ts
+import { safeMarkdown } from 'fumadocs-fortran';
+
+function safeMarkdown(markdown: string, options?: { math?: 'katex' | 'code' }): string;
+```
+
+Makes Markdown, such as FORD's, safe for MDX while it stays Markdown: braces and `$` are escaped in the text, a `<`
+that opens no HTML tag it knows is written `&lt;`, HTML tags become JSX that pairs, headings become bold paragraphs,
+and `import` and `export` at the start of a line lose their meaning to MDX. With `math: 'code'`, a
+block of ```` ```math ```` becomes a text block. Every `$` that reaches it is a dollar sign:
+[`renderDoc`](#renderdoc) is the function for a doc with maths.
+
+### anchorOf [#anchorof]
+
+```ts
+import { anchorOf } from 'fumadocs-fortran';
+
+function anchorOf(entity: Pick<Entity, 'name' | 'kind' | 'id'>): string;
+```
+
+The anchor of an entity's heading: its name in lower case, with each run of other characters than letters, digits and
+`_` written `-`. Operators take fixed names, `operator-plus` for `operator(+)`; an assignment is `assignment`, a
+defined input/output procedure `read-formatted` and the like, and an unnamed interface or enum its kind and number,
+`interface-2`. [`buildPages`](#buildpages) keeps the anchors of a page unique: when a section heading, such as
+`types`, or an entity of another kind holds an entity's anchor, the entity takes its kind after it, as
+`point-interface`, and a second entity of the same kind takes a number, as `point-2`.
+
+### prettyType [#prettytype]
+
+```ts
+import { prettyType } from 'fumadocs-fortran';
+
+function prettyType(type: FortranType | null | undefined): string | undefined;
+```
+
+A type as written, `type.text`, with a blank after each comma, and ` (implicit)` after a type the implicit rules give.
+
+### prettyCond [#prettycond]
+
+```ts
+import { prettyCond } from 'fumadocs-fortran';
+
+function prettyCond(conditions: string[]): string;
+```
+
+cpp conditions as words, joined by "and": `defined(USE_MPI)` reads `USE_MPI`, `!defined(SERIAL)` reads `not SERIAL`,
+and another condition reads as written. `prettyCond(['defined(USE_MPI)', '!defined(SERIAL)'])` is
+`'USE_MPI and not SERIAL'`.
+
+## The model [#the-model]
+
+What [`extract`](#extract) returns and `fumadocs-fortran dump` prints. Its version is `IR_VERSION`, and it can change
+until 1.0.
+
+### IR_VERSION [#ir_version]
+
+```ts
+import { IR_VERSION } from 'fumadocs-fortran';
+
+const IR_VERSION: string;
+```
+
+The model's version, `'1.0-draft'`. A program that reads a model should refuse a major version it does not know.
+
+### The model's types [#the-models-types]
+
+```ts
+interface FortranIR {
+  irVersion: string;
+  generator: { name: string; version: string }; // fumadocs-fortran and its version
+  options?: { macros?: Record<string, string | number | boolean>; keepAllBranches?: boolean };
+  files: SourceFile[];
+  entities: Record<string, Entity>; // every entity under its id, in source order
+  diagnostics: Diagnostic[];
+}
+
+interface SourceFile {
+  path: string; // from the root, with / between folders
+  form?: 'free' | 'fixed';
+  lines?: number;
+  cpp?: boolean; // the file holds preprocessor directives
+  includes?: string[]; // the files it includes
+  inactiveLines?: number; // the lines in #if branches that are off
+  skipped?: string; // why the file was not read, such as fypp
+  directives?: Directive[];
+}
+
+interface Diagnostic {
+  code: string; // the codes are on the Command line page
+  severity: 'error' | 'warning' | 'info';
+  file: string;
+  line: number;
+  message: string;
+}
+```
+
+An entity's id is the lower-case path of its kind and name, from its unit down, such as
+`module:solver_kernels/type:dense_matrix/binding:matvec`. It holds no line numbers, so it stays the same when the file
+is edited elsewhere. An unnamed interface or enum is numbered within its parent, `interface:@1`; an external procedure
+whose name another file also defines takes `@` and its file; and two entities of one name in one parent, as two cpp
+branches can define them, take `~2`.
+
+```ts
+type EntityKind =
+  | 'module' | 'submodule' | 'program' | 'blockdata' | 'procedure' | 'interface' | 'type' | 'component' | 'binding'
+  | 'variable' | 'enum';
+
+interface Entity {
+  id: string;
+  kind: EntityKind;
+  name: string; // as the source spells it; empty for unnamed interfaces, enums and main programs
+  parent?: string;
+  children?: string[];
+  file: string;
+  line: number;
+  lineEnd?: number;
+  cond?: string[]; // the cpp conditions it stands under, such as defined(USE_MPI)
+  access?: 'public' | 'private';
+  doc?: Doc;
+
+  // procedures, programs and modules
+  proc?: 'subroutine' | 'function' | 'procedure';
+  scope?: 'external' | 'module' | 'internal' | 'interface' | 'separate';
+  prefix?: string[]; // pure, elemental, recursive, module, …
+  bind?: string;
+  args?: Variable[]; // absent for a separate module procedure that takes its arguments from its interface
+  result?: Variable;
+  separate?: boolean;
+  uses?: Use[];
+  calls?: Call[];
+  refs?: string[]; // names referenced with parentheses that are not local arrays, a%b%f for a type-bound function
+  hpc?: { directives?: Directive[]; coarray?: boolean };
+  commons?: Array<{ name: string; members: string[]; line: number }>;
+  namelists?: Array<{ name: string; members: string[]; line: number }>;
+
+  // interfaces
+  ikind?: 'generic' | 'operator' | 'assignment' | 'dtio' | 'abstract' | 'explicit';
+  procedures?: string[];
+
+  // types
+  extends?: string;
+  abstract?: boolean;
+  params?: Array<Variable & { attr?: 'kind' | 'len' }>;
+  finals?: string[];
+  sequence?: boolean;
+
+  // bindings
+  binding?: 'procedure' | 'generic';
+  impl?: string;
+  iface?: string;
+  deferred?: boolean;
+  nopass?: boolean;
+  pass?: string | true;
+
+  // submodules
+  ancestor?: string;
+  parentSubmodule?: string;
+
+  // variables and components
+  type?: FortranType | null;
+  dims?: string[];
+  codims?: string[];
+  init?: string;
+  parameter?: boolean;
+  attrs?: string[];
+
+  // enums
+  enumerators?: Array<{ name: string; init?: string; access?: 'public' | 'private'; doc?: Doc }>;
+}
+```
+
+```ts
+interface FortranType {
+  base: string; // integer, real, complex, logical, character, double precision, type, class, procedure, …
+  kind: string | null; // the kind as written (dp, c_int, 8), the derived type, or the procedure's interface
+  len: string | null; // the character length: *, :, 10
+  params?: string; // a parameterised type's parameters: k=dp,kl=* in class(banded_matrix(k=dp,kl=*))
+  text: string; // the type as written, without blanks: real(dp), character(len=*)
+  implicit?: boolean; // typed by the implicit rules
+}
+
+interface Variable {
+  name: string;
+  type?: FortranType | null;
+  intent?: 'in' | 'out' | 'inout';
+  optional?: boolean;
+  value?: boolean;
+  dims?: string[];
+  codims?: string[];
+  init?: string;
+  pointerInit?: boolean; // init is a pointer's, => null()
+  attrs?: string[]; // the other attributes as written: pointer, allocatable, target, contiguous, …
+  cond?: string[]; // its cpp conditions, where they differ from its procedure's
+  doc?: Doc;
+}
+
+interface Use {
+  module: string;
+  line: number;
+  nature?: 'intrinsic' | 'non_intrinsic';
+  only?: Array<{ name: string; local?: string }>;
+  renames?: Array<{ name: string; local?: string }>;
+  cond?: string[];
+}
+
+interface Call {
+  name: string; // as the source first spells it
+  line: number;
+  cond?: string[];
+  local?: true; // through a procedure pointer the caller declares: no library card, no node in the call graph
+}
+
+interface Directive {
+  family: string; // omp, acc, cuf, cond for a !$ line, or vendor
+  construct: string; // parallel do, declare target, routine, …
+  line: number;
+  lineEnd?: number;
+  end?: boolean;
+  clauses?: string;
+  sentinel?: string;
+  cond?: string[];
+}
+
+interface Doc {
+  blocks: DocBlock[];
+}
+
+interface DocBlock {
+  dir: 'before' | 'after'; // the item it documents comes after it (!>) or before it (!!, !<)
+  line: number;
+  end?: number; // the last line, when the block spans more than one
+  lines: string[]; // the comment lines after their marks, as written
+  inline?: boolean; // a comment after the statement, on its line
+}
+```
+
+## fumadocs-fortran/math [#fumadocs-fortran-math]
+
+The maths helpers a site needs, without the parser. The main entry exports them too.
+
+### katexMacros [#katexmacros]
+
+```ts
+import { katexMacros } from 'fumadocs-fortran/math';
+
+const katexMacros: Record<string, string>;
+```
+
+Macros for the commands that Fortran docs write and KaTeX lacks: those of the physics package (`\abs`, `\norm`,
+`\expval`, `\mel`, `\comm`, `\order`, `\vb`, `\va`, `\vu`, `\grad`, `\dd`, `\dv`, `\pdv`, `\Tr` and their kin),
+`\vv`, `\mathbbm`, `\mathds`, `\eps`, `\C`, `\Q` and `\ud`. They are for rehype-katex's `macros` option. Pass a copy,
+as KaTeX adds the `\gdef` of a page to the object it is given:
+
+```ts
+const katex = [rehypeKatex, { macros: { ...katexMacros } }];
+```
+
+### normaliseTex [#normalisetex]
+
+```ts
+import { normaliseTex } from 'fumadocs-fortran/math';
+
+function normaliseTex(tex: string, options?: { inline?: boolean }): string;
+```
+
+Writes TeX that LaTeX and MathJax read as KaTeX renders it: `\label` is dropped; the characters `_ & % # $ ^` are
+escaped inside `\text{…}` and its kin, and `\mbox`, `\textsl` and `\textsc` become `\text`, `\textit` and `\text`;
+`eqnarray` becomes `aligned`, `multline` `gathered` and `flalign` `align`, a `split` with more than one `&` a row
+becomes `aligned`, and `displaymath` goes; `\(` and `\)` inside maths are parentheses. With `inline`, the display
+environments take their inline forms (`align` and `split` become `aligned`, `gather` `gathered`, `alignat`
+`alignedat`, and `equation` goes), and `\tag` goes.
+
+```js
+normaliseTex('\\begin{eqnarray}a &=& b \\label{eq:1}\\end{eqnarray}'); // '\\begin{aligned}a &= b \\end{aligned}'
+```
+
+## fumadocs-fortran/react [#fumadocs-fortran-react]
+
+The components of the generated pages, for a site's MDX and for TSX. They take plain props and hold no state, effects
+or context, and they carry no `'use client'`, so they render on the server and in the browser alike: what opens is a
+`<details>` element, and the hover cards are CSS. They need React 18 or later and `fumadocs-fortran/style.css`.
+This section gives their TypeScript declarations; [Components](/docs/reference/components) shows each one live, with
+each prop's default and meaning.
+
+### fortranComponents [#fortrancomponents]
+
+```ts
+import { fortranComponents } from 'fumadocs-fortran/react';
+
+const fortranComponents: {
+  FortranBadges: typeof FortranBadges;
+  FortranBadge: typeof FortranBadge;
+  FortranArgs: typeof FortranArgs;
+  FortranArg: typeof FortranArg;
+  FortranRef: typeof FortranRef;
+  FortranSource: typeof FortranSource;
+  FortranGraph: typeof FortranGraph;
+};
+```
+
+The seven components, to spread into a site's `getMDXComponents()`, after Fumadocs' own.
+
+### FortranBadges [#fortranbadges]
+
+```ts
+import { FortranBadges } from 'fumadocs-fortran/react';
+
+function FortranBadges(props: { children?: ReactNode }): ReactElement;
+```
+
+A row of badges that wraps: its `children` are `FortranBadge` elements.
+
+### FortranBadge [#fortranbadge]
+
+```ts
+import { FortranBadge } from 'fumadocs-fortran/react';
+
+function FortranBadge(props: FortranBadgeProps): ReactElement | null;
+
+interface FortranBadgeProps {
+  kind: FortranBadgeKind | (string & {});
+  label?: string;
+  conditional?: string;
+  title?: string;
+}
+
+type FortranBadgeKind =
+  | 'module' | 'submodule' | 'program' | 'subroutine' | 'function' | 'type' | 'interface'
+  | 'omp' | 'acc' | 'offload' | 'mpi' | 'coarray' | 'cuda' | 'blas' | 'lapack' | 'scalapack' | 'cpp'
+  | 'bindc' | 'pure' | 'elemental' | 'recursive' | 'abstract' | 'deferred' | 'private' | 'public' | 'deprecated';
+```
+
+A pill for a kind of entity, an HPC model or library, or an attribute; nothing without a kind, a label or a
+condition. The kinds of entity are filled, the HPC models and libraries (`omp` to `cpp`) have a colour each, and the
+others are neutral. [Props of FortranBadge](/docs/reference/components#props-of-fortranbadge) gives each prop's
+default and meaning.
+
+### FortranArgs [#fortranargs]
+
+```ts
+import { FortranArgs } from 'fumadocs-fortran/react';
+
+function FortranArgs(props: FortranArgsProps): ReactElement;
+
+interface FortranArgsProps {
+  title?: string;
+  columns?: string;
+  children?: ReactNode;
+}
+
+type FortranArgsColumn = 'type' | 'shape' | 'intent' | 'attrs';
+```
+
+A table of `FortranArg` rows in the manner of Fumadocs' `TypeTable`: a title, a header row, then the rows. `columns`
+takes the names of `FortranArgsColumn`. [Props of FortranArgs](/docs/reference/components#props-of-fortranargs) gives
+each prop's default and meaning.
+
+### FortranArg [#fortranarg]
+
+```ts
+import { FortranArg } from 'fumadocs-fortran/react';
+
+function FortranArg(props: FortranArgProps): ReactElement;
+
+interface FortranArgProps {
+  name: string;
+  type?: string;
+  dims?: string;
+  codims?: string;
+  intent?: 'in' | 'out' | 'inout' | (string & {});
+  optional?: boolean;
+  value?: boolean;
+  attrs?: string;
+  cond?: string;
+  result?: boolean;
+  decl?: string;
+  refs?: Record<string, FortranRefTarget>;
+  children?: ReactNode;
+}
+
+interface FortranRefTarget {
+  href?: string;
+  title: string;
+  detail?: string;
+  note?: string;
+}
+```
+
+One row, an argument, a component, a type parameter, a binding or a result, which opens to its doc and what its cells
+mean. [Props of FortranArg](/docs/reference/components#props-of-fortranarg) gives each prop's default and meaning.
+
+### FortranRef [#fortranref]
+
+```ts
+import { FortranRef } from 'fumadocs-fortran/react';
+
+function FortranRef(props: FortranRefProps): ReactElement | null;
+
+interface FortranRefProps {
+  href?: string;
+  title: string;
+  detail?: string;
+  note?: string;
+  children?: ReactNode;
+}
+```
+
+A name with a link and a hover card; nothing without a name.
+[Props of FortranRef](/docs/reference/components#props-of-fortranref) gives each prop's default and meaning.
+
+### FortranSource [#fortransource]
+
+```ts
+import { FortranSource } from 'fumadocs-fortran/react';
+
+function FortranSource(props: FortranSourceProps): ReactElement | null;
+
+interface FortranSourceProps {
+  file: string;
+  line: number;
+  lineEnd?: number;
+  href?: string;
+  children?: ReactNode;
+}
+```
+
+"Source code in" a file, its lines and a link: a block that opens to the code given as `children`, or the header
+alone; nothing without `file` or `href`.
+[Props of FortranSource](/docs/reference/components#props-of-fortransource) gives each prop's default and meaning.
+
+### FortranGraph [#fortrangraph]
+
+```ts
+import { FortranGraph } from 'fumadocs-fortran/react';
+
+function FortranGraph(props: FortranGraphProps): ReactElement | null;
+
+interface FortranGraphProps {
+  title?: string;
+  collapsed?: boolean;
+  children?: ReactNode;
+}
+```
+
+A diagram, as an open card or a block that opens, with a title; nothing without a diagram.
+[Props of FortranGraph](/docs/reference/components#props-of-fortrangraph) gives each prop's default and meaning.
+
+### fortranToc [#fortrantoc]
+
+```ts
+import { fortranToc } from 'fumadocs-fortran/react';
+
+function fortranToc<T extends FortranTocItem>(
+  toc: T[],
+  kinds?: Readonly<Record<string, FortranTocKind | (string & {})>> | null,
+): Array<Omit<T, 'title'> & { title: ReactNode }>;
+
+interface FortranTocItem {
+  title: ReactNode;
+  url: string;
+  depth?: number;
+}
+
+type FortranTocKind =
+  | 'module' | 'submodule' | 'program' | 'type' | 'interface' | 'subroutine' | 'function' | 'variable' | 'parameter'
+  | 'enum';
+```
+
+Fumadocs' table of contents with a letter for the kind of each entity, from `kinds`: the anchors, without `#`, and
+their kinds, as a generated page's front matter `fortran.toc` holds them. The letters are `mod`, `smod`, `prog`, `t`,
+`i`, `s`, `f`, `v`, `p` and `e`. It returns an array of its own, in which the items it has no kind for are as they
+were, and `toc` itself when `kinds` is missing. [fortranToc](/docs/reference/components#fortrantoc) on the Components
+page shows where it goes.
+
+## fumadocs-fortran/shiki [#fumadocs-fortran-shiki]
+
+Shiki grammars for Fortran, in free and fixed form, and two transformers for Fumadocs' code blocks. Their types are
+loose, so that they fit those of Shiki and Fumadocs whatever their versions.
+[Highlighting](/docs/reference/highlighting) shows what the grammars highlight and how a site sets them up.
+
+### fortranLanguages [#fortranlanguages]
+
+```ts
+import { fortranLanguages } from 'fumadocs-fortran/shiki';
+
+const fortranLanguages: FortranLanguage[];
+
+interface FortranLanguage {
+  name: string;
+  scopeName: string;
+  displayName?: string;
+  aliases?: string[];
+  embeddedLangs?: string[];
+  embeddedLangsLazy?: string[];
+  patterns: any[];
+  repository: Record<string, any>;
+  injections?: Record<string, any>;
+  [key: string]: any;
+}
+```
+
+The grammars with the defaults of `getFortranLanguages()`: `fortran`, for free form (also `fortran-free-form`, `f90`
+to `f23`, `fpp` and `fypp`), `fortran-fixed`, for fixed form (also `fortran-fixed-form`, `f`, `for`, `f77` and
+`ftn`), and the directive and fypp grammars they bring in. Load them together.
+
+### getFortranLanguages [#getfortranlanguages]
+
+```ts
+import { getFortranLanguages } from 'fumadocs-fortran/shiki';
+
+function getFortranLanguages(options?: FortranLanguageOptions): FortranLanguage[];
+```
+
+The grammars with other options, for Shiki's `createHighlighter({ langs })` and the like. It throws a `TypeError` for
+a `fixedLineLength` that is neither a positive integer nor `false`.
+
+| `FortranLanguageOptions` | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `fixedLineLength?` | `number \| false` | `72` | Where fixed-form lines end: text after it is a comment. `false` sets no limit. |
+| `directives?` | `boolean` | `true` | Highlight OpenMP, OpenACC, CUDA Fortran and compiler directives, and `!$` lines. |
+| `fypp?` | `boolean` | `true` | Highlight fypp's directives and its inline forms. |
+
+### fortranRehypeCode [#fortranrehypecode]
+
+```ts
+import { fortranRehypeCode } from 'fumadocs-fortran/shiki';
+
+function fortranRehypeCode<T extends object = {}>(
+  base?: T,
+  options?: FortranLanguageOptions,
+): WithoutKeys<T, 'langs' | 'transformers'> & { langs: any[]; transformers: any[] };
+```
+
+Options for Fumadocs' `rehypeCode`, as the `applyMdxPreset({ rehypeCodeOptions })` of `fumadocs-mdx` takes them:
+`base` with the grammars added to its `langs`, and the two transformers to its `transformers`. Pass
+`rehypeCodeDefaultOptions`, from `fumadocs-core/mdx-plugins`, or options of your own as `base`, since `rehypeCode`
+replaces its default transformers with those it is given. `WithoutKeys<T, K>` is `Omit<T, K>` taken over each member
+of a union, which keeps `theme` and `themes`, the keys of Fumadocs' options that its two forms do not share.
+
+### transformerFortranNotation [#transformerfortrannotation]
+
+```ts
+import { transformerFortranNotation } from 'fumadocs-fortran/shiki';
+
+function transformerFortranNotation(): FortranTransformer;
+
+interface FortranTransformer {
+  name: string;
+  [hook: string]: any;
+}
+```
+
+Fumadocs' code notations in Fortran comments, which Shiki's own notation transformers do not know:
+`! [!code highlight]`, `[!code focus]`, `[!code ++]`, `[!code --]` and `[!code word:name]`, each with an optional
+`:n`. [Code notations](/docs/reference/highlighting#code-notations) on Highlighting says where they go, in free and
+fixed form.
+
+### transformerFortranDirectives [#transformerfortrandirectives]
+
+```ts
+import { transformerFortranDirectives } from 'fumadocs-fortran/shiki';
+
+function transformerFortranDirectives(options?: { className?: string }): FortranTransformer;
+```
+
+Marks directive lines for a stylesheet: a line gets `className`, `fdf-directive` by default, the colour class of its
+model in `fumadocs-fortran/style.css` (`fdf-kind-omp`, `fdf-kind-acc` or `fdf-kind-cuda`) and `data-directive`:
+`openmp`, `openacc` or `cuf`; `conditional` for `!$` and `!@cuf` lines; `compiler` for `!dir$` and its kin.
+[Directive lines](/docs/reference/highlighting#directive-lines) on the Highlighting page has the table.

@@ -1,0 +1,258 @@
+---
+title: Troubleshooting
+description: Messages and symptoms from installing, generating, building and publishing, with causes and fixes.
+---
+
+Each heading below is a message as npm, the generator or the build prints it, or a symptom on the page, so that the
+site's search finds it. Under each: the cause, and the fix. Paths start at your project's top folder, with the site
+in `docs/`, as in [Get started](/docs/get-started).
+
+## Creating the site [#creating]
+
+### directory docs already exists and is not empty [#docs-exists]
+
+`create-fumadocs-app` stops with exit code 1 and changes nothing, as the folder it would write holds files, such as
+FORD's or Doxygen's output. Give the site another name, as [Get started](/docs/get-started#before-you-begin) says.
+
+## Installing [#installing]
+
+### npm error code 128, Could not read from remote repository [#code-128]
+
+npm ran Git to fetch the package, over HTTPS and then over SSH, and Git could read the repository neither way: its
+name is mistyped, or Git cannot reach GitHub. The error printed is the SSH one, such as Permission denied (publickey)
+when Git has no key that GitHub knows, which HTTPS does not need. Copy the install line again from
+[Get started](/docs/get-started#install), and check that Git reaches the repository:
+
+```bash
+git ls-remote https://github.com/Nevensky/fumadocs-fortran.git
+```
+
+It lists the repository's branches and tags, or prints Git's own error, such as one about a proxy.
+
+### npm error code EALLOWGIT, Fetching packages of type "git" have been disabled [#eallowgit]
+
+npm 12 fetches a package from GitHub only with `--allow-git=root`. Add the flag, as the install line has it, or
+write `allow-git=root` into the site's `.npmrc`, as [Set up your site](/docs/guides/site-setup#install) shows, so that
+every npm command in the site has it.
+
+### npm error code EALLOWGIT, Fetching non-root packages of type "git" have been disabled [#eallowgit-non-root]
+
+npm 11.12.1 refuses to install a package from GitHub, even with `--allow-git=root`: the install line of Get started
+stops with this message, and so does a later `npm install` of a site that has one. Update npm to a later release of
+11, such as the 11.19.1 that Node.js 24.22 comes with, or use npm 10 or 12.
+
+### npm error code ENOENT, spawn git [#no-git]
+
+npm found no Git to fetch the package with. Install Git, and check it with `git --version`. Docker's Node.js images
+whose name ends in `-slim` have no Git: use one without it, such as `node:24-bookworm`.
+
+### install scripts not yet covered by allowScripts [#esbuild]
+
+npm 11 warns that esbuild, which `fumadocs-mdx` uses, has an install script that `allowScripts` does not cover, and
+npm 12 that it blocked the script. Nothing needs doing: the site builds and runs either way.
+
+### Maths looks wrong after npm install katex or npm audit fix --force [#katex-version]
+
+A plain `npm install katex` gives KaTeX 0.19, and so does `npm audit fix --force`, the fix npm offers for its
+advisory on KaTeX 0.16. KaTeX 0.19's stylesheet does not fit the KaTeX 0.16 that rehype-katex renders with. Install
+0.16, as [Set up your site](/docs/guides/site-setup#packages) does:
+
+```bash
+npm install --prefix docs katex@0.16
+```
+
+## Generating [#generating]
+
+### 0 files, 0 lines, 0 entities [#zero-files]
+
+`dump --summary` prints this total, and `generate` a line with `from 0 sources` in it, both with exit code 0, when no
+Fortran was found. There are three causes:
+
+- the folder's name is mistyped: a path that does not exist is skipped without a message;
+- the command ran in another folder than the top one, such as `docs/`: paths are read from the folder it runs in, so
+  go back with `cd ..`, as [Get started](/docs/get-started#generate) does;
+- the folder holds no file with a Fortran extension: a folder is searched for `.f`, `.for`, `.f77`, `.ftn`, `.fpp`,
+  `.f90`, `.f95`, `.f03`, `.f08`, `.f18` and `.f23` files, each also in capitals, so `.fypp`, `.inc` and `.h` files
+  are not found. Name such a file on the command line to read it whatever its extension.
+
+A `generate` run that found nothing leaves an empty overview: run it again with the right folder.
+[Check what it read](/docs/guides/generate#check) shows what to run first.
+
+### fypp source skipped: run fypp first [#fypp]
+
+The full warning reads fypp source skipped: run fypp first, and give fumadocs-fortran the Fortran it writes. The
+generator does not run fypp, and skips a file named `.fypp` or written in fypp's syntax. Run fypp to write the
+Fortran into a folder, and generate from that folder; see [Choose what to show](/docs/guides/generate#what-to-show).
+
+### has no end statement [unclosed] [#unclosed]
+
+Many of these warnings, one for each unit and procedure of a file, mean the file was read in the wrong source form:
+free-form code read as fixed form, or the other way round. The form comes from the extension, and `.F` and `.fpp`
+files from their text. Give the form with `--form free` or `--form fixed`, which applies to every file of the run,
+and the fixed-form line length with `--fixed-length 132` or `0` for code written past column 72.
+
+Fewer of them, in a file with preprocessor lines, often mean that a macro the build defines is missing: the `end` of
+a unit then stands in a branch that is off. Give the build's macros with `-D`, as
+[Choose the build](/docs/guides/generate#choose-the-build) shows. One or two of these warnings can be real: a unit
+whose end statement is missing.
+
+### The pages name ../src [#dot-dot-src]
+
+The source blocks are headed `../src/…`, and the links to your repository lose their revision, as
+`blob/REV/../src/…` opens `blob/src/…`. The pages name the files as the command was given them: generate ran in
+`docs/` with `../src`. Run it from the top folder with `src`, as [Get started](/docs/get-started#generate) does.
+
+### A page written by hand in the reference's folder is missing [#hand-written]
+
+The folder of the reference belongs to the generator. Its `meta.json` lists only the generated pages, so a page
+written by hand in it stays out of the sidebar, and a page with a generated page's name is replaced by the next run.
+Keep your own pages outside the folder, such as `docs/content/docs/guide.mdx`.
+
+### The API reference is missing from the sidebar [#not-in-sidebar]
+
+A `meta.json` in `docs/content/docs/` lists the pages of the sidebar, and Fumadocs leaves out a folder its `pages`
+do not name. Add the folder's name, `"api"`, to the list, or `"..."` for every page and folder not named, as
+[Place the reference](/docs/guides/generate#place) says.
+
+### Links between reference pages answer 404 [#base-url]
+
+`--base-url` is the URL of the `-o` folder, and the pages' links to each other start with it. Its default,
+`/docs/api`, fits `-o docs/content/docs/api` only: with `-o docs/content/docs/reference`, give
+`--base-url /docs/reference` as well ([Place the reference](/docs/guides/generate#place)).
+
+## Building [#building]
+
+### Could not parse expression with acorn [#acorn]
+
+The build stops on a generated page with Could not parse expression with acorn, and then Expecting Unicode escape
+sequence: the page holds `$…$` maths, which MDX reads as JavaScript without remark-math. Add remark-math as
+[Set up your site](/docs/guides/site-setup#mdx-options) shows, or generate with `--math code`.
+
+### Expected component FortranBadge or FortranArg to be defined [#expected-component]
+
+The build stops with Expected component `FortranBadge` to be defined: you likely forgot to import, pass, or provide
+it, or the same for `FortranArg` or another component whose name starts with Fortran, whichever the first page built
+uses first. The site's MDX components lack `fortranComponents`: register them, as
+[Get started](/docs/get-started#register) does.
+
+### Expected component Mermaid to be defined [#expected-mermaid]
+
+The pages' graphs are ` ```mermaid ` blocks, which `remarkMdxMermaid` turns into a `Mermaid` element, and the site
+has no `Mermaid` component. Add it, as [Set up your site](/docs/guides/site-setup#graphs) shows, or generate with
+`--graphs none`.
+
+### Property 'fortran' does not exist on type [#ts2339]
+
+The build's type check stops with `error TS2339: Property 'fortran' does not exist on type 'MacroDocEntry<…>'`. The
+page template reads `page.data.fortran` for the kind letters, and the page schema lacks the field. Extend the schema,
+as [Set up your site](/docs/guides/site-setup#mdx-options) shows.
+
+### metadataBase property in metadata export is not set [#metadatabase]
+
+A warning, not an error: Next.js makes the Open Graph images' addresses absolute with `http://localhost:3000`. It
+matters once the site is published, and [Publish on GitHub Pages](/docs/guides/github-pages#address) sets the
+site's address.
+
+### Failed to collect configuration for /api/search [#api-search]
+
+The site exports static files, and its search route is not static: the line under it says that
+`export const revalidate` is not configured on the route with `output: export`. Make the route static, as
+[Publish on GitHub Pages](/docs/guides/github-pages#other-sites) shows.
+
+### Failed to fetch Inter from Google Fonts [#font]
+
+The static template's root layout loads the Inter font with `next/font/google`, which fetches it from
+`fonts.googleapis.com` when the site is built, so a site's first build without internet access, such as on a
+cluster's login node, stops with this error. A site built once with internet access builds again without it, from
+the font its `.next/` folder keeps, and `npm run dev` runs without it, with a fallback font and the warning Failed to
+download Inter from Google Fonts. Build where the machine reaches that address; behind a proxy, set `HTTPS_PROXY` or
+`HTTP_PROXY`; or load a font from the site's own files with `next/font/local`, as the message suggests.
+
+### Killed, exit code 137 [#killed]
+
+On Linux, as in Docker and in CI, the system stops a build that runs out of memory: `npm run build` prints Killed,
+with no error from Next.js, and exits with 137. The build's memory grows with the size of the pages and with the
+number of workers Next.js builds them with. [The site's build](/docs/guides/generate#large-build) gives the memory
+stdlib's reference needed, the flags that make the pages smaller and the setting for fewer workers.
+
+### An error in a generated page [#generated-page]
+
+The build names the page's file and a line and column, such as `./content/docs/api/solver_kernels.mdx` and
+`30:64`. The comment under the page's front matter, Generated by fumadocs-fortran from and the source file, names the
+Fortran file, and the nearest heading above the line names the entity whose doc comment holds the text. Until it is
+fixed, generate with `--math code` if the line holds maths, or leave the file out with `--exclude`, and report it,
+with the doc comment, as [Ask for help](#help) says.
+
+## On the page [#on-the-page]
+
+### Graphs show as Mermaid code [#graphs-as-code]
+
+Every graph shows as code when the site lacks `remarkMdxMermaid` in its MDX options: add it, as
+[Set up your site](/docs/guides/site-setup#mdx-options) shows. One graph shown as code, under the title Mermaid, is
+one Pele cannot read, such as a diagram written in a doc comment: the component shows it as code rather than
+failing the build.
+
+### Maths shows as code, in red or twice [#maths]
+
+- As code, in `$…$`: the pages were generated with `--math code`.
+- Commands in red, such as `\norm`: KaTeX lacks them, and the site's rehype-katex has no `katexMacros`; pass them,
+  as [Set up your site](/docs/guides/site-setup#mdx-options) shows.
+- Each formula twice and unstyled: the layout lacks `katex/dist/katex.css`, or the site's `katex` is 0.19
+  ([above](#katex-version)).
+
+### No letters in the table of contents [#no-letters]
+
+The page template passes the table of contents through `fortranToc`, as
+[Set up your site](/docs/guides/site-setup#kind-letters) shows.
+
+### Tables without their layout [#no-layout]
+
+Badges show as plain words and argument tables as text when the root layout does not import
+`fumadocs-fortran/style.css`: import it, as [Get started](/docs/get-started#register) does.
+
+## On GitHub Pages [#on-github-pages]
+
+### The whole site answers GitHub's 404 page [#pages-404]
+
+GitHub Pages is not turned on for the repository with GitHub Actions as its source, the workflow has not deployed
+the site, or the address lacks the repository's name, `https://OWNER.github.io/REPOSITORY/`. See
+[Turn on GitHub Pages](/docs/guides/github-pages#turn-on), and the workflow's run in the repository's Actions tab.
+
+### Links lead off the site, to OWNER.github.io/docs/… [#off-site]
+
+The links of cards, source headers and graph nodes lack the repository's name, and answer 404. The site registers
+`fortranComponents` rather than the wrapped `fortranMdxComponents`, or its `Mermaid` component lacks `siteHref`:
+see [Keep the reference's links on the site](/docs/guides/github-pages#links).
+
+### A page reloads when a link to one of its own entries is opened [#reload]
+
+The link lacks the page's trailing slash, so GitHub Pages answers with a redirect to the page's folder and the page
+loads again, instead of scrolling to the entry. `siteHref` adds the slash, and `trailingSlash: true` in
+`next.config.mjs` gives every page its folder: see [Publish on GitHub Pages](/docs/guides/github-pages#base-path).
+
+### Copy Markdown answers 404, with the repository's name twice [#markdown-twice]
+
+`fumadocs-ui` adds the base path to the Markdown URL of Copy Markdown and View as Markdown, so the page template must
+give it without one. Leave the template's `markdownUrl` as it is:
+see [Search, Copy Markdown and the llms files](/docs/guides/github-pages#search).
+
+## Without Node.js on your machine [#without-nodejs]
+
+Docker runs the steps of Get started in a container with Node.js. In your project's top folder, start a shell in the
+`node:24-bookworm` image, with the folder mounted, your own user and port 3000 published on your machine alone:
+
+```bash
+docker run --rm -it -p 127.0.0.1:3000:3000 -v "$PWD":/work -w /work -u "$(id -u):$(id -g)" -e HOME=/tmp node:24-bookworm bash
+```
+
+The steps then run unchanged in that shell, from step 1, and http://localhost:3000 opens in your own browser, as the
+development server and `npm start` listen on every address of the container. `node_modules/` then holds Linux
+builds, so run the site's commands in the container from then on. With Docker on macOS, the development server can
+miss a page added while it runs: stop it and start it again. `HOME=/tmp` keeps npm's cache in the container, so each
+new container downloads the packages again.
+
+## Ask for help [#help]
+
+Open an issue at [github.com/Nevensky/fumadocs-fortran/issues](https://github.com/Nevensky/fumadocs-fortran/issues),
+with what [Report a problem](/docs/contributing#report-a-problem) lists: the command and all it printed, the
+versions and the Fortran that shows the problem.
