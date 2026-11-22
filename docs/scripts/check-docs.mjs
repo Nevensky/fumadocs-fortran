@@ -23,15 +23,22 @@
 //   remarkSteps needs; shell blocks of one command each, with no $ prompt; and, on the pages, the README and the
 //   contributor guide, no fumadocs-fortran command that the help lacks, such as init, check or doctor;
 // - the meta files: each entry names a page or a folder, each separator has a page under it, and each page and folder
-//   is listed (or taken by "..."), so that none goes missing from the sidebar.
+//   is listed (or taken by "..."), so that none goes missing from the sidebar;
+// - the table of contents' column: the docs pages' component (app/docs/[[...slug]]/page.tsx) renders, before
+//   DocsPage, a hidden element with the class that gives fumadocs-ui's layout its TOC column, on the pages where
+//   DocsPage shows a TOC (those that are not full), so that a long page has the column from its first paint rather
+//   than from its TOC, which comes after the article; the class is fumadocs-ui's own, when the site's packages are
+//   installed.
 // The 120-character rule for prose lines is test/site.test.mjs's.
 //
 //   node docs/scripts/check-docs.mjs [repository root]
 //
-// It needs no packages. It exits 1 when it finds a problem, printing one line per problem with its file and line.
+// It needs no packages: fumadocs-ui's table of contents is read as a file, and only when the site has it installed. It
+// exits 1 when it finds a problem, printing one line per problem with its file and line.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { docDefault, parseDts } from './check-api.mjs';
 import { CODE_SPAN, codeSpans, parseHelp } from './check-cli.mjs';
@@ -42,6 +49,42 @@ const SHARED = 'docs/lib/shared.ts';
 const SHELL = new Set(['bash', 'sh', 'shell', 'console', 'zsh']);
 /** The files the README rules of check-readme.mjs cover, whose commands this checks too. */
 const MARKDOWN = ['README.md', 'docs/CONTRIBUTING.md'];
+/** The docs pages' component, whose DocsPage shows the table of contents. */
+const DOCS_PAGE = 'docs/app/docs/[[...slug]]/page.tsx';
+/**
+ * A class that sets the docs layout's TOC column, xl:layout:[--fd-toc-width:268px]: fumadocs-ui's layout variant
+ * (#nd-docs-layout:has(> &), from its css/lib/base.css) with its breakpoint and the column's width.
+ */
+const TOC_COLUMN = /(?<![\w:-])(?:[\w-]+:)*layout:\[--fd-toc-width:[^\]\s"'`]+\]/;
+
+/**
+ * fumadocs-ui's table of contents for the docs layout, as the site resolves it from docs/: the file, its version and
+ * the column classes of #nd-toc and #nd-toc-placeholder (null for an element it lacks, '' for one without the class),
+ * or null when the site's packages are not installed.
+ */
+function fumadocsToc(root) {
+  let file;
+  try {
+    file = createRequire(path.join(root, 'docs', 'package.json')).resolve('fumadocs-ui/layouts/docs/page/slots/toc');
+  } catch {
+    return null;
+  }
+  const text = fs.readFileSync(file, 'utf8');
+  let version = null;
+  try {
+    const dir = file.slice(0, file.lastIndexOf(`${path.sep}dist${path.sep}`));
+    version = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).version ?? null;
+  } catch {
+    // the version only names it in the messages
+  }
+  const columnOf = (id) => {
+    const at = text.search(new RegExp(`\\bid:\\s*"${id}"`));
+    if (at < 0) return null;
+    const cls = /className:\s*(?:cn\(\s*)?"([^"]*)"/.exec(text.slice(at, at + 2000));
+    return cls ? (TOC_COLUMN.exec(cls[1])?.[0] ?? '') : '';
+  };
+  return { file, version, toc: columnOf('nd-toc'), placeholder: columnOf('nd-toc-placeholder') };
+}
 
 /** Whether a page under content/docs is generated: lib/source.ts's isGenerated (the Showcase's reference and sources). */
 const generated = (rel) => rel.startsWith('showcase/modern/') || rel === 'showcase/sources.mdx';
@@ -221,7 +264,8 @@ const PINNED = [
 export function checkDocs(root = ROOT) {
   const problems = [];
   // what was checked, for the summary line
-  const counts = { pages: 0, meta: 0, props: 0, kinds: 0, properties: 0, keywords: 0, sentinels: 0, versions: 0 };
+  const counts = { pages: 0, meta: 0, props: 0, kinds: 0, properties: 0, keywords: 0, sentinels: 0, versions: 0,
+    tocColumn: null };
   const say = (where, message) => problems.push(`${where}: ${message}`);
   const read = (rel) => {
     try {
@@ -477,6 +521,76 @@ export function checkDocs(root = ROOT) {
     }
   }
 
+  // ---------------------------------------------------------------- the table of contents' column
+  // fumadocs-ui gives the docs layout its TOC column (from xl) by a class of the TOC, which a :has() rule on the
+  // layout keys on, and DocsPage renders the TOC after the article: a long page's comes hundreds of KB into its HTML,
+  // and a paint before it lays the article out without the column, then moves it. The page gives the same class to a
+  // hidden element before DocsPage, on the pages where DocsPage shows a TOC. The page is read without its comments,
+  // each blanked to spaces with its line breaks kept, so that an offset keeps its line and an element or a prop
+  // commented out does not count; strings are kept as they are.
+  const pageText = need(DOCS_PAGE);
+  const pageTsx = pageText === null ? null : pageText.replace(
+    /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)|\/\*[^]*?\*\/|\/\/[^\n]*/g,
+    (m, string) => string ?? m.replace(/[^\n]/g, ' '));
+  const docsPage = pageTsx === null ? null : /<DocsPage\b/.exec(pageTsx);
+  if (pageTsx !== null && !docsPage) {
+    say(DOCS_PAGE, 'no <DocsPage>, whose table of contents this checks: change check-docs.mjs');
+  }
+  if (docsPage) {
+    const at = (offset) => `${DOCS_PAGE}:${lineAt(pageTsx, offset)}`;
+    const element = [...pageTsx.matchAll(/<([A-Za-z][\w.]*)\b([^<>]*?)\/>/g)].find((m) => TOC_COLUMN.test(m[2]));
+    // DocsPage shows its TOC unless the page is full: its full prop, the first after <DocsPage
+    const full = /\bfull=\{\s*([\w.?]+)\s*\}/.exec(pageTsx.slice(docsPage.index))?.[1] ?? null;
+    if (!element) {
+      say(at(docsPage.index), 'no hidden element with the class of the TOC column (xl:layout:[--fd-toc-width:268px], '
+        + 'as fumadocs-ui\'s TOC has it) before DocsPage: a long page is laid out without the column until its TOC, '
+        + 'after the article, arrives, and then shifts');
+    } else {
+      const where = at(element.index);
+      const attrs = element[2];
+      const cls = TOC_COLUMN.exec(attrs)[0];
+      const classes = /\bclassName="([^"]*)"/.exec(attrs)?.[1].split(/\s+/) ?? [];
+      const hidden = classes.includes('hidden')
+        || /(?:^|\s)hidden(?=\s|$|=\{true\})/.test(attrs.replace(/\bclassName="[^"]*"/, ''));
+      // {!condition && <div … />}
+      const guard = /\{\s*!\s*([\w.?]+)\s*&&\s*$/.exec(pageTsx.slice(0, element.index))?.[1] ?? null;
+      if (element.index > docsPage.index) {
+        say(where, 'the TOC column\'s element comes after <DocsPage>: it gives the column before the article only as '
+          + 'a child of the layout ahead of DocsPage');
+      }
+      if (!hidden) say(where, 'the TOC column\'s element is not hidden, so it takes a cell of the layout\'s grid');
+      if (full && guard !== full) {
+        say(where, `the TOC column's element shows ${guard ? `on !${guard}` : 'on every page'}, and DocsPage shows `
+          + `its TOC on !${full} (full={${full}}): give it {!${full} && …}, or a full page gets an empty column`);
+      } else if (!full && guard) {
+        say(where, `the TOC column's element shows on !${guard}, and DocsPage gets no full, so it shows its TOC on `
+          + 'every page: drop the condition');
+      }
+      if (/\btableOfContent=/.test(pageTsx)) {
+        say(at(docsPage.index), 'DocsPage gets tableOfContent, which can turn its TOC off, and the TOC column\'s '
+          + 'element follows full alone: give it the same condition, and change check-docs.mjs with it');
+      }
+      const ui = fumadocsToc(root);
+      if (ui) {
+        const uiRel = path.relative(root, ui.file);
+        const named = `fumadocs-ui ${ui.version ?? ''}`.trim();
+        counts.tocColumn = `${named}'s class`;
+        if (ui.toc === null) say(uiRel, `no #nd-toc in ${named}'s table of contents: change check-docs.mjs`);
+        else if (!ui.toc) {
+          say(uiRel, `${named}'s TOC (#nd-toc) has no layout:[--fd-toc-width:…] class, so its column comes another `
+            + `way: see whether ${DOCS_PAGE}'s element is needed, and change check-docs.mjs`);
+        } else if (cls !== ui.toc) {
+          say(where, `the TOC column's element has ${cls}, and ${named}'s TOC ${ui.toc}: give it the TOC's class`);
+        }
+        if (ui.toc && ui.placeholder !== null && ui.placeholder !== ui.toc) {
+          say(uiRel, `${named}'s #nd-toc-placeholder, on a page without headings, has `
+            + `${ui.placeholder || 'no column class'}, and its #nd-toc ${ui.toc}: a page without headings is laid out `
+            + 'otherwise, so the element\'s condition needs its headings too');
+        }
+      } else counts.tocColumn = 'not compared (fumadocs-ui not installed)';
+    }
+  }
+
   // ---------------------------------------------------------------- Components
   const compRel = `${CONTENT}/reference/components.mdx`;
   const comp = texts.get('reference/components.mdx') ?? need(compRel) ?? '';
@@ -668,6 +782,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process
   const c = problems.counts;
   console.log(`check-docs: ${c.pages} hand-written pages and ${c.meta} meta files; Components: ${c.props} props, `
     + `${c.kinds} badge kinds, ${c.properties} custom properties; Doc comments: ${c.keywords} keywords; What is read: `
-    + `${c.sentinels} sentinels; ${c.versions} versions; ${problems.length} problems`);
+    + `${c.sentinels} sentinels; ${c.versions} versions; TOC column: ${c.tocColumn ?? 'none'}; ${problems.length} `
+    + 'problems');
   process.exit(problems.length ? 1 : 0);
 }

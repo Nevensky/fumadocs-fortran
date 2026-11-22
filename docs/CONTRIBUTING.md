@@ -93,9 +93,11 @@ The documentation has checks of its own, which need no packages. `npm run check`
 - [check-docs.mjs](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/scripts/check-docs.mjs)
   checks the pages against the code: Components against `types/react.d.ts` and `style.css`, Doc comments against
   the keywords of the doc-comment engine, What is read on Generate the reference against the reader's sentinels, the
-  versions the pages give against `docs/package.json` and ci.yml, and the status sentence against `statusSentence`.
-  It also checks the house rules a reader would trip over (titles, descriptions, headings, step ids, shell blocks,
-  commands the help lacks) and the sidebar's `meta.json` files.
+  versions the pages give against `docs/package.json` and ci.yml, the status sentence against `statusSentence`, and
+  the element that gives the docs pages their table of contents' column from the first paint against the class of
+  fumadocs-ui's table of contents, when the site's packages are installed. It also checks the house rules a reader
+  would trip over (titles, descriptions, headings, step ids, shell blocks, commands the help lacks) and the sidebar's
+  `meta.json` files.
 - [gen-examples.mjs](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/scripts/gen-examples.mjs)
   `--check` checks the examples of Doc comments against what the package writes for them (see
   [Change the Doc comments examples](#change-the-doc-comments-examples)).

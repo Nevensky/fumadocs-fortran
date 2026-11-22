@@ -156,8 +156,22 @@ site's address.
 ### Failed to collect configuration for /api/search [#api-search]
 
 The site exports static files, and its search route is not static: the line under it says that
-`export const revalidate` is not configured on the route with `output: export`. Make the route static, as
+`export const revalidate` is not configured on the route with `output: export`. The message gives the route's path:
+`/api/search.json` for the folder that [Set up your site](/docs/guides/site-setup#search) names `search.json`, and
+`/api/search` for the template's. Make the route static, as
 [Publish on GitHub Pages](/docs/guides/github-pages#other-sites) shows.
+
+### Cannot find module '../../../app/api/search/route.js' [#route-types]
+
+The build's type check stops with error TS2307 after the search route's folder is renamed `search.json`: it reads
+the types the development server keeps in `docs/.next/dev`, which name the template's folder. Delete them, as
+[Set up your site](/docs/guides/site-setup#search) does, and build again:
+
+```bash
+rm -rf docs/.next/dev
+```
+
+The development server writes them again when it starts.
 
 ### Failed to fetch Inter from Google Fonts [#font]
 
@@ -209,6 +223,16 @@ The page template passes the table of contents through `fortranToc`, as
 
 Badges show as plain words and argument tables as text when the root layout does not import
 `fumadocs-fortran/style.css`: import it, as [Get started](/docs/get-started#register) does.
+
+### Search is slow on a phone [#slow-search]
+
+The search dialog downloads the site's whole index on its first search, and shows no result before it has arrived.
+In the browser's developer tools, the Network tab lists the index's request, `search.json` or `search`. Without a
+`Content-Encoding` among its response headers, the server sent it uncompressed, as `npm start` and nginx send the
+static template's `api/search`, a file without an extension: name the route `search.json`, as
+[Set up your site](/docs/guides/site-setup#search) shows. GitHub Pages compresses the index under either name, so
+there the index's size is the cause. The Fortran components' text in place of their tags makes it smaller, as
+[Set the MDX options](/docs/guides/site-setup#mdx-options) shows.
 
 ## On GitHub Pages [#on-github-pages]
 

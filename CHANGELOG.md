@@ -200,10 +200,17 @@ registry behind their library cards and graph colours; and Shiki grammars for Fo
   from FORD or Doxygen and publishing on GitHub Pages, the references, How it works, and the Showcase, generated from
   `examples/modern`. The guides show a site how to keep the components' tags out of its search index, as the project's
   own site does: on 22 November 2026, that made the site's index 24% smaller (18% gzipped), and that of stdlib's pages
-  73% smaller (64% gzipped). They also say when to turn off the sidebar's prefetch for large references. The site's
-  build checks the pages against the code first: Command line against the command's help, messages, diagnostics and
-  exit codes, JavaScript API against the entry points' exports and types, the examples of Doc comments against what
-  `generate()` writes for them, and Components against the components' props and the stylesheet.
+  73% smaller (64% gzipped). They also say when to turn off the sidebar's prefetch for large references. They name the
+  static search route `search.json`, as the site's own route is (`app/api/search.json/route.ts`), so that a server
+  that compresses by type, such as nginx or `serve`, sends the index compressed, as GitHub Pages does under either
+  name: on 22 November 2026, with nginx and a phone on slow 4G, the site's first result came 3.7 s after the first
+  key, and 13.1 s with the index uncompressed. Set up your site gives the page template the table of contents' column
+  from the first paint, with a hidden element of the table of contents' class, as the site's docs pages have it:
+  without it, a long page moved on a desktop screen when its table of contents arrived, a layout shift of up to 0.44.
+  The site's build checks the pages against the code first: Command line against the command's help, messages,
+  diagnostics and exit codes, JavaScript API against the entry points' exports and types, the examples of Doc
+  comments against what `generate()` writes for them, and Components against the components' props and the
+  stylesheet.
 - **The parser gate** (`scripts/gate.mjs`) checks the parser against oracles that share no code with it: a golden file
   of 41 argument attributes, the signatures documented in Reference-LAPACK (2,300 of 2,300 routines), and a census of
   program units in gcc's preprocessor output for LAPACK, ScaLAPACK, json-fortran, Quantum ESPRESSO, stdlib, Wannier90

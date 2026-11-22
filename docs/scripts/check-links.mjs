@@ -7,7 +7,12 @@
 //   actions), is that page's own Markdown copy, with the base path once;
 // - the absolute URLs of the metadata (canonical links, og:url, og:image and twitter:image), of sitemap.xml's <loc>
 //   and of the llms files are on the site's origin, and lead to a page or file of the export as its links must. A site
-//   with app/sitemap.ts must have exported sitemap.xml.
+//   with app/sitemap.ts must have exported sitemap.xml;
+// - the search index, the JSON of Fumadocs' static search route, is a .json file, such as api/search.json, and a
+//   client chunk names its path under the base path, which the search dialog fetches. A server gives a file the type
+//   of its extension, and one that compresses by type sends a file without one (api/search, the route's path in
+//   Fumadocs' templates) uncompressed: nginx as application/octet-stream, serve with no type. GitHub Pages compresses
+//   both.
 // The pages' HTML is read (links: hover cards, graph nodes, Markdown links and the rest; and what a page loads: images,
 // link elements, scripts), and so are the llms files and Markdown copies (Markdown links, JSX href attributes, graph
 // click lines and refs' "href"), outside code samples, code blocks and inline code alike.
@@ -52,8 +57,11 @@ if (!fs.existsSync(path.join(out, 'index.html'))) {
 // It is also the base path the export was built with: checked with another one, every link would be wrong.
 const chunks = path.join(out, '_next', 'static', 'chunks');
 const baseUrls = new Map();
+// the client chunks' code, which the search index's check reads too
+const chunkCode = [];
 for (const name of fs.existsSync(chunks) ? fs.readdirSync(chunks).filter((n) => n.endsWith('.js')) : []) {
   const js = fs.readFileSync(path.join(chunks, name), 'utf8');
+  chunkCode.push(js);
   for (const m of js.matchAll(/layouts\/shared\/page-actions\.js"[^]{0,200}?\bBASE_URL:"([^"]*)"/g)) {
     if (!baseUrls.has(m[1])) baseUrls.set(m[1], name);
   }
@@ -234,6 +242,36 @@ if (fs.existsSync(path.join(path.dirname(out), 'app', 'sitemap.ts')) && !fs.exis
     path.join(path.dirname(out), 'app', 'sitemap.ts'));
 }
 
+// ---- the search index: a file with no extension or a .json one whose text starts as the JSON of Fumadocs' static
+// search route (staticGET) does, {"type":"advanced" (or "simple", or "i18n" for one index a language)
+const INDEX_START = /^\{"type":"(?:advanced|simple|i18n)"/;
+const startOf = (file) => {
+  const fd = fs.openSync(file, 'r');
+  try {
+    const buf = Buffer.alloc(32);
+    return buf.toString('utf8', 0, fs.readSync(fd, buf, 0, buf.length, 0));
+  } finally {
+    fs.closeSync(fd);
+  }
+};
+let indexes = 0;
+for (const f of files) {
+  const ext = path.extname(f);
+  if ((ext && ext !== '.json') || !INDEX_START.test(startOf(f))) continue;
+  indexes++;
+  const rel = path.relative(out, f).split(path.sep).join('/');
+  if (!ext) {
+    problem('search index without an extension, which a server that compresses by type sends uncompressed (name its '
+      + 'route search.json, and the search dialog\'s from)', f, `${base}/${rel}`);
+  } else if (![`"${base}/${rel}"`, `\`${base}/${rel}\``, `}/${rel}\``]
+    .some((s) => chunkCode.some((js) => js.includes(s)))) {
+    // the dialog's from, as the build writes it: "/base/api/search.json", with the base path the export was built
+    // with, or `${…}/api/search.json` when the base path comes from another module
+    problem('search index whose path under the base path no client chunk names (the search dialog\'s from fetches '
+      + 'another)', f, `${base}/${rel}`);
+  }
+}
+
 const actions = path.join(out, 'docs');
 let withActions = 0;
 if (!baseUrls.size) {
@@ -281,5 +319,6 @@ for (const [k, where] of [...problems].sort()) {
 }
 console.log(`check-links: ${checked} links and assets on the site (${absolute} of them absolute URLs on ${origin}) and `
   + `${anchors} same-page anchors checked in ${files.length} files under ${base || '/'} (${samples} lines of code `
-  + `samples in the llms files left out), page actions on ${withActions} pages; ${problems.size} distinct problems`);
+  + `samples in the llms files left out), page actions on ${withActions} pages, ${indexes} search `
+  + `${indexes === 1 ? 'index' : 'indexes'}; ${problems.size} distinct problems`);
 process.exit(problems.size ? 1 : 0);

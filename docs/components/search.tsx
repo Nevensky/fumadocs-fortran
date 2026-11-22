@@ -14,9 +14,9 @@ import {
 import type { SharedProps } from 'fumadocs-ui/contexts/search';
 import { basePath } from '@/lib/shared';
 
-// The index is exported at build time (app/api/search/route.ts) and searched in the browser, so search works when
-// the site is served as static files too.
-const client = staticClient({ from: `${basePath}/api/search` });
+// The index is exported at build time (app/api/search.json/route.ts) and searched in the browser, so search works
+// when the site is served as static files too.
+const client = staticClient({ from: `${basePath}/api/search.json` });
 
 export default function StaticSearchDialog(props: SharedProps) {
   const search = useDocsSearch({ client });

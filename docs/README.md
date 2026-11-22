@@ -65,7 +65,10 @@ it fail.
   and shows a diagram Pele cannot parse as its code. `fumadocs-fortran/style.css` maps Pele's colours to Fumadocs'
   for the generated graphs and colours their nodes by kind; `global.css` maps them for diagrams written in pages.
   `lib/source.ts` keeps the generated pages' `fortran` front matter, and the page template passes it to
-  `fortranToc()` for the letters in the table of contents.
+  `fortranToc()` for the letters in the table of contents. Ahead of `DocsPage`, the page template renders a hidden
+  element with the class of fumadocs-ui's table of contents, which gives a long page the table of contents' column
+  from its first paint, as Set up your site shows under Large references; `scripts/check-docs.mjs` holds the class to
+  fumadocs-ui's.
 - `lib/source.ts` gives search the text of the Fortran components and leaves their tags out
   (`remarkStructureOptions.filterElement`). `test/site.test.mjs` checks the pages' records against Fumadocs' own,
   reading them through `scripts/search/records.mjs`, which leaves remark-image out, as images never reach the
@@ -98,6 +101,9 @@ it fail.
   a path of a host, as on GitHub Pages, cannot own the host's.
 - `app/llms.txt/route.ts` writes `llms.txt`: the title and description of `content/docs/meta.json`, the pages in
   sidebar order with absolute links to their Markdown copies, and an Optional section with `llms-full.txt`.
+- `app/api/search.json/route.ts` exports the search index as `api/search.json`, which the search dialog
+  (`components/search.tsx`) fetches under the base path; its extension lets a server that compresses by type send it
+  compressed.
 - `app/global.css` darkens Fumadocs' muted text and focus ring in light mode, which fall short of WCAG's contrast
   otherwise, and shows the skip links when they have keyboard focus.
 
@@ -108,8 +114,9 @@ it fail.
 `npm run check` (prebuild), the checks of the pages against the code that
 [CONTRIBUTING.md](CONTRIBUTING.md#run-the-tests) lists. With `DOCS_EXPORT=1`, it then checks `out/` with
 `scripts/check-links.mjs` (postbuild): every link and asset under `NEXT_PUBLIC_BASE_PATH`, the same-page anchors, the
-Markdown URL of Copy Markdown and View as Markdown, and the absolute URLs of the metadata, the sitemap and
-`llms.txt`, on `NEXT_PUBLIC_SITE_URL`. By hand:
+Markdown URL of Copy Markdown and View as Markdown, the search index (a `.json` file, whose path under the base path a
+client chunk names), and the absolute URLs of the metadata, the sitemap and `llms.txt`, on `NEXT_PUBLIC_SITE_URL`. By
+hand:
 
 ```bash
 node scripts/check-links.mjs out /fumadocs-fortran

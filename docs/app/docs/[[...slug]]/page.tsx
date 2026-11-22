@@ -38,43 +38,52 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   // written by hand
   const generated = isGenerated(page);
 
+  // the table of contents' column from the first paint: fumadocs-ui gives the layout that column (from xl) by a class
+  // of its TOC, which a :has() rule on #nd-docs-layout keys on, and DocsPage renders the TOC after the article, 350 to
+  // 520 KB into the HTML of the longest pages, so a paint before it lays the article out without the column and then
+  // moves it (a layout shift of up to 0.44). This hidden element carries the TOC's class ahead of DocsPage. A full
+  // page shows no TOC and gets no column; a page without headings gets fumadocs-ui's placeholder, with the same class;
+  // below xl the class does nothing. check-docs.mjs holds it to fumadocs-ui's.
   return (
-    <DocsPage
-      // generated API pages mark each entry with its kind: t type, s subroutine, f function, …
-      toc={fortranToc(page.data.toc, page.data.fortran?.toc)}
-      full={page.data.full}
-      footer={{
-        children: (
-          <PageFooter
-            edit={generated ? undefined : editUrl(page.path)}
-            lastModified={generated ? undefined : page.data.lastModified}
-            report={reportUrl(`Docs: ${page.data.title}`, absoluteUrl(page.url))}
+    <>
+      {!page.data.full && <div hidden className="xl:layout:[--fd-toc-width:268px]" />}
+      <DocsPage
+        // generated API pages mark each entry with its kind: t type, s subroutine, f function, …
+        toc={fortranToc(page.data.toc, page.data.fortran?.toc)}
+        full={page.data.full}
+        footer={{
+          children: (
+            <PageFooter
+              edit={generated ? undefined : editUrl(page.path)}
+              lastModified={generated ? undefined : page.data.lastModified}
+              report={reportUrl(`Docs: ${page.data.title}`, absoluteUrl(page.url))}
+            />
+          ),
+        }}
+      >
+        <DocsTitle>{page.data.title}</DocsTitle>
+        <DocsDescription className="mb-0">{page.data.description}</DocsDescription>
+        <div className="flex flex-row gap-2 items-center border-b pb-6">
+          <MarkdownCopyButton markdownUrl={markdownUrl} />
+          <ViewOptionsPopover
+            markdownUrl={markdownUrl}
+            githubUrl={
+              generated
+                ? undefined
+                : `${githubUrl}/blob/${gitConfig.branch}/docs/content/docs/${encodeURI(page.path)}`
+            }
           />
-        ),
-      }}
-    >
-      <DocsTitle>{page.data.title}</DocsTitle>
-      <DocsDescription className="mb-0">{page.data.description}</DocsDescription>
-      <div className="flex flex-row gap-2 items-center border-b pb-6">
-        <MarkdownCopyButton markdownUrl={markdownUrl} />
-        <ViewOptionsPopover
-          markdownUrl={markdownUrl}
-          githubUrl={
-            generated
-              ? undefined
-              : `${githubUrl}/blob/${gitConfig.branch}/docs/content/docs/${encodeURI(page.path)}`
-          }
-        />
-      </div>
-      <DocsBody>
-        <MDX
-          components={getMDXComponents({
-            // this allows you to link to other pages with relative file paths
-            a: createRelativeLink(source, page),
-          })}
-        />
-      </DocsBody>
-    </DocsPage>
+        </div>
+        <DocsBody>
+          <MDX
+            components={getMDXComponents({
+              // this allows you to link to other pages with relative file paths
+              a: createRelativeLink(source, page),
+            })}
+          />
+        </DocsBody>
+      </DocsPage>
+    </>
   );
 }
 

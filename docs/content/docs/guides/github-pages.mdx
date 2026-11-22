@@ -151,47 +151,21 @@ export function Mermaid({ chart }: { chart: string }) {
 
 ## Search, Copy Markdown and the llms files [#search]
 
-The search dialog reads its index from `/api/search` in the browser. Give it the path under the base path:
+The search dialog reads its index in the browser, from `/api/search.json`:
+[Set up your site](/docs/guides/site-setup#search) names the search route `docs/app/api/search.json/route.ts`, and
+gives the dialog that address. Give it the path under the base path:
 
-```tsx title="docs/components/search.tsx"
-'use client';
-import {
-  SearchDialog,
-  SearchDialogClose,
-  SearchDialogContent,
-  SearchDialogHeader,
-  SearchDialogIcon,
-  SearchDialogInput,
-  SearchDialogList,
-  SearchDialogOverlay,
-  type SharedProps,
-} from 'fumadocs-ui/components/dialog/search';
-import { useStaticSearch } from 'fumadocs-core/search/client';
-import { useI18n } from 'fumadocs-ui/contexts/i18n';
-import { basePath } from '@/lib/shared'; // [!code ++]
-
-export default function DefaultSearchDialog(props: SharedProps) {
-  const { locale } = useI18n(); // (optional) for i18n
-  const search = useStaticSearch({
-    locale,
-    from: `${basePath}/api/search`, // [!code ++]
-  });
-
-  return (
-    <SearchDialog {...search} {...props}>
-      <SearchDialogOverlay />
-      <SearchDialogContent>
-        <SearchDialogHeader>
-          <SearchDialogIcon />
-          <SearchDialogInput />
-          <SearchDialogClose />
-        </SearchDialogHeader>
-        <SearchDialogList />
-      </SearchDialogContent>
-    </SearchDialog>
-  );
-}
+```diff title="docs/components/search.tsx"
+ import { useI18n } from 'fumadocs-ui/contexts/i18n';
++import { basePath } from '@/lib/shared';
+@@
+-    from: '/api/search.json',
++    from: `${basePath}/api/search.json`,
 ```
+
+A site whose route is the template's, `docs/app/api/search/route.ts`, renames its folder to `search.json` first, as
+Set up your site does, and adds the `from` line after `locale,`. GitHub Pages compresses the index under either name,
+but `npm start` and other servers that compress by type send a file without an extension uncompressed.
 
 Leave the Markdown URL of the page template's Copy Markdown and View as Markdown as it is, without the base path:
 `fumadocs-ui` adds the base path to it, and a URL that has one already gets it twice. The llms files, `llms.txt` and
@@ -357,9 +331,10 @@ and suggests a credit for the site's footer.
 
 A site from another template than the static one needs the static export first: `output: 'export'` in
 `next.config.mjs`, a search route that the build writes as a file (`export const revalidate = false;` and
-`export const { staticGET: GET } = createFromSource(source);` in `app/api/search/route.ts`), the static search
-client above, and no `proxy.ts`, middleware or rewrites, which an export cannot run. Without the route's change the
-build stops with Failed to collect configuration for /api/search. Fumadocs'
+`export const { staticGET: GET } = createFromSource(source);` in `app/api/search.json/route.ts`, named as
+[Set up your site](/docs/guides/site-setup#search) names it), the static search client above, and no `proxy.ts`,
+middleware or rewrites, which an export cannot run. Without the route's change the build stops with Failed to
+collect configuration for /api/search.json, or /api/search for a route under the template's name. Fumadocs'
 [guide to static builds](https://www.fumadocs.dev/docs/next/deploying/static) has the details.
 
 ## Somewhere else [#elsewhere]

@@ -35,6 +35,9 @@ const ENTRIES = {
   ts2339: { message: true, from: 'site-setup', words: ["error TS2339: Property 'fortran' does not exist on type"] },
   metadatabase: { message: true, from: 'get-started' },
   'api-search': { message: true, words: ['export const revalidate not configured'] },
+  // the build the site-setup phase runs with the search route renamed and the development server's types left
+  'route-types': { message: true, from: 'site-setup',
+    words: ['error TS2307', 'or its corresponding type declarations'] },
   font: { message: true, outside: 'a build of the tutorial\'s site with no network (docker run --network none), '
     + 'run by hand for the Troubleshooting page' },
   // no run here can be made to run out of memory as a reader's build does
@@ -45,6 +48,8 @@ const ENTRIES = {
   maths: { from: 'site-setup' },
   'no-letters': { from: 'site-setup' },
   'no-layout': { from: 'site-setup' },
+  // the index under its name, and as npm start sends it (gzipped, application/json): the github-pages phase
+  'slow-search': { from: 'github-pages' },
   'pages-404': {},
   'off-site': { from: 'github-pages' },
   reload: { from: 'github-pages' },
@@ -266,11 +271,12 @@ export default {
       ctx.expect(b1.code === 0 && b2.code === 0 && without === 0 && withIt > 0,
         `"API reference" in the first page's sidebar: ${without} without the folder in meta.json, ${withIt} with it`);
 
-      ctx.seed('docs/app/api/search/route.ts', (t) => t.replace('export const revalidate = false;\n', '')
+      // the route as Set up your site names it, whose path the message gives
+      ctx.seed('docs/app/api/search.json/route.ts', (t) => t.replace('export const revalidate = false;\n', '')
         .replace('staticGET: GET', 'GET'));
       const b3 = ctx.build({ label: 'a search route that is not static', allowFail: true });
-      ctx.expect(b3.code !== 0 && b3.out.includes('Failed to collect configuration for /api/search'),
-        'a search route that is not static did not stop the build');
+      ctx.expect(b3.code !== 0 && b3.out.includes('Failed to collect configuration for /api/search.json'),
+        'a search route that is not static did not stop the build with the route\'s path, /api/search.json');
     }
 
     // ---- every message heading against the logs

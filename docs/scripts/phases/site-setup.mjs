@@ -1,13 +1,18 @@
 // Set up your site (guides/site-setup.mdx) on the site Get started made: the guide's commands and files in its order,
 // a build whose reference has maths, graphs, kind letters and directive lines, and each row of its Check the result
-// table, the piece taken out again with the error or symptom the row names, before the rest of the guide (large
-// references, the template tidied) and a last build.
+// table, the piece taken out again with the error or symptom the row names, before the rest of the guide (the search
+// route renamed search.json, after a build that shows the error the page quotes without its step that deletes the
+// development server's types; large references, with the table of contents' column from the first paint; the template
+// tidied) and a last build, whose search index is out/api/search.json alone, with a client chunk that fetches
+// /api/search.json, and whose pages hold the hidden element that gives the column, ahead of the article.
 import fs from 'node:fs';
 import path from 'node:path';
 
 // a hand-written page with a command of katexMacros, for the row of the macros
 const MATHS_PAGE = 'docs/content/docs/check-maths.mdx';
 const MATHS = '---\ntitle: Maths check\n---\n\nA norm, $\\norm{x}$, set with the package\'s macros.\n';
+// the class that gives the docs layout its table of contents' column, which Large references puts on a hidden element
+const TOC_COLUMN = 'xl:layout:[--fd-toc-width:268px]';
 
 /** The exported CSS, all of it. */
 function css(site) {
@@ -136,10 +141,23 @@ export default {
         }
       }
 
+      // the search route renamed, with the types that Get started's development server wrote in .next/dev left: the
+      // build stops with the message the page quotes, and the folder takes its name back for the guide's steps
+      const routes = path.join(ctx.site, 'app', 'api');
+      const typesError = "Cannot find module '../../../app/api/search/route.js'";
+      fs.renameSync(path.join(routes, 'search'), path.join(routes, 'search.json'));
+      const stale = ctx.build({ allowFail: true, label: 'the search route renamed, the dev types left' });
+      fs.renameSync(path.join(routes, 'search.json'), path.join(routes, 'search'));
+      ctx.expect(page.text.includes(typesError) && stale.code !== 0 && stale.out.includes(typesError),
+        `the search route renamed with .next/dev left: the build ${stale.code === 0 ? 'passed' : 'failed'} without `
+        + `"${typesError}", which the page quotes`);
+
       // the rest of the guide, then the site built again
-      const rest = await ctx.follow(page, { sections: ['large', 'tidy'] });
+      const rest = await ctx.follow(page, { sections: ['search', 'large', 'tidy'] });
       if (!rest.ok) return;
       ctx.expect(!ctx.exists('docs/content/docs/test.mdx'), 'test.mdx is still there');
+      ctx.expect(ctx.exists('docs/app/api/search.json/route.ts') && !ctx.exists('docs/app/api/search'),
+        'the search route is not docs/app/api/search.json/route.ts alone');
       const last = ctx.build({ label: 'the site set up' });
       if (last.code === 0) {
         const m = measure(ctx);
@@ -147,6 +165,22 @@ export default {
           `the last build lost a piece: ${JSON.stringify(m)}`);
         const html = ctx.outHtml('/docs/api') ?? '';
         ctx.expect(html.includes('My Fortran code'), "the site's name, appName, is not in the navigation bar");
+        // the search index under its name, with no extension-less copy, and the dialog's chunk that fetches it
+        ctx.expect(ctx.exists('docs/out/api/search.json') && !ctx.exists('docs/out/api/search'),
+          'the export\'s search index is not out/api/search.json alone');
+        const chunks = path.join(ctx.site, 'out', '_next', 'static', 'chunks');
+        const fetched = fs.existsSync(chunks) && fs.readdirSync(chunks).some((f) => f.endsWith('.js')
+          && fs.readFileSync(path.join(chunks, f), 'utf8').includes('"/api/search.json"'));
+        ctx.expect(fetched, 'no client chunk fetches "/api/search.json"');
+        // the table of contents' column from the first paint (Large references): a hidden element ahead of the
+        // article, with the class that the page's table of contents carries (#nd-toc, or #nd-toc-placeholder on a page
+        // without headings), so that a fumadocs-ui whose table of contents takes another class fails here
+        const column = html.indexOf(`<div hidden="" class="${TOC_COLUMN}"></div>`);
+        ctx.expect(column >= 0 && column < html.indexOf('id="nd-page"'), 'no hidden element with the class of the '
+          + `table of contents, ${TOC_COLUMN}, ahead of the article of /docs/api`);
+        const toc = /<div [^>]*\bid="nd-toc(?:-placeholder)?"[^>]*>/.exec(html)?.[0] ?? '';
+        ctx.expect(toc.split(/["\s]/).includes(TOC_COLUMN),
+          `the table of contents of /docs/api lacks ${TOC_COLUMN}, the class Large references gives: ${toc}`);
       }
     } finally {
       fs.rmSync(path.join(ctx.project, MATHS_PAGE), { force: true });

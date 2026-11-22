@@ -34,7 +34,9 @@ reference into it, in six steps.
 - [Get started](https://nevensky.github.io/fumadocs-fortran/docs/get-started/): from the Fortran in your `src/` to its
   API reference in a Fumadocs site of your own.
 - [Set up your site](https://nevensky.github.io/fumadocs-fortran/docs/guides/site-setup/): the components, maths,
-  graphs, Fortran code blocks and kind letters in a Fumadocs site, and its search index and prefetch on
+  graphs, Fortran code blocks and kind letters in a Fumadocs site, its search index, named
+  [`search.json`](https://nevensky.github.io/fumadocs-fortran/docs/guides/site-setup/#search) for the servers that
+  compress by type, and prefetch on
   [large references](https://nevensky.github.io/fumadocs-fortran/docs/guides/site-setup/#large).
 - [Generate the reference](https://nevensky.github.io/fumadocs-fortran/docs/guides/generate/): the build to document,
   with its cpp macros and include folders, what the pages show, the links to your repository, and running it again.

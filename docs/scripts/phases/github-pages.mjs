@@ -1,11 +1,13 @@
 // Publish on GitHub Pages (guides/github-pages.mdx) on the site Set up your site made: the guide's files, then its
 // workflow's build job run here as GitHub would run it for https://owner.github.io/my-docs/ (its run steps, with
 // configure-pages' outputs and GitHub's variables given), and the export checked with docs/scripts/check-links.mjs
-// under /my-docs: every link, asset, same-page anchor and the page actions' Markdown URL. Then what else the guide
-// says: row cards, source links, Open Graph images, the Open in GitHub links, the search index, the old pages in
+// under /my-docs: every link, asset, same-page anchor, the page actions' Markdown URL and the search index. Then what
+// else the guide says: row cards, source links, Open Graph images, the Open in GitHub links, the search index (at
+// api/search.json, fetched under the base path, and sent compressed by the site's npm start), the old pages in
 // public/, the development server under the base path (its links on it, and 404 off it) and the generated folder out
 // of Git; and the three GitHub Pages entries of Troubleshooting, each seeded, with the problem check-links reports.
 import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
@@ -115,6 +117,45 @@ async function preview(ctx, cmd) {
   return out;
 }
 
+/**
+ * A file of the export as the site's npm start serves it (serve, as Get started's step 6 runs it, on port 3000), asked
+ * for with Accept-Encoding: gzip, as a browser asks: its status, Content-Type, Content-Encoding and the bytes sent.
+ * serve gives a file the type of its extension and compresses by type, as nginx does: a file without an extension
+ * goes with no type, uncompressed. The server is stopped, and its output logged.
+ */
+async function served(ctx, url) {
+  const child = spawn('sh', ['-c', 'npm start'], { cwd: ctx.site, env: ctx.env, detached: true });
+  let text = '';
+  child.stdout.on('data', (d) => (text += d));
+  child.stderr.on('data', (d) => (text += d));
+  const get = (u) => new Promise((ok) => {
+    const req = http.get({ host: 'localhost', port: 3000, path: u, headers: { 'accept-encoding': 'gzip' } }, (res) => {
+      let bytes = 0;
+      res.on('data', (d) => (bytes += d.length));
+      res.on('end', () => ok({ status: res.statusCode, type: res.headers['content-type'] ?? '',
+        encoding: res.headers['content-encoding'] ?? '', bytes }));
+    });
+    req.on('error', () => ok({ status: 0, type: '', encoding: '', bytes: 0 }));
+  });
+  try {
+    for (let i = 0; i < 120; i++) {
+      if ((await get('/')).status === 200) return await get(url);
+      await new Promise((ok) => setTimeout(ok, 500));
+    }
+    return { status: 0, type: '', encoding: '', bytes: 0 };
+  } finally {
+    for (const [sig, wait] of [['SIGINT', 1500], ['SIGKILL', 300]]) {
+      try {
+        process.kill(-child.pid, sig);
+      } catch {
+        // gone
+      }
+      await new Promise((ok) => setTimeout(ok, wait));
+    }
+    fs.writeFileSync(path.join(ctx.logDir, 'npm-start.log'), `$ npm start (in docs)\n${text}`);
+  }
+}
+
 function checkLinks(ctx, label) {
   const script = path.join(ctx.repo, 'docs', 'scripts', 'check-links.mjs');
   // the origin the workflow builds with, so that the absolute URLs of the metadata (og:image) are checked too
@@ -187,12 +228,24 @@ export default {
       'the first page\'s Open in GitHub link lacks docs/');
     ctx.expect(!/\/blob\/main\/(docs\/)?content\/docs\/api\//.test(ctx.outHtml('/docs/api/demo') ?? ''),
       'a generated page has an Open in GitHub link');
-    ctx.expect(ctx.exists('docs/out/api/search'), 'no search index at out/api/search');
+    // the search index: api/search.json, the route Set up your site renames, and not api/search, the template's, which
+    // has no extension
+    const index = path.join(ctx.site, 'out', 'api', 'search.json');
+    ctx.expect(fs.existsSync(index), 'no search index at out/api/search.json');
+    ctx.expect(!ctx.exists('docs/out/api/search'), 'out/api/search, an index without an extension, is in the export');
     const chunks = path.join(ctx.site, 'out', '_next', 'static', 'chunks');
     // the search dialog's chunk, with the index's path under the base path, as the build writes it
     const searchFrom = fs.readdirSync(chunks).some((f) => f.endsWith('.js')
-      && fs.readFileSync(path.join(chunks, f), 'utf8').includes(`"${BASE}/api/search"`));
-    ctx.expect(searchFrom, `no client chunk fetches "${BASE}/api/search"`);
+      && fs.readFileSync(path.join(chunks, f), 'utf8').includes(`"${BASE}/api/search.json"`));
+    ctx.expect(searchFrom, `no client chunk fetches "${BASE}/api/search.json"`);
+    // and as a server sends it: npm start serves out/ at its root, without the base path
+    const sent = await served(ctx, '/api/search.json');
+    const size = fs.existsSync(index) ? fs.statSync(index).size : 0;
+    const said = `${sent.status}, ${sent.type || 'no Content-Type'}, ${sent.encoding || 'no Content-Encoding'}, `
+      + `${sent.bytes} bytes sent for a file of ${size}`;
+    ctx.note(`  npm start, /api/search.json: ${said}`);
+    ctx.expect(sent.status === 200 && /^application\/json\b/.test(sent.type) && sent.encoding === 'gzip'
+      && sent.bytes < size, `npm start does not send /api/search.json as application/json, gzipped: ${said}`);
     ctx.expect(ctx.exists('docs/out/module/old_module.html'), 'an old page in docs/public/ is not in the export');
     fs.rmSync(path.join(ctx.site, 'public', 'module'), { recursive: true, force: true });
 

@@ -3,9 +3,10 @@
 // code (docs/lib/shared.ts, docs/components/mdx): the links next/link
 // never sees, those of hover cards, source headers, graph nodes and the llms files, get what it gives the others,
 // the base path the site is served under and, in the static export, a page's trailing slash, so that a link to an
-// anchor of the page being read only scrolls; and the search records of its pages. The site's modules are bundled
-// with esbuild, with one React; that part needs the site's node_modules (scripts/docs.sh keeps them in a Docker volume)
-// and is skipped without them.
+// anchor of the page being read only scrolls; the search index's route, api/search.json, and the path the search
+// dialog fetches it from; and the search records of its pages. The site's modules are bundled with esbuild, with one
+// React; that part needs the site's node_modules (scripts/docs.sh keeps them in a Docker volume) and is skipped without
+// them.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -207,6 +208,15 @@ export default async function ({ ok, eq, here, out }) {
   ok(['reference/components.mdx', 'showcase/index.mdx'].every((p) => prose.includes(`docs/content/docs/${p}`))
     && !prose.some(generatedPage) && !long.length, `the prose of the docs keeps to 120 characters a line: ${long}`);
 
+  // ---- the search index, which the search dialog fetches whole on its first search: exported as api/search.json,
+  // which a server that compresses by type (nginx, serve) sends as application/json, compressed, where api/search, the
+  // name in Fumadocs' templates, has no extension and goes uncompressed; and fetched by the dialog under the base path
+  const routes = fs.readdirSync(path.join(docs, 'app', 'api'), { recursive: true })
+    .map((p) => p.split(path.sep).join('/')).filter((p) => /(^|\/)route\.[jt]sx?$/.test(p)).sort();
+  eq(routes, ['search.json/route.ts'], "the site's routes under app/api: the search index's alone, named search.json");
+  ok(read('docs/components/search.tsx').includes('staticClient({ from: `${basePath}/api/search.json` })'),
+    'the search dialog fetches the index from ${basePath}/api/search.json');
+
   const need = createRequire(path.join(docs, 'package.json'));
   let esbuild;
   try {
@@ -368,8 +378,8 @@ export default async function ({ ok, eq, here, out }) {
     "siteLinks: code samples keep their links, and the graphs' own mermaid blocks and the text around them do not");
 
   // ---- the search records of the pages, compiled with the site's MDX options and read as the static index
-  // (app/api/search/route.ts) reads them. fumadocs keeps a component's element in the records as an HTML tag with its
-  // attributes; the site keeps the text of the Fortran components alone (an argument's docs, the names on a Calls
+  // (app/api/search.json/route.ts) reads them. fumadocs keeps a component's element in the records as an HTML tag with
+  // its attributes; the site keeps the text of the Fortran components alone (an argument's docs, the names on a Calls
   // line), so that search shows no markup and the index is smaller. The records are otherwise fumadocs' own.
   const { loadSite } = await import(pathToFileURL(path.join(repo, 'scripts/search/records.mjs')).href);
   const search = await loadSite({ docs, out: path.join(dir, 'records') });
