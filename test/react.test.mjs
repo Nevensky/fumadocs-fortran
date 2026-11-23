@@ -5,7 +5,7 @@ import fs from 'node:fs';
 
 const read = (rel) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
 const COMPONENTS = ['FortranBadges', 'FortranBadge', 'FortranArgs', 'FortranArg', 'FortranRef', 'FortranSource', 'FortranGraph'];
-const NAMES = [...COMPONENTS, 'fortranToc', 'fortranComponents'];
+const NAMES = [...COMPONENTS, 'fortranToc', 'fortranComponents', 'createFortranComponents'];
 const HPC = ['omp', 'acc', 'offload', 'mpi', 'coarray', 'cuda', 'blas', 'lapack', 'scalapack', 'cpp'];
 const COLUMNS = ['type', 'shape', 'intent', 'attrs'];
 const KINDS = { module: 'mod', submodule: 'smod', program: 'prog', type: 't', interface: 'i', subroutine: 's', function: 'f', variable: 'v', parameter: 'p', enum: 'e' };
@@ -135,7 +135,7 @@ export default async function ({ ok, eq }) {
   // U+FE0E keeps ↔ a text glyph; written out, it is invisible, and an editor can drop it unseen
   ok(src.includes("arrow: '↔\\uFE0E'") && !src.includes(String.fromCharCode(0xfe0e)), 'the variation selector after ↔ is written as an escape');
   const exported = [...src.matchAll(/^export (?:function|const) (\w+)/gm)].map((m) => m[1]);
-  eq(exported, NAMES, 'react/index.js exports the seven components, fortranToc and fortranComponents');
+  eq(exported, NAMES, 'react/index.js exports the seven components, fortranToc, fortranComponents and createFortranComponents');
   eq([...dts.matchAll(/^export declare (?:function|const) (\w+)/gm)].map((m) => m[1]), NAMES, 'types/react.d.ts declares the same names');
   for (const fn of COMPONENTS.slice(1)) {
     const iface = `${fn}Props`;
@@ -162,8 +162,9 @@ export default async function ({ ok, eq }) {
   const tokens = (sel, decls) => (sel === ROOT || sel === DARK) && decls.every((d) => d.startsWith('--fdf-'));
   // Pele's graph nodes carry the Mermaid class names the graphs give them (fdfModule, …)
   const pele = (s) => /^\.pele \.pele-node(?:\.fdf[A-Z]\w*|:is\(\.fdf[A-Z])/.test(s);
-  // Pele's own variables, on the diagrams inside a FortranGraph, and with no specificity, as the tokens
-  const PELE = ':where(.fdf-graph .pele)';
+  // Pele's own variables, on the diagrams inside a FortranGraph and those the Mermaid component draws
+  // (./mermaid), and with no specificity, as the tokens
+  const PELE = ':where(.fdf-graph .pele, .fdf-mermaid .pele)';
   const peleVars = (sel, decls) => sel === PELE && decls.every((d) => d.startsWith('--pele-'));
   // the meanings of the terms the components write (data-term), with no specificity either, so that a site's own
   // words win: --fdf-mean and nothing else
@@ -191,6 +192,7 @@ export default async function ({ ok, eq }) {
     '--pele-accent': 'var(--color-fd-primary)',
   }, 'a graph drawn by Pele takes fumadocs\' fonts and colours, lines and labels included');
   eq(['--fdf-mono', '--fdf-line'].map((v) => decl('.fdf-graph', v).length), [1, 1], 'the graph sets the shared values its diagram takes');
+  eq(['--fdf-mono', '--fdf-line'].map((v) => decl('.fdf-mermaid', v).length), [1, 1], 'and so does the Mermaid component\'s block');
   // colours come from fumadocs' variables, which .dark switches, or from the tokens, which it adjusts: a literal
   // colour elsewhere would stay the same in dark mode
   const literal = /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(|\b(?:white|black)\b/i;
@@ -975,7 +977,16 @@ export default async function ({ ok, eq }) {
       h(FortranSource, { file: 'a.f90', line: 1, href: 'https://example.org' }), h(FortranSource, { file: 'a.f90', line: 1, href: 'https://example.org' }, 'code'),
       h(FortranGraph, { title: 'g' }, 'd'), h(FortranGraph, { title: 'g', collapsed: true }, 'd'),
       ...fortranToc(toc, kinds).map((item) => item.title)));
-    const drawn = new Set([...gallery.matchAll(/class="([^"]*)"/g)].flatMap((m) => m[1].split(' ')).filter((c) => c.startsWith('fdf-')));
+    // the sidebar's letters, which fortranPlugin (../fumadocs/source.js) gives the generated pages, one of each kind
+    const { fortranPlugin } = await import('../fumadocs/source.js');
+    const navFile = fortranPlugin().transformPageTree.file;
+    const navIcons = ['module', 'submodule', 'program', 'blockdata', 'procedures'].map((kind) => navFile.call(
+      { storage: { read: () => ({ format: 'page', data: { fortran: { kind } } }) } }, { type: 'page', name: kind, url: '/' }, `${kind}.mdx`).icon);
+    const sidebar = render(h('div', null, ...navIcons));
+    eq(navIcons.filter(Boolean).length, 5, 'fortranPlugin gives each kind of page its letter in the sidebar');
+    const drawn = new Set([...`${gallery}${sidebar}`.matchAll(/class="([^"]*)"/g)].flatMap((m) => m[1].split(' ')).filter((c) => c.startsWith('fdf-')));
+    // the Mermaid component (./mermaid) needs Pele to draw: its classes are read from its source
+    for (const m of read('../react/mermaid.js').matchAll(/className: '([^']*)'/g)) for (const c of m[1].split(' ')) if (c.startsWith('fdf-')) drawn.add(c);
     // directive lines in code blocks are drawn by transformerFortranDirectives (./shiki), with the line classes it adds
     const { transformerFortranDirectives } = await import('../shiki/index.js');
     for (const source of ['!$omp parallel', '!$acc kernels', '!$cuf kernel do', '!dir$ ivdep']) {

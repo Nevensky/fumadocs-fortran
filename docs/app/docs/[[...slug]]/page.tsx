@@ -24,7 +24,6 @@ import {
   reportUrl,
   siteHref,
 } from '@/lib/shared';
-import { fortranToc } from 'fumadocs-fortran/react';
 
 export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   const params = await props.params;
@@ -48,8 +47,9 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
     <>
       {!page.data.full && <div hidden className="xl:layout:[--fd-toc-width:268px]" />}
       <DocsPage
-        // generated API pages mark each entry with its kind: t type, s subroutine, f function, …
-        toc={fortranToc(page.data.toc, page.data.fortran?.toc)}
+        // generated API pages mark each entry with its kind (t type, s subroutine, f function, …): fortranPlugin in
+        // lib/source.ts gives their tables of contents the letters
+        toc={page.data.toc}
         full={page.data.full}
         footer={{
           children: (

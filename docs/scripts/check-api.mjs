@@ -1,8 +1,12 @@
 // Checks the JavaScript API page (content/docs/reference/javascript.mdx) against the package's entry points and the
 // types they declare (types/*.d.ts):
-// - each entry's exports are the names its .d.ts declares (the modules' own exports; ./react is read from its source,
-//   since it needs React), and each export has a section of its own: an ### heading of its name, whose ts block
-//   imports it from that entry and declares it as the .d.ts does;
+// - each entry's exports are the names its .d.ts declares, and each export has a section of its own: an ### heading
+//   of its name, whose ts block imports it from that entry and declares it as the .d.ts does. The exports are the
+//   module's own, imported; a module that imports a peer dependency that is not installed where this runs (React,
+//   Pele or fumadocs-core, which a site installs, and which the repository's top folder lacks in CI's Docs job) is
+//   read from its source instead: its export function, class, const, let and var, export { … } and export default.
+//   Wherever a module can be imported, the names read from its source must be its own, so that the reading is held
+//   to the module; any other error of an import is a problem;
 // - each option of generate() (ExtractOptions, PageOptions and out) has a section under "Reading options" or "Page
 //   options", whose line gives its type as the .d.ts does, its default (the value the .d.ts gives, where it gives one)
 //   and its flags; the flags are those whose sections on the Command line page name it, or one of its members, as
@@ -194,6 +198,47 @@ export function docDefault(doc) {
 /** A value as code, without the quotes of a string. */
 const bare = (s) => String(s).trim().replace(/^(['"])(.*)\1$/, '$2');
 
+// ---------------------------------------------------------------- the modules' exports
+
+/**
+ * The names a module's source exports, each statement at the start of a line: export function (async, or a
+ * generator), class, const, let and var, export { a, b as c } (from another module or not) and export default; null
+ * for a form this does not read, such as export * or export const { a } = …, whose names it cannot list.
+ */
+export function sourceExports(js) {
+  const names = [];
+  for (const m of String(js).matchAll(/^export\b/gm)) {
+    const rest = js.slice(m.index + 'export'.length);
+    // a name, and not the first of a list (export let a, b), whose others this would miss
+    const one = /^\s+(?:(?:async\s+)?function\b\s*\*?\s*([\w$]+)|(?:class|const|let|var)\s+([\w$]+)(?![\w$])(?!\s*,)|(default)\b)/
+      .exec(rest);
+    const list = /^\s*\{([^}]*)\}/.exec(rest);
+    if (one) names.push(one[1] ?? one[2] ?? one[3]);
+    else if (list) {
+      names.push(...list[1].split(',').map((s) => s.trim()).filter(Boolean).map((s) => s.split(/\s+as\s+/).at(-1)));
+    } else return null;
+  }
+  return names;
+}
+
+/**
+ * What a module of the package exports: { names } imported, with fromSource, the names its source gives (null where
+ * this cannot read them); { names: fromSource, missing } where the import stops at `missing`, a package of `peers` that
+ * is not installed here; or { error } where it stops otherwise.
+ */
+async function moduleExports(file, peers) {
+  const fromSource = sourceExports(fs.readFileSync(file, 'utf8'));
+  try {
+    return { names: Object.keys(await import(pathToFileURL(file).href)), fromSource };
+  } catch (error) {
+    // Node.js names the package, not the path in it: Cannot find package 'fumadocs-core' imported from …
+    const pkg = error?.code === 'ERR_MODULE_NOT_FOUND'
+      ? /^Cannot find package '([^']+)'/.exec(error.message)?.[1] : null;
+    if (pkg && peers.includes(pkg)) return { names: fromSource, missing: pkg };
+    return { error };
+  }
+}
+
 // ---------------------------------------------------------------- the check
 
 async function main() {
@@ -206,19 +251,26 @@ async function main() {
 
   // ---- the entry points, their declarations and their exports
   const pkg = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8'));
+  // the packages a site installs for the entry points that import them, which the package does not install
+  const peers = Object.keys(pkg.peerDependencies ?? {});
   const entries = [];
   for (const [key, target] of Object.entries(pkg.exports)) {
     if (typeof target !== 'object' || !target.types) continue;
     const name = key === '.' ? pkg.name : `${pkg.name}/${key.slice(2)}`;
     const dts = parseDts(path.join(repo, target.types));
-    let runtime;
     const src = path.join(repo, target.default);
-    if (key === './react') {
-      // the components import React, which this package does not install: their names are read from the source
-      const js = fs.readFileSync(src, 'utf8');
-      runtime = [...js.matchAll(/^export (?:function|const|class|let) (\w+)/gm)].map((m) => m[1]);
-    } else runtime = Object.keys(await import(pathToFileURL(src).href));
-    entries.push({ key, name, dts, runtime: runtime.sort() });
+    const read = await moduleExports(src, peers);
+    const list = (names) => [...names].sort().join(', ');
+    if (read.error) {
+      problems.push(`${name}: ${rel(src)} cannot be imported: ${String(read.error.message).split('\n')[0]}`);
+    } else if (read.missing && !read.names) {
+      problems.push(`${name}: ${rel(src)} imports ${read.missing}, which is not installed here, and its exports cannot `
+        + 'be read from its source: change sourceExports in check-api.mjs');
+    } else if (!read.missing && read.fromSource && list(read.fromSource) !== list(read.names)) {
+      problems.push(`${name}: its source reads as exporting ${list(read.fromSource)}, where ${rel(src)} exports `
+        + `${list(read.names)}: change sourceExports in check-api.mjs, which reads it where a peer is not installed`);
+    }
+    entries.push({ key, name, dts, runtime: read.names ? [...read.names].sort() : null, missing: read.missing });
   }
   // a re-exported name: its declaration where it is declared
   const declOf = (entry, name) => {
@@ -232,7 +284,7 @@ async function main() {
   };
   for (const e of entries) {
     const declared = [...e.dts.exported].filter((n) => e.dts.decls.get(n)?.kind !== 'interface' && e.dts.decls.get(n)?.kind !== 'type').sort();
-    if (declared.join(' ') !== e.runtime.join(' ')) {
+    if (e.runtime && declared.join(' ') !== e.runtime.join(' ')) {
       problems.push(`${e.name}: exports ${e.runtime.join(', ')}, where its types declare ${declared.join(', ')}`);
     }
     e.values = declared;
@@ -451,8 +503,15 @@ async function main() {
   }
 
   for (const p of problems) console.log(p);
-  console.log(`check-api: ${exportCount} exports of ${entries.length} entry points, ${optionMembers.length} options of generate() and `
-    + `${typeNames.length} other types and option objects checked in ${rel(apiPage)}; ${problems.length} problems`);
+  // the entries read from their source, and the peers whose absence made it so
+  const fromSource = entries.filter((e) => e.missing && e.runtime);
+  const absent = [...new Set(fromSource.map((e) => e.missing))];
+  const and = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`);
+  const note = fromSource.length ? ` (${and(fromSource.map((e) => e.name))} read from their source, as `
+    + `${and(absent)} ${absent.length === 1 ? 'is' : 'are'} not installed here)` : '';
+  console.log(`check-api: ${exportCount} exports of ${entries.length} entry points${note}, `
+    + `${optionMembers.length} options of generate() and ${typeNames.length} other types and option objects checked `
+    + `in ${rel(apiPage)}; ${problems.length} problems`);
   process.exitCode = problems.length ? 1 : 0;
 }
 

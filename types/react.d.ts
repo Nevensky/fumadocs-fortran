@@ -205,3 +205,12 @@ export declare const fortranComponents: {
   FortranSource: typeof FortranSource;
   FortranGraph: typeof FortranGraph;
 };
+/**
+ * The components with the links they write to the site's own pages (FortranRef's names, the type names of argument
+ * rows and the headers of source blocks) passed through `href`, which gets each link that starts with one / and
+ * returns the link to write, such as the path under the base path the site is served from. Without `href`,
+ * fortranComponents.
+ */
+export declare function createFortranComponents(options?: {
+  href?: (link: string) => string;
+}): typeof fortranComponents;

@@ -1,13 +1,13 @@
-// Publish on GitHub Pages (guides/github-pages.mdx) on the site Set up your site made: the guide's files, then its
-// workflow's build job run here as GitHub would run it for https://owner.github.io/my-docs/ (its run steps, with
-// configure-pages' outputs and GitHub's variables given), and the export checked with docs/scripts/check-links.mjs
-// under /my-docs: every link, asset, same-page anchor, the page actions' Markdown URL and the search index. Then what
-// else the guide says: row cards, source links, Open Graph images, the Open in GitHub links, the search index (at
-// api/search.json, fetched under the base path, and sent compressed by the site's npm start), the old pages in
-// public/, the development server under the base path (its links on it, and 404 off it) and the generated folder out
-// of Git; and the three GitHub Pages entries of Troubleshooting, each seeded, with the problem check-links reports.
+// Publish on GitHub Pages (guides/github-pages.mdx) on the site Set up your site made, with the template's search
+// route, which Large references gives back: the guide's files, then its workflow's build job run here as GitHub would
+// run it for https://owner.github.io/my-docs/ (its run steps, with configure-pages' outputs and GitHub's variables
+// given), and the export checked with docs/scripts/check-links.mjs under /my-docs, as GitHub Pages serves it: every
+// link, asset, same-page anchor, the page actions' Markdown URL and the search index. Then what else the guide says:
+// row cards, source links, Open Graph images, the Open in GitHub links, the search index (at api/search, fetched under
+// the base path), the old pages in public/, the development server under the base path (its links on it, and 404 off
+// it) and the generated folder out of Git; and the three GitHub Pages entries of Troubleshooting, each seeded, with
+// the problem check-links reports.
 import fs from 'node:fs';
-import http from 'node:http';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
@@ -117,49 +117,12 @@ async function preview(ctx, cmd) {
   return out;
 }
 
-/**
- * A file of the export as the site's npm start serves it (serve, as Get started's step 6 runs it, on port 3000), asked
- * for with Accept-Encoding: gzip, as a browser asks: its status, Content-Type, Content-Encoding and the bytes sent.
- * serve gives a file the type of its extension and compresses by type, as nginx does: a file without an extension
- * goes with no type, uncompressed. The server is stopped, and its output logged.
- */
-async function served(ctx, url) {
-  const child = spawn('sh', ['-c', 'npm start'], { cwd: ctx.site, env: ctx.env, detached: true });
-  let text = '';
-  child.stdout.on('data', (d) => (text += d));
-  child.stderr.on('data', (d) => (text += d));
-  const get = (u) => new Promise((ok) => {
-    const req = http.get({ host: 'localhost', port: 3000, path: u, headers: { 'accept-encoding': 'gzip' } }, (res) => {
-      let bytes = 0;
-      res.on('data', (d) => (bytes += d.length));
-      res.on('end', () => ok({ status: res.statusCode, type: res.headers['content-type'] ?? '',
-        encoding: res.headers['content-encoding'] ?? '', bytes }));
-    });
-    req.on('error', () => ok({ status: 0, type: '', encoding: '', bytes: 0 }));
-  });
-  try {
-    for (let i = 0; i < 120; i++) {
-      if ((await get('/')).status === 200) return await get(url);
-      await new Promise((ok) => setTimeout(ok, 500));
-    }
-    return { status: 0, type: '', encoding: '', bytes: 0 };
-  } finally {
-    for (const [sig, wait] of [['SIGINT', 1500], ['SIGKILL', 300]]) {
-      try {
-        process.kill(-child.pid, sig);
-      } catch {
-        // gone
-      }
-      await new Promise((ok) => setTimeout(ok, wait));
-    }
-    fs.writeFileSync(path.join(ctx.logDir, 'npm-start.log'), `$ npm start (in docs)\n${text}`);
-  }
-}
-
 function checkLinks(ctx, label) {
   const script = path.join(ctx.repo, 'docs', 'scripts', 'check-links.mjs');
-  // the origin the workflow builds with, so that the absolute URLs of the metadata (og:image) are checked too
-  return ctx.run(`node "${script}" "${path.join(ctx.site, 'out')}" ${BASE} ${ORIGIN}`, { label, allowFail: true });
+  // the origin the workflow builds with, so that the absolute URLs of the metadata (og:image) are checked too; the
+  // host GitHub Pages, which compresses the template's search index, though its name has no extension
+  return ctx.run(`node "${script}" "${path.join(ctx.site, 'out')}" ${BASE} ${ORIGIN}`,
+    { label, allowFail: true, env: { CHECK_LINKS_HOST: 'github-pages' } });
 }
 
 export default {
@@ -172,7 +135,7 @@ export default {
     // procedures have none of: a card of a row, and one of a Calls line, linking to dense_matrix's entry
     ctx.write(CARDS, CARDS_PAGE);
 
-    const r = await ctx.follow(page, { sections: ['base-path', 'links', 'graphs', 'search', 'address', 'workflow'] });
+    const r = await ctx.follow(page, { sections: ['base-path', 'links', 'search', 'address', 'workflow'] });
     if (!r.ok) return;
 
     // ---- the workflow, its build job run here
@@ -228,24 +191,16 @@ export default {
       'the first page\'s Open in GitHub link lacks docs/');
     ctx.expect(!/\/blob\/main\/(docs\/)?content\/docs\/api\//.test(ctx.outHtml('/docs/api/demo') ?? ''),
       'a generated page has an Open in GitHub link');
-    // the search index: api/search.json, the route Set up your site renames, and not api/search, the template's, which
-    // has no extension
-    const index = path.join(ctx.site, 'out', 'api', 'search.json');
-    ctx.expect(fs.existsSync(index), 'no search index at out/api/search.json');
-    ctx.expect(!ctx.exists('docs/out/api/search'), 'out/api/search, an index without an extension, is in the export');
+    // the search index: api/search, the template's route, which GitHub Pages compresses though its name has no
+    // extension, fetched by the dialog under the base path
+    ctx.expect(ctx.exists('docs/out/api/search'), 'no search index at out/api/search');
     const chunks = path.join(ctx.site, 'out', '_next', 'static', 'chunks');
-    // the search dialog's chunk, with the index's path under the base path, as the build writes it
+    // the search dialog's chunk, with the index's path under the base path as the build writes it, "/my-docs/api/search"
+    // or `${…}/api/search`, closed by its quote, so that a path of api/search.json does not count
+    const fetches = new RegExp(`(["\`])${BASE}/api/search\\1|\\}/api/search\``);
     const searchFrom = fs.readdirSync(chunks).some((f) => f.endsWith('.js')
-      && fs.readFileSync(path.join(chunks, f), 'utf8').includes(`"${BASE}/api/search.json"`));
-    ctx.expect(searchFrom, `no client chunk fetches "${BASE}/api/search.json"`);
-    // and as a server sends it: npm start serves out/ at its root, without the base path
-    const sent = await served(ctx, '/api/search.json');
-    const size = fs.existsSync(index) ? fs.statSync(index).size : 0;
-    const said = `${sent.status}, ${sent.type || 'no Content-Type'}, ${sent.encoding || 'no Content-Encoding'}, `
-      + `${sent.bytes} bytes sent for a file of ${size}`;
-    ctx.note(`  npm start, /api/search.json: ${said}`);
-    ctx.expect(sent.status === 200 && /^application\/json\b/.test(sent.type) && sent.encoding === 'gzip'
-      && sent.bytes < size, `npm start does not send /api/search.json as application/json, gzipped: ${said}`);
+      && fetches.test(fs.readFileSync(path.join(chunks, f), 'utf8')));
+    ctx.expect(searchFrom, `no client chunk fetches "${BASE}/api/search"`);
     ctx.expect(ctx.exists('docs/out/module/old_module.html'), 'an old page in docs/public/ is not in the export');
     fs.rmSync(path.join(ctx.site, 'public', 'module'), { recursive: true, force: true });
 
@@ -276,9 +231,11 @@ export default {
 
     // ---- Troubleshooting's GitHub Pages entries, seeded together: each is its own problem in check-links
     const seeded = [
-      ['docs/components/mdx.tsx', (t) => t.replace("import { fortranMdxComponents } from '@/components/mdx/fortran';",
-        "import { fortranComponents } from 'fumadocs-fortran/react';").replace('...fortranMdxComponents,',
-        '...fortranComponents,'), /hover-card link without the base path/, 'links that leave the site'],
+      ['docs/components/mdx.tsx', (t) => t
+        .replace("import { createFortranComponents } from 'fumadocs-fortran/react';",
+          "import { fortranComponents } from 'fumadocs-fortran/react';")
+        .replace('...createFortranComponents({ href: siteHref }),', '...fortranComponents,'),
+      /hover-card link without the base path/, 'links that leave the site'],
       ['docs/lib/shared.ts', (t) => t.replace(/const slash = [^\n]*;/, "const slash = '';"),
         /to a page without its trailing slash/, 'a page that reloads'],
       ['docs/app/docs/[[...slug]]/page.tsx', (t) => t.replace('const markdownUrl = `/llms.mdx',

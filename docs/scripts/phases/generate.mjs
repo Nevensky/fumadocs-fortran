@@ -1,7 +1,7 @@
 // Generate the reference (guides/generate.mdx) on the site Get started made, and Set up your site after it: the
 // guide's commands, run as the page writes them, and the outputs it quotes.
-// - the reference script: `npm pkg set` adds it, `npm run reference` prints the quoted line, and the script holds the
-//   command the page gives;
+// - the reference script, which Get started adds: `npm pkg set` sets it as the page gives it, `npm run reference`
+//   prints the quoted line, and the script holds the command the page gives;
 // - the build: the page's -D command, and what How a condition shows says the MPI build's pages hold;
 // - dump --summary with -D USE_MPI, and its quoted total;
 // - --repo and --rev for one run, after --, and the link the page quotes;
@@ -38,7 +38,8 @@ export default {
   async run(ctx) {
     const page = ctx.page(PAGE);
     const source = ctx.exists('docs/lib/source.ts') ? ctx.read('docs/lib/source.ts') : '';
-    const setUp = /remarkMath/.test(source) && /remarkMdxMermaid/.test(source);
+    // Set up your site gives withFortran the maths plugins and the graphs
+    const setUp = /\bremarkMath\b/.test(source) && /\bgraphs: true\b/.test(source);
     // the flags of Flags for one run, for a site without maths and graphs
     const extra = setUp ? '' : ' -- --math code --graphs none';
     ctx.note(`  the site ${setUp ? 'has maths and graphs (Set up your site)' : 'has no maths or graphs: runs add'

@@ -39,6 +39,7 @@
   "files": [
     "bin",
     "src",
+    "fumadocs",
     "react",
     "registry",
     "shiki",
@@ -56,6 +57,18 @@
     "./react": {
       "types": "./types/react.d.ts",
       "default": "./react/index.js"
+    },
+    "./mermaid": {
+      "types": "./types/mermaid.d.ts",
+      "default": "./react/mermaid.js"
+    },
+    "./mdx": {
+      "types": "./types/mdx.d.ts",
+      "default": "./fumadocs/mdx.js"
+    },
+    "./source": {
+      "types": "./types/source.d.ts",
+      "default": "./fumadocs/source.js"
     },
     "./math": {
       "types": "./types/math.d.ts",
@@ -80,9 +93,17 @@
     "prepublishOnly": "node test/run.mjs && node test/registry/check.mjs"
   },
   "peerDependencies": {
+    "fumadocs-core": ">=16",
+    "pele": ">=1.13",
     "react": ">=18"
   },
   "peerDependenciesMeta": {
+    "fumadocs-core": {
+      "optional": true
+    },
+    "pele": {
+      "optional": true
+    },
     "react": {
       "optional": true
     }

@@ -26,24 +26,28 @@ npm 12 installs a package from GitHub only with `--allow-git=root`; npm 10 and 1
 ([Troubleshooting](https://nevensky.github.io/fumadocs-fortran/docs/guides/troubleshooting/#eallowgit-non-root)). To
 pin a commit, write it after a `#`: `github:Nevensky/fumadocs-fortran#<commit>`.
 
-[Get started](https://nevensky.github.io/fumadocs-fortran/docs/get-started/) creates the site and writes the
-reference into it, in six steps.
+[Get started](https://nevensky.github.io/fumadocs-fortran/docs/get-started/) adds the reference to a Fumadocs site,
+as Fumadocs' own integrations are added: the package's MDX options and loader plugin in the site's content source,
+its components and its stylesheet. [Start a new site](https://nevensky.github.io/fumadocs-fortran/docs/new-site/)
+makes a site for a project without one.
 
 ## Documentation
 
 - [Get started](https://nevensky.github.io/fumadocs-fortran/docs/get-started/): from the Fortran in your `src/` to its
-  API reference in a Fumadocs site of your own.
-- [Set up your site](https://nevensky.github.io/fumadocs-fortran/docs/guides/site-setup/): the components, maths,
-  graphs, Fortran code blocks and kind letters in a Fumadocs site, its search index, named
-  [`search.json`](https://nevensky.github.io/fumadocs-fortran/docs/guides/site-setup/#search) for the servers that
-  compress by type, and prefetch on
-  [large references](https://nevensky.github.io/fumadocs-fortran/docs/guides/site-setup/#large).
+  API reference in your Fumadocs site.
+- [Start a new site](https://nevensky.github.io/fumadocs-fortran/docs/new-site/): a Fumadocs site in a `docs/` folder
+  of your project, from Fumadocs' static template.
+- [Set up your site](https://nevensky.github.io/fumadocs-fortran/docs/guides/site-setup/): maths and graphs on the
+  generated pages, and updates of the package.
 - [Generate the reference](https://nevensky.github.io/fumadocs-fortran/docs/guides/generate/): the build to document,
   with its cpp macros and include folders, what the pages show, the links to your repository, and running it again.
 - [Move from FORD or Doxygen](https://nevensky.github.io/fumadocs-fortran/docs/guides/from-ford-doxygen/): what carries
   over from a FORD project file or a Doxyfile, and what works differently.
 - [Publish on GitHub Pages](https://nevensky.github.io/fumadocs-fortran/docs/guides/github-pages/): the site at your
   repository's GitHub Pages address, built by a workflow.
+- [Large references](https://nevensky.github.io/fumadocs-fortran/docs/guides/large-references/): a search index named
+  `search.json` for the servers that compress by type, no prefetching of large pages, and no layout shift on long
+  ones.
 - [Troubleshooting](https://nevensky.github.io/fumadocs-fortran/docs/guides/troubleshooting/): each message or symptom,
   its cause and its fix.
 - [Command line](https://nevensky.github.io/fumadocs-fortran/docs/reference/cli/): `dump` and `generate`, with every
@@ -67,9 +71,10 @@ reference into it, in six steps.
 - [Changelog](https://nevensky.github.io/fumadocs-fortran/docs/changelog/) and
   [Contributing](https://nevensky.github.io/fumadocs-fortran/docs/contributing/).
 
-`fumadocs-fortran/math` gives a site `katexMacros`, the commands Fortran doc comments write that KaTeX lacks, for
-rehype-katex; [Set up your site](https://nevensky.github.io/fumadocs-fortran/docs/guides/site-setup/) shows where it
-goes.
+A site takes the package through its entry points: `fumadocs-fortran/mdx` (`withFortran` and `fortranPageSchema`)
+and `fumadocs-fortran/source` (`fortranPlugin`) in its content source, `fumadocs-fortran/react` and
+`fumadocs-fortran/mermaid` among its MDX components, and `fumadocs-fortran/style.css` in its global CSS.
+[JavaScript API](https://nevensky.github.io/fumadocs-fortran/docs/reference/javascript/) has each of them.
 
 ## Licence
 

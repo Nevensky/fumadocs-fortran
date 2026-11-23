@@ -3,13 +3,13 @@ title: Publish on GitHub Pages
 description: The site at https://OWNER.github.io/REPOSITORY/, built and published by a workflow on every push.
 ---
 
-Publish the site from [Get started](/docs/get-started) as a GitHub Pages project site, at
-`https://OWNER.github.io/REPOSITORY/`, with the reference generated again on every push to `main`. GitHub Pages
-serves a public repository on every plan; a private one needs a paid plan. Paths start at your project's top folder,
-with the site in `docs/`, and the commands run there: from the site's folder, `cd ..` goes back to it.
+Publish the site of [Start a new site](/docs/new-site) and [Get started](/docs/get-started) as a GitHub Pages
+project site, at `https://OWNER.github.io/REPOSITORY/`, with the reference generated again on every push to `main`.
+GitHub Pages serves a public repository on every plan; a private one needs a paid plan. Paths start at your project's
+top folder, with the site in `docs/`, and the commands run there: from the site's folder, `cd ..` goes back to it.
 
-The workflow below runs the `reference` script that [Generate the reference](/docs/guides/generate#reference-script)
-adds to `docs/package.json`, so that it generates the pages with the same flags as you do.
+The workflow below runs the `reference` script that [Get started](/docs/get-started#generate) adds to
+`docs/package.json`, so that it generates the pages with the same flags as you do.
 
 ## Serve the site under the repository's name [#base-path]
 
@@ -74,98 +74,42 @@ and Copy Markdown:
 +  return { segments, url: basePath + getImageUrl(segments, page.locale) };
 ```
 
-Wrap the three components that write links:
-
-```tsx title="docs/components/mdx/fortran.tsx"
-import type { ComponentProps } from 'react';
-import { FortranArg, FortranRef, FortranSource, fortranComponents, type FortranArgProps } from 'fumadocs-fortran/react';
-import { siteHref } from '@/lib/shared';
-
-// fumadocs-fortran's components, with their links to the site written by siteHref
-export const fortranMdxComponents = {
-  ...fortranComponents,
-  FortranArg: (props: ComponentProps<typeof FortranArg>) => <FortranArg {...props} refs={siteRefs(props.refs)} />,
-  FortranRef: (props: ComponentProps<typeof FortranRef>) => <FortranRef {...props} href={siteHref(props.href)} />,
-  FortranSource: (props: ComponentProps<typeof FortranSource>) => (
-    <FortranSource {...props} href={siteHref(props.href)} />
-  ),
-};
-
-/** A row's refs with siteHref's links: an object, as generated, or JSON text, which FortranArg reads too. */
-function siteRefs(refs: unknown): FortranArgProps['refs'] {
-  let r = refs;
-  if (typeof r === 'string') {
-    try {
-      r = JSON.parse(r);
-    } catch {
-      return undefined;
-    }
-  }
-  if (!r || typeof r !== 'object' || Array.isArray(r)) return undefined;
-  return Object.fromEntries(
-    Object.entries(r).map(([name, ref]) => [
-      name,
-      ref && typeof ref === 'object' && typeof ref.href === 'string' ? { ...ref, href: siteHref(ref.href) } : ref,
-    ]),
-  );
-}
-```
-
-and register them in place of `fortranComponents`:
+Give the components `siteHref` for their links, with `createFortranComponents` in place of `fortranComponents`,
+and the `Mermaid` component of [Set up your site](/docs/guides/site-setup#graphs) as its `href`:
 
 ```diff title="docs/components/mdx.tsx"
 -import { fortranComponents } from 'fumadocs-fortran/react';
-+import { fortranMdxComponents } from '@/components/mdx/fortran';
++import { createFortranComponents } from 'fumadocs-fortran/react';
+ import { Mermaid } from 'fumadocs-fortran/mermaid';
++import { siteHref } from '@/lib/shared';
 @@
 -    ...fortranComponents,
-+    ...fortranMdxComponents,
+-    Mermaid,
++    ...createFortranComponents({ href: siteHref }),
++    Mermaid: (props: { chart: string }) => <Mermaid {...props} href={siteHref} />,
 ```
 
-### Graphs [#graphs]
-
-If the site draws graphs, as [Set up your site](/docs/guides/site-setup#graphs) shows, their nodes link to the
-reference too:
-
-```tsx title="docs/components/mdx/mermaid.tsx"
-import { useId } from 'react';
-import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
-import { render } from 'pele';
-import { siteHref } from '@/lib/shared'; // [!code ++]
-
-export function Mermaid({ chart }: { chart: string }) {
-  const id = useId();
-  let svg: string;
-  try {
-    svg = render(chart, { idPrefix: id }).svg;
-  } catch {
-    return (
-      <CodeBlock title="Mermaid">
-        <Pre>{chart}</Pre>
-      </CodeBlock>
-    );
-  }
-  svg = svg.replace(/(<a\b[^>]*?\shref=")([^"]*)"/g, (_, start: string, href: string) => `${start}${siteHref(href)}"`); // [!code ++]
-  return <div className="not-prose" dangerouslySetInnerHTML={{ __html: svg }} />;
-}
-```
+`createFortranComponents` passes each link of the components that goes to a page of the site through `href`, and
+leaves the others, such as the source headers' links to GitHub, as they are. `Mermaid` does the same with the links of
+the graphs' nodes; a site without graphs has no `Mermaid` line to change.
 
 ## Search, Copy Markdown and the llms files [#search]
 
-The search dialog reads its index in the browser, from `/api/search.json`:
-[Set up your site](/docs/guides/site-setup#search) names the search route `docs/app/api/search.json/route.ts`, and
-gives the dialog that address. Give it the path under the base path:
+The search dialog reads its index in the browser, from `/api/search` with the static template's search route,
+`docs/app/api/search/route.ts`. Give it the path under the base path:
 
 ```diff title="docs/components/search.tsx"
  import { useI18n } from 'fumadocs-ui/contexts/i18n';
 +import { basePath } from '@/lib/shared';
 @@
--    from: '/api/search.json',
-+    from: `${basePath}/api/search.json`,
+     locale,
++    from: `${basePath}/api/search`,
+   });
 ```
 
-A site whose route is the template's, `docs/app/api/search/route.ts`, renames its folder to `search.json` first, as
-Set up your site does, and adds the `from` line after `locale,`. GitHub Pages compresses the index under either name,
-but `npm start` and other servers that compress by type send a file without an extension uncompressed.
+GitHub Pages compresses the index, though its name has no extension. A site whose route
+[Large references](/docs/guides/large-references#search) names `search.json` puts the base path in that `from` line
+instead: `` from: `${basePath}/api/search.json`, ``.
 
 Leave the Markdown URL of the page template's Copy Markdown and View as Markdown as it is, without the base path:
 `fumadocs-ui` adds the base path to it, and a URL that has one already gets it twice. The llms files, `llms.txt` and
@@ -208,7 +152,7 @@ the build does not warn that `metadataBase` is not set:
 
 Each page's Open in GitHub link points at `content/docs/…` of the repository, which lacks the `docs/` of the site's
 folder, and the generated pages are none to edit. Set `appName` and `gitConfig` as
-[Set up your site](/docs/guides/site-setup#tidy) shows, and change the link:
+[Start a new site](/docs/new-site#name-the-site) shows, and change the link:
 
 ```diff title="docs/app/docs/[[...slug]]/page.tsx"
          <ViewOptionsPopover
@@ -331,11 +275,11 @@ and suggests a credit for the site's footer.
 
 A site from another template than the static one needs the static export first: `output: 'export'` in
 `next.config.mjs`, a search route that the build writes as a file (`export const revalidate = false;` and
-`export const { staticGET: GET } = createFromSource(source);` in `app/api/search.json/route.ts`, named as
-[Set up your site](/docs/guides/site-setup#search) names it), the static search client above, and no `proxy.ts`,
-middleware or rewrites, which an export cannot run. Without the route's change the build stops with Failed to
-collect configuration for /api/search.json, or /api/search for a route under the template's name. Fumadocs'
-[guide to static builds](https://www.fumadocs.dev/docs/next/deploying/static) has the details.
+`export const { staticGET: GET } = createFromSource(source);` in `app/api/search/route.ts`, or in
+`app/api/search.json/route.ts` as [Large references](/docs/guides/large-references#search) names it), the static
+search client above, and no `proxy.ts`, middleware or rewrites, which an export cannot run. Without the route's change
+the build stops with Failed to collect configuration for /api/search, or /api/search.json for a route named so.
+Fumadocs' [guide to static builds](https://www.fumadocs.dev/docs/next/deploying/static) has the details.
 
 ## Somewhere else [#elsewhere]
 

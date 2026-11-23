@@ -1,21 +1,26 @@
 ---
 title: JavaScript API
-description: The functions, options and types of fumadocs-fortran, and of its react, math and shiki entry points.
+description: The functions, options and types of fumadocs-fortran and of each of its entry points.
 ---
 
-The package has four entry points. Each is an ES module, and each has its types, in `types/`, which TypeScript finds
+The package has seven entry points. Each is an ES module, and each has its types, in `types/`, which TypeScript finds
 through the package's `exports`.
 
 | Entry point | What it holds | Where it runs |
 | --- | --- | --- |
 | `fumadocs-fortran` | The generator: from Fortran sources to the model, and from the model to pages. | Node.js 18 or later |
+| `fumadocs-fortran/mdx` | The MDX options and the page schema of a Fumadocs site's docs collection. | A Fumadocs site's `lib/source.ts` or `source.config.ts`, with `fumadocs-core` 16 or later |
+| `fumadocs-fortran/source` | A plugin for Fumadocs' `loader()`: the kind letters of the generated pages. | A Fumadocs site's `loader()`, with `fumadocs-core` 16 or later and React 18 or later |
 | `fumadocs-fortran/react` | The components the generated pages use. | A site with React 18 or later, on the server and in the browser |
+| `fumadocs-fortran/mermaid` | A component that draws ` ```mermaid ` blocks as SVG. | A site with React 18 or later and Pele 1.13 or later, where its pages render |
 | `fumadocs-fortran/math` | The maths helpers a site's KaTeX uses. | Anywhere |
 | `fumadocs-fortran/shiki` | Shiki grammars and transformers for Fortran code blocks. | Anywhere Shiki runs |
 
-The package also exports `fumadocs-fortran/style.css`, the stylesheet of the components, and the grammars as JSON
-files, `fumadocs-fortran/shiki/*.json`. The [command line](/docs/reference/cli) runs `generate()` and `extract()`;
-some of their options have no flag, and this page is where they are set.
+`fumadocs-core`, React and Pele are optional peer dependencies of the package: the entry points that import them use
+the site's own, and the generator needs none of them. The package also exports `fumadocs-fortran/style.css`, the
+stylesheet of the components, and the grammars as JSON files, `fumadocs-fortran/shiki/*.json`. The
+[command line](/docs/reference/cli) runs `generate()` and `extract()`; some of their options have no flag, and this
+page is where they are set.
 
 ## A script [#a-script]
 
@@ -482,7 +487,9 @@ interface FortranFrontmatter {
 Builds the pages of a model and the folder's `meta.json`, without writing them, with the [page options](#page-options).
 It reads nothing itself: the source blocks and FORD's includes come from `readSource` and `include`. Each page but the
 overview has a `fortran` field in its front matter, a `FortranFrontmatter`: the unit's kind, or `procedures` for a
-page of external procedures, and what each `###` heading is, by its anchor, for [`fortranToc`](#fortrantoc).
+page of external procedures, and what each `###` heading is, by its anchor. A site keeps the field with
+[`fortranPageSchema`](#fortranpageschema), and [`fortranPlugin`](#fortranplugin) makes the kind letters of the
+sidebar and the table of contents from it.
 
 ### writePages [#writepages]
 
@@ -820,45 +827,138 @@ interface DocBlock {
 }
 ```
 
-## fumadocs-fortran/math [#fumadocs-fortran-math]
+## fumadocs-fortran/mdx [#fumadocs-fortran-mdx]
 
-The maths helpers a site needs, without the parser. The main entry exports them too.
+What a Fumadocs site's docs collection needs for the generated pages: MDX options and a page schema, for its
+`defineDocs`, in `lib/source.ts` with the macro API of Fumadocs' static template, or in `source.config.ts`. The module
+imports `fumadocs-core/mdx-plugins`, which every Fumadocs site has. Its types are written without those of Fumadocs
+and unified, so that they fit the site's versions: the options are as loose as `applyMdxPreset` takes them, and the
+schema is any Standard Schema.
 
-### katexMacros [#katexmacros]
-
-```ts
-import { katexMacros } from 'fumadocs-fortran/math';
-
-const katexMacros: Record<string, string>;
-```
-
-Macros for the commands that Fortran docs write and KaTeX lacks: those of the physics package (`\abs`, `\norm`,
-`\expval`, `\mel`, `\comm`, `\order`, `\vb`, `\va`, `\vu`, `\grad`, `\dd`, `\dv`, `\pdv`, `\Tr` and their kin),
-`\vv`, `\mathbbm`, `\mathds`, `\eps`, `\C`, `\Q` and `\ud`. They are for rehype-katex's `macros` option. Pass a copy,
-as KaTeX adds the `\gdef` of a page to the object it is given:
+### withFortran [#withfortran]
 
 ```ts
-const katex = [rehypeKatex, { macros: { ...katexMacros } }];
+import { withFortran } from 'fumadocs-fortran/mdx';
+
+function withFortran<T extends object = {}>(options?: T & FortranMdxOptions): MdxOptions<T>;
 ```
 
-### normaliseTex [#normalisetex]
+The MDX options for `fumadocs-mdx`: for `applyMdxPreset()`, whose result is a collection's `mdxOptions`, or for the
+`mdxOptions` of `defineConfig()`. They are `options`, the site's own, as those take them, with what the generated pages
+need added; `MdxOptions<T>` is `T` without `math`, `graphs` and `grammars`, which are not passed on.
+
+```ts title="lib/source.ts"
+const docs = defineDocs({
+  dir: 'content/docs',
+  docs: {
+    schema: fortranPageSchema(pageSchema),
+    mdxOptions: applyMdxPreset(withFortran({ math: { remarkMath, rehypeKatex }, graphs: true })),
+  },
+});
+```
+
+Of the site's options, it sets four:
+
+- `rehypeCodeOptions`: [`fortranRehypeCode`](#fortranrehypecode) of Fumadocs' `rehypeCodeDefaultOptions` with the
+  site's own `rehypeCodeOptions` over them, as `rehypeCode` merges what it is given over its defaults, and with
+  `grammars` for the grammars' options. The code blocks get the Fortran grammars and the two transformers, and keep
+  Fumadocs' themes and notations.
+- `remarkStructureOptions`: a `filterElement` that gives the search records the text of the components whose names
+  start with `Fortran`, rather than their tags, and keeps the other elements as the site's own `filterElement` does,
+  or else as Fumadocs' default does (`File`, `TypeTable`, `Callout` and `Card`). The site's other options of
+  remark-structure stay.
+- `remarkPlugins`, for `math` and `graphs`: remark-math and `remarkMdxMermaid`, after the site's own list, which
+  `applyMdxPreset` puts before remark-structure. A function of Fumadocs' list gets the list with them in it, before
+  remark-structure.
+- `rehypePlugins`, for `math`: rehype-katex before `rehypeCode`, so that a maths block is set by KaTeX rather than
+  highlighted as code. A list of the site's own keeps the place `applyMdxPreset` gives it, after `rehypeCode`, and a
+  function of Fumadocs' list gets the list with rehype-katex first.
+
+A plugin that the site's list has already is not added again. A rehype-katex in the site's own `rehypePlugins` moves
+before `rehypeCode`, with its options over those of `math`, and `katexMacros` under its macros.
+`rehypeCodeOptions: false` and `remarkStructureOptions: false`, which turn those plugins off, stay `false`. With
+`preset: 'minimal'`, which leaves Fumadocs' plugins out, the plugins are added to plain lists and `withFortran` sets
+no option of Fumadocs'. It throws a `TypeError` for `options` that are not an object, a `math` without both plugins,
+and, where `math` or `graphs` adds to it, a `remarkPlugins` or `rehypePlugins` that is neither a list nor a function,
+or, with `preset: 'minimal'`, no list.
+
+| `FortranMdxOptions` | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `math?` | `{ remarkMath: Pluggable; rehypeKatex: Pluggable }` | none | Maths: the default exports of remark-math and rehype-katex, which the site installs, for the `$…$` and `$$…$$` of the pages. rehype-katex gets a copy of [`katexMacros`](#katexmacros) as its `macros`, with those of its own options, given as `rehypeKatex: [rehypeKatex, { macros }]`, over them. |
+| `graphs?` | `boolean` | `false` | Graphs: Fumadocs' `remarkMdxMermaid`, which turns each ` ```mermaid ` block, the generated graphs' and those of the site's own pages, into `<Mermaid chart="…" />`, for the [`Mermaid`](#mermaid) component that the site registers. |
+| `grammars?` | `FortranLanguageOptions` | the grammars' defaults | The options of the Fortran grammars, as [`getFortranLanguages`](#getfortranlanguages) takes them: `{ fixedLineLength: 132 }` for fixed form compiled with `-ffixed-line-length-132`, and `directives: false` or `fypp: false` to leave those grammars out. |
+
+`Pluggable` is a plugin, or a list of a plugin and its options, as `remarkPlugins` holds them: `rehypeKatex`, or
+`[rehypeKatex, { strict: false }]`.
+
+### fortranPageSchema [#fortranpageschema]
 
 ```ts
-import { normaliseTex } from 'fumadocs-fortran/math';
+import { fortranPageSchema } from 'fumadocs-fortran/mdx';
 
-function normaliseTex(tex: string, options?: { inline?: boolean }): string;
+function fortranPageSchema<S extends StandardSchema<any, any>>(base: S): PageSchema<S>;
 ```
 
-Writes TeX that LaTeX and MathJax read as KaTeX renders it: `\label` is dropped; the characters `_ & % # $ ^` are
-escaped inside `\text{…}` and its kin, and `\mbox`, `\textsl` and `\textsc` become `\text`, `\textit` and `\text`;
-`eqnarray` becomes `aligned`, `multline` `gathered` and `flalign` `align`, a `split` with more than one `&` a row
-becomes `aligned`, and `displaymath` goes; `\(` and `\)` inside maths are parentheses. With `inline`, the display
-environments take their inline forms (`align` and `split` become `aligned`, `gather` `gathered`, `alignat`
-`alignedat`, and `equation` goes), and `\tag` goes.
+A page schema that validates a page's front matter as `base` does, and keeps the `fortran` field of the generated
+pages, which a schema such as Fumadocs' `pageSchema` drops: `schema: fortranPageSchema(pageSchema)`. `base` is a
+[Standard Schema](https://standardschema.dev), as `fumadocs-mdx` takes a collection's: a Zod schema, such as
+`pageSchema` of `fumadocs-core/source/schema`, or one of Valibot or ArkType. The result is a Standard Schema of its
+own and no Zod schema, so a site that adds fields of its own extends `base` first:
+`fortranPageSchema(pageSchema.extend({ … }))`.
 
-```js
-normaliseTex('\\begin{eqnarray}a &=& b \\label{eq:1}\\end{eqnarray}'); // '\\begin{aligned}a &= b \\end{aligned}'
+It checks the field as [`buildPages`](#buildpages) writes it: an object, whose `kind` is a string and whose `toc` is an
+object of strings. A page whose field is otherwise has an issue at its path, such as `fortran.toc`, beside those of
+`base`, and a page without the field is validated by `base` alone. `PageSchema<S>` is `S` with
+`fortran?: FortranFrontmatter` in its input and its output, so that `page.data.fortran` has its type.
+[`fortranPlugin`](#fortranplugin) reads the field. It throws a `TypeError` for a `base` that is no Standard Schema.
+
+## fumadocs-fortran/source [#fumadocs-fortran-source]
+
+A plugin for `loader()`, the function of `fumadocs-core/source` that serves a Fumadocs site's pages: the kind letters
+of the generated pages, in their tables of contents and in the sidebar. The module imports React. Its types are
+written without those of `fumadocs-core`, so that they fit the site's version.
+
+### fortranPlugin [#fortranplugin]
+
+```ts
+import { fortranPlugin } from 'fumadocs-fortran/source';
+
+function fortranPlugin(options?: FortranPluginOptions): LoaderPlugin;
 ```
+
+The plugin, for the `plugins` of the site's `loader()`:
+
+```ts title="lib/source.ts"
+export const source = loader({
+  baseUrl: '/docs',
+  source: docs.toFumadocsSource(),
+  plugins: [fortranPlugin()],
+});
+```
+
+Its two parts read the `fortran` field of a generated page's front matter, which the collection's schema keeps with
+[`fortranPageSchema`](#fortranpageschema), and leave a page without the field, such as one written by hand, as it is.
+
+- The table of contents: each generated page's `toc` comes through [`fortranToc`](#fortrantoc) with the kinds of
+  `fortran.toc`, so that its entries have their letters (`t` for a type, `s` a subroutine, `f` a function and so on)
+  wherever the site reads `page.data.toc`, and the page template passes it to `DocsPage` as it is. `fumadocs-mdx`
+  defines `toc` as a getter that runs the compiled page when it is first read, so the plugin wraps the getter rather
+  than read it: the table is made once, when it is first asked for. An async collection's page gets the same from
+  what its `load()` resolves to.
+- The sidebar: each generated page has a letter for its kind in the place of its icon, `mod`, `smod`, `prog`, `bd` or
+  `proc` for a module, a submodule, a program, block data or a page of external procedures. A page with an icon of its
+  own keeps it. The letters are hidden from screen readers, which read the page's title alone.
+
+It runs before the site's other plugins (`enforce: 'pre'`), so that an icon plugin such as `lucideIconsPlugin`, even
+with a `defaultIcon`, leaves the letters as they are. `LoaderPlugin` is a plugin as `loader()` takes it: a `name`,
+`enforce`, `transformStorage`, for the tables of contents, and `transformPageTree`, for the sidebar.
+[fortranToc](/docs/reference/components#fortrantoc) on the Components page shows the letters, and
+[Styling](/docs/reference/components#styling) their classes and colours.
+
+| `FortranPluginOptions` | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `toc?` | `boolean` | `true` | `false` leaves the tables of contents as they are. |
+| `sidebar?` | `boolean` | `true` | `false` leaves the sidebar as it is. |
 
 ## fumadocs-fortran/react [#fumadocs-fortran-react]
 
@@ -885,6 +985,27 @@ const fortranComponents: {
 ```
 
 The seven components, to spread into a site's `getMDXComponents()`, after Fumadocs' own.
+[`createFortranComponents`](#createfortrancomponents) gives the same seven with their links to the site's own pages
+rewritten, as a site served under a base path needs them.
+
+### createFortranComponents [#createfortrancomponents]
+
+```ts
+import { createFortranComponents } from 'fumadocs-fortran/react';
+
+function createFortranComponents(options?: {
+  href?: (link: string) => string;
+}): typeof fortranComponents;
+```
+
+The seven components of [`fortranComponents`](#fortrancomponents), with the links they write to the site's own pages
+passed through `href`: those of `FortranRef`, of the names in an argument row's type that its `refs` lists, as an
+object or as JSON text, and of a source block's header. `href` gets each link that starts with one `/`, such as
+`/docs/api/solver_kernels#dense_matrix`, and returns the link to write: for a site served under a base path, the path
+with the base path before it. Other links, such as those to GitHub or to a library's pages, stay as they are, and so
+do the components that write none. Without `href`, it returns a copy of `fortranComponents`.
+[Publish on GitHub Pages](/docs/guides/github-pages#links) gives it the site's own function. The nodes of the graphs
+link through the `href` of the [`Mermaid`](#mermaid) component.
 
 ### FortranBadges [#fortranbadges]
 
@@ -1055,8 +1176,82 @@ type FortranTocKind =
 Fumadocs' table of contents with a letter for the kind of each entity, from `kinds`: the anchors, without `#`, and
 their kinds, as a generated page's front matter `fortran.toc` holds them. The letters are `mod`, `smod`, `prog`, `t`,
 `i`, `s`, `f`, `v`, `p` and `e`. It returns an array of its own, in which the items it has no kind for are as they
-were, and `toc` itself when `kinds` is missing. [fortranToc](/docs/reference/components#fortrantoc) on the Components
-page shows where it goes.
+were, and `toc` itself when `kinds` is missing. A Fumadocs site gets it through [`fortranPlugin`](#fortranplugin),
+which passes each generated page's table of contents through it with the kinds of the page's front matter.
+[fortranToc](/docs/reference/components#fortrantoc) on the Components page shows the letters.
+
+## fumadocs-fortran/mermaid [#fumadocs-fortran-mermaid]
+
+The component that draws the ` ```mermaid ` blocks of a site's pages, which [`withFortran`](#withfortran) turns into
+`Mermaid` elements with its `graphs` option: the generated graphs and the diagrams a page writes itself. The module
+imports React and Pele, which the site installs. Like the components of `fumadocs-fortran/react`, the component holds
+no state, effects or context and carries no `'use client'`.
+
+### Mermaid [#mermaid]
+
+```ts
+import { Mermaid } from 'fumadocs-fortran/mermaid';
+
+function Mermaid(props: MermaidProps): ReactElement;
+
+interface MermaidProps {
+  chart: string;
+  href?: (link: string) => string;
+  narrow?: number;
+}
+```
+
+A diagram, drawn as SVG by Pele where the page renders: for a Fumadocs site's MDX, on the server, so that no script
+reaches the browser. It is a block that scrolls when it is wider than the column, in Fumadocs' fonts and colours
+through `fumadocs-fortran/style.css`, and its ids take a prefix from `useId`, so that a page holds several. `href`
+rewrites the links of its nodes that go to the site's pages, those that start with one `/`, as
+[`createFortranComponents`](#createfortrancomponents) does for the components. `narrow` draws the diagram a second
+time, at most that many pixels across, for a column under 600px wide. A diagram Pele cannot draw shows as its code,
+rather than failing the build. Register it as `Mermaid` among the MDX components:
+[Mermaid](/docs/reference/components#mermaid) on the Components page draws one, and
+[Props of Mermaid](/docs/reference/components#props-of-mermaid) gives each prop's default and meaning.
+
+## fumadocs-fortran/math [#fumadocs-fortran-math]
+
+The maths helpers a site needs, without the parser. The main entry exports them too.
+
+### katexMacros [#katexmacros]
+
+```ts
+import { katexMacros } from 'fumadocs-fortran/math';
+
+const katexMacros: Record<string, string>;
+```
+
+Macros for the commands that Fortran docs write and KaTeX lacks: those of the physics package (`\abs`, `\norm`,
+`\expval`, `\mel`, `\comm`, `\order`, `\vb`, `\va`, `\vu`, `\grad`, `\dd`, `\dv`, `\pdv`, `\Tr` and their kin),
+`\vv`, `\mathbbm`, `\mathds`, `\eps`, `\C`, `\Q` and `\ud`. They are for rehype-katex's `macros` option. Pass a copy,
+as KaTeX adds the `\gdef` of a page to the object it is given:
+
+```ts
+const katex = [rehypeKatex, { macros: { ...katexMacros } }];
+```
+
+[`withFortran`](#withfortran) passes rehype-katex a copy itself, with its `math` option.
+
+### normaliseTex [#normalisetex]
+
+```ts
+import { normaliseTex } from 'fumadocs-fortran/math';
+
+function normaliseTex(tex: string, options?: { inline?: boolean }): string;
+```
+
+Writes TeX that LaTeX and MathJax read as KaTeX renders it: `\label` is dropped; the characters `_ & % # $ ^` are
+escaped inside `\text{…}` and its kin, and `\mbox`, `\textsl` and `\textsc` become `\text`, `\textit` and `\text`;
+`eqnarray` becomes `aligned`, `multline` `gathered` and `flalign` `align`, a `split` with more than one `&` a row
+becomes `aligned`, and `displaymath` goes; `\(` and `\)` inside maths are parentheses. With `inline`, the display
+environments take their inline forms (`align` and `split` become `aligned`, `gather` `gathered`, `alignat`
+`alignedat`, and `equation` goes), and `\tag` goes.
+
+```js
+normaliseTex('\\begin{eqnarray}a &=& b \\label{eq:1}\\end{eqnarray}'); // '\\begin{aligned}a &= b \\end{aligned}'
+```
 
 ## fumadocs-fortran/shiki [#fumadocs-fortran-shiki]
 
@@ -1122,6 +1317,9 @@ Options for Fumadocs' `rehypeCode`, as the `applyMdxPreset({ rehypeCodeOptions }
 `rehypeCodeDefaultOptions`, from `fumadocs-core/mdx-plugins`, or options of your own as `base`, since `rehypeCode`
 replaces its default transformers with those it is given. `WithoutKeys<T, K>` is `Omit<T, K>` taken over each member
 of a union, which keeps `theme` and `themes`, the keys of Fumadocs' options that its two forms do not share.
+[`withFortran`](#withfortran) calls it, with Fumadocs' defaults and the site's own `rehypeCodeOptions` as `base` and
+the grammars' defaults: a site that uses it calls `fortranRehypeCode` only for grammars with other options
+([Options](/docs/reference/highlighting#options) on Highlighting).
 
 ### transformerFortranNotation [#transformerfortrannotation]
 

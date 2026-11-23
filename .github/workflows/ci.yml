@@ -73,7 +73,8 @@ jobs:
         run: |
           npm install --no-save --no-package-lock typescript@5 @types/node@24 @types/react@19
           npx tsc --noEmit --strict --target es2022 --lib es2022,dom --module nodenext --moduleResolution nodenext \
-            --types node types/index.d.ts types/math.d.ts types/react.d.ts types/shiki.d.ts
+            --types node types/index.d.ts types/math.d.ts types/react.d.ts types/shiki.d.ts types/mdx.d.ts \
+            types/source.d.ts types/mermaid.d.ts
       - name: List what would be published
         run: npm pack --dry-run
       - name: Install the packed package in a new project and use it

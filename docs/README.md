@@ -49,35 +49,39 @@ it fail.
   `node scripts/check-cli.mjs --write` writes from `bin/fumadocs-fortran.js`.
 - `content/docs/reference/components.mdx` shows every component of `fumadocs-fortran/react` live, so a build checks
   that they all render.
-- The site registers fumadocs-fortran's components, as `fortranMdxComponents` from `components/mdx/fortran.tsx`,
-  and `fumadocs-ui`'s Tabs, Steps, TypeTable, Accordions and Files for MDX in `components/mdx.tsx`, adds remark-math,
-  rehype-katex and the Fortran grammars of `fumadocs-fortran/shiki` in `lib/source.ts`, and imports KaTeX's
-  stylesheet and `fumadocs-fortran/style.css` in `app/layout.tsx`, before `global.css`, so that `global.css` can
-  override their variables. `global.css` also gives the HDF5 badge of the Components page a meaning, as a site gives
-  its own badges one, and, where the browser lacks CSS anchor positioning, leaves room under a row of badges that
-  ends a tab, whose box would cut off their cards.
+- The site takes the package as Get started has a site take it: `lib/source.ts` gives the docs collection
+  `fortranPageSchema` and `withFortran` (with remark-math, rehype-katex and the graphs) and the loader
+  `fortranPlugin`; `components/mdx.tsx` registers `createFortranComponents` and `Mermaid`, beside `fumadocs-ui`'s
+  Tabs, Steps, TypeTable, Accordions and Files; `app/global.css` imports `fumadocs-fortran/style.css`, before its own
+  rules, so that they can override its variables, and `app/layout.tsx` KaTeX's stylesheet. `global.css` also gives
+  the HDF5 badge of the Components page a meaning, as a site gives its own badges one, and, where the browser lacks
+  CSS anchor positioning, leaves room under a row of badges that ends a tab, whose box would cut off their cards.
+- The site uses the package from this repository (`file:..`), which npm links into `node_modules`. Node.js and
+  Turbopack resolve what the package's files import (`fumadocs-core`, `pele`, React) from where those files are, the
+  repository's top folder, so the site's `postinstall`, `scripts/link-package.mjs`, links the top folder's
+  `node_modules` to the site's, which `.gitignore` leaves out. An installed copy needs nothing of the kind.
 - `lib/source.ts` adds Fumadocs' `remarkSteps`: headings written `## 1. Title [#id]` become numbered steps, and each
   needs its explicit id, as the plugins run after the headings have their ids. It also drops the headings of depth 1
   of the files a page includes whole, `CHANGELOG.md` and `docs/CONTRIBUTING.md`, from the page and its Markdown copy:
   the page's title stands for them. No page writes a heading of depth 1 of its own.
-- The graphs are ```` ```mermaid ```` blocks, which `remarkMdxMermaid` (in `lib/source.ts`) hands to
-  `components/mdx/mermaid.tsx`; it draws them as SVG at build time with [Pele](https://github.com/obsidianmd/pele),
-  and shows a diagram Pele cannot parse as its code. `fumadocs-fortran/style.css` maps Pele's colours to Fumadocs'
-  for the generated graphs and colours their nodes by kind; `global.css` maps them for diagrams written in pages.
-  `lib/source.ts` keeps the generated pages' `fortran` front matter, and the page template passes it to
-  `fortranToc()` for the letters in the table of contents. Ahead of `DocsPage`, the page template renders a hidden
-  element with the class of fumadocs-ui's table of contents, which gives a long page the table of contents' column
-  from its first paint, as Set up your site shows under Large references; `scripts/check-docs.mjs` holds the class to
-  fumadocs-ui's.
-- `lib/source.ts` gives search the text of the Fortran components and leaves their tags out
+- The graphs are ```` ```mermaid ```` blocks, which `withFortran`'s `graphs` (in `lib/source.ts`) hands to the
+  `Mermaid` component of `fumadocs-fortran/mermaid`; it draws them as SVG at build time with
+  [Pele](https://github.com/obsidianmd/pele), with a second layout for phones (`narrow`), and shows a diagram Pele
+  cannot parse as its code. `fumadocs-fortran/style.css` maps Pele's colours to Fumadocs' for every diagram it draws
+  and colours the generated graphs' nodes by kind. `fortranPlugin` reads the generated pages' `fortran` front matter,
+  which `fortranPageSchema` keeps, for the letters in their tables of contents and in the sidebar. Ahead of
+  `DocsPage`, the page template renders a hidden element with the class of fumadocs-ui's table of contents, which
+  gives a long page the table of contents' column from its first paint, as Large references shows;
+  `scripts/check-docs.mjs` holds the class to fumadocs-ui's.
+- `withFortran` gives search the text of the Fortran components and leaves their tags out
   (`remarkStructureOptions.filterElement`). `test/site.test.mjs` checks the pages' records against Fumadocs' own,
   reading them through `scripts/search/records.mjs`, which leaves remark-image out, as images never reach the
   records, and `scripts/search/measure.mjs` measures the index both ways. The sidebar keeps Next's prefetch, as the
   Showcase pages are small.
 - Links that next/link does not draw get what it would give them, the base path and, in the static export, a page's
-  trailing slash, from `siteHref` in `lib/shared.ts`: those of hover cards and source headers in
-  `components/mdx/fortran.tsx`, those of graph nodes in `components/mdx/mermaid.tsx`, and those of the llms files and
-  the pages' Markdown copies in `lib/source.ts`. The two components are server only (`import 'server-only'`), as the
+  trailing slash, from `siteHref` in `lib/shared.ts`: those of hover cards, source headers and graph nodes through
+  the `href` of `createFortranComponents` and `Mermaid` in `components/mdx.tsx`, and those of the llms files and the
+  pages' Markdown copies in `lib/source.ts`. `components/mdx.tsx` is server only (`import 'server-only'`), as the
   trailing slash depends on `DOCS_EXPORT`, which the browser's bundle does not have.
 
 ## Around the pages

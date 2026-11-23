@@ -79,8 +79,14 @@ fortran-lang's VS Code extension, as `tm-grammars` 1.32.22 publishes them (MIT),
 
 ## Use with Fumadocs
 
-`fortranRehypeCode(base, options)` returns `base` with the grammars added to its `langs` and the two transformers to
-its `transformers`, for the `rehypeCodeOptions` of `fumadocs-mdx`:
+In a Fumadocs site, [`withFortran`](/docs/reference/javascript#withfortran) of `fumadocs-fortran/mdx` sets them up:
+the `rehypeCodeOptions` it gives the docs collection are Fumadocs' own, `rehypeCodeDefaultOptions`, with the site's
+`rehypeCodeOptions` over them, the grammars added to their `langs` and the two transformers to their `transformers`.
+A site whose collection takes its MDX options from `withFortran`, as [Get started](/docs/get-started#source) sets
+one up, has these grammars in every code block, those of its own pages included.
+
+A site without `withFortran` calls `fortranRehypeCode(base, options)` itself. It returns `base` with the grammars added
+to its `langs` and the two transformers to its `transformers`, for the `rehypeCodeOptions` of `fumadocs-mdx`:
 
 ```ts title="lib/source.ts"
 import { rehypeCodeDefaultOptions } from 'fumadocs-core/mdx-plugins';
@@ -94,10 +100,10 @@ Pass `rehypeCodeDefaultOptions`, or the site's own options, as `base`: `rehypeCo
 with the ones it is given, so a base without them would lose Fumadocs' notations in other languages. A `langAlias`
 for Fortran is not needed, as these grammars answer to every Fortran id; given one, `rehypeCode` creates a highlighter
 of its own rather than share Fumadocs' (`fumadocs-core` 16.19.4). The line tints come from
-`fumadocs-fortran/style.css`, which a site with the generated pages imports already, and any other site imports for
-them. [Set up your site](/docs/guides/site-setup#mdx-options) shows both in a whole site, with this site's own
+`fumadocs-fortran/style.css`, which a site with the generated pages imports already
+([Get started](/docs/get-started#stylesheet)), and any other site imports for them. This site's own
 [`lib/source.ts`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/lib/source.ts) and
-[`app/layout.tsx`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/app/layout.tsx) as examples.
+[`app/global.css`](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/app/global.css) are examples of both.
 
 ## Use with Shiki
 
@@ -151,6 +157,15 @@ them on.
 ```ts
 fortranRehypeCode(rehypeCodeDefaultOptions, { fixedLineLength: 132, fypp: false });
 ```
+
+`withFortran` takes the same options as `grammars`:
+
+```ts
+applyMdxPreset(withFortran({ graphs: true, grammars: { fixedLineLength: 132 } }));
+```
+
+Fumadocs keeps one highlighter for a process, so the grammars are loaded with the options of the first collection
+that uses them: give every collection the same.
 
 ## Directive lines
 

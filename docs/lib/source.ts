@@ -4,16 +4,11 @@ import { absoluteUrl, docsRoute, getPageMarkdownUrl, siteHref, siteLinks } from 
 import { defineDocs } from 'fumadocs-mdx/macro';
 import { applyMdxPreset } from 'fumadocs-mdx/config';
 import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
-import { rehypeCodeDefaultOptions, remarkMdxMermaid, remarkSteps } from 'fumadocs-core/mdx-plugins';
-import { z } from 'zod';
+import { remarkSteps } from 'fumadocs-core/mdx-plugins';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { katexMacros } from 'fumadocs-fortran/math';
-import { fortranRehypeCode } from 'fumadocs-fortran/shiki';
-
-// the commands Fortran docs write that KaTeX lacks (the physics package, \mathbbm, \vv, …); a copy, as KaTeX adds
-// a page's \gdef to the object it is given
-const katex: [typeof rehypeKatex, { macros: Record<string, string> }] = [rehypeKatex, { macros: { ...katexMacros } }];
+import { fortranPageSchema, withFortran } from 'fumadocs-fortran/mdx';
+import { fortranPlugin } from 'fumadocs-fortran/source';
 
 type MdNode = { type: string; depth?: number; children?: MdNode[] };
 
@@ -34,28 +29,22 @@ function remarkDropTitles() {
 const docs = defineDocs({
   dir: 'content/docs',
   docs: {
-    // keep the fumadocs defaults (a collection-level mdxOptions replaces them) and add: the included files' titles
-    // dropped, $…$ and $$…$$ maths, ```mermaid diagrams and steps; KaTeX runs before the syntax highlighter, so that
-    // maths blocks are not highlighted as code. remarkSteps makes the headings written `## 1. Title [#id]` a list of
-    // numbered steps, and drops the number from the heading; the explicit id is needed, as these plugins run after
-    // remarkHeading, which would otherwise slug the heading with its number (1-title).
-    mdxOptions: applyMdxPreset({
-      remarkPlugins: [remarkDropTitles, remarkMath, remarkMdxMermaid, remarkSteps],
-      rehypePlugins: (defaults) => [katex, ...defaults],
-      // Fortran code blocks with the package's grammars: OpenMP, OpenACC and other directive lines are highlighted
-      // and marked, and fumadocs' [!code …] notations work in ! comments. fumadocs' own options are the base, since
-      // rehypeCode replaces its default transformers with the ones it is given.
-      rehypeCodeOptions: fortranRehypeCode(rehypeCodeDefaultOptions),
-      // Search: fumadocs keeps the element of a component (a capitalised name) in a page's records as an HTML tag with
-      // its attributes, which the static index then ships to every reader, and gives other elements their content.
-      // The generated pages' components (FortranArg, FortranBadge, FortranRef, …) give their content too: an
-      // argument's docs, the names on a Calls line. The elements of other components stay tags, as by default.
-      remarkStructureOptions: { filterElement: (node) => /^(?!Fortran[A-Z])[A-Z][\w$]*$/.test(node.name ?? '') },
-    }),
+    // keep the fumadocs defaults (a collection-level mdxOptions replaces them, applyMdxPreset keeps them) and add
+    // fumadocs-fortran's (withFortran): the Fortran grammars in the code blocks, the components' text rather than their
+    // tags in the search records, $…$ and $$…$$ maths, set by KaTeX before the code blocks with the package's macros,
+    // and ```mermaid diagrams; and the site's own: the included files' titles dropped, and steps. remarkSteps makes
+    // the headings written `## 1. Title [#id]` a list of numbered steps, and drops the number from the heading; the
+    // explicit id is needed, as these plugins run after remarkHeading, which would otherwise slug the heading with its
+    // number (1-title).
+    mdxOptions: applyMdxPreset(
+      withFortran({
+        math: { remarkMath, rehypeKatex },
+        graphs: true,
+        remarkPlugins: [remarkDropTitles, remarkSteps],
+      }),
+    ),
     // generated API pages say what each heading is (fortran.toc), for the kind letters in the table of contents
-    schema: pageSchema.extend({
-      fortran: z.object({ kind: z.string().optional(), toc: z.record(z.string(), z.string()).optional() }).optional(),
-    }),
+    schema: fortranPageSchema(pageSchema),
     postprocess: {
       includeProcessedMarkdown: true,
     },
@@ -69,10 +58,11 @@ const docs = defineDocs({
 });
 
 // See https://fumadocs.dev/docs/headless/source-api for more info
+// fortranPlugin: the kind letters of the generated pages, in their tables of contents and in the sidebar
 export const source = loader({
   baseUrl: docsRoute,
   source: docs.toFumadocsSource(),
-  plugins: [lucideIconsPlugin()],
+  plugins: [fortranPlugin(), lucideIconsPlugin()],
 });
 
 /**

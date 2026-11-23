@@ -12,7 +12,7 @@ in `docs/`, as in [Get started](/docs/get-started).
 ### directory docs already exists and is not empty [#docs-exists]
 
 `create-fumadocs-app` stops with exit code 1 and changes nothing, as the folder it would write holds files, such as
-FORD's or Doxygen's output. Give the site another name, as [Get started](/docs/get-started#before-you-begin) says.
+FORD's or Doxygen's output. Give the site another name, as [Start a new site](/docs/new-site#before-you-begin) says.
 
 ## Installing [#installing]
 
@@ -100,7 +100,8 @@ whose end statement is missing.
 
 The source blocks are headed `../src/…`, and the links to your repository lose their revision, as
 `blob/REV/../src/…` opens `blob/src/…`. The pages name the files as the command was given them: generate ran in
-`docs/` with `../src`. Run it from the top folder with `src`, as [Get started](/docs/get-started#generate) does.
+`docs/` with `../src`. Run it from the top folder with `src`, as the reference script of
+[Get started](/docs/get-started#generate) does.
 
 ### A page written by hand in the reference's folder is missing [#hand-written]
 
@@ -125,8 +126,8 @@ do not name. Add the folder's name, `"api"`, to the list, or `"..."` for every p
 ### Could not parse expression with acorn [#acorn]
 
 The build stops on a generated page with Could not parse expression with acorn, and then Expecting Unicode escape
-sequence: the page holds `$…$` maths, which MDX reads as JavaScript without remark-math. Add remark-math as
-[Set up your site](/docs/guides/site-setup#mdx-options) shows, or generate with `--math code`.
+sequence: the page holds `$…$` maths, which MDX reads as JavaScript without remark-math. Give `withFortran` the maths
+plugins, as [Set up your site](/docs/guides/site-setup#mdx-options) shows, or generate with `--math code`.
 
 ### Expected component FortranBadge or FortranArg to be defined [#expected-component]
 
@@ -137,15 +138,9 @@ uses first. The site's MDX components lack `fortranComponents`: register them, a
 
 ### Expected component Mermaid to be defined [#expected-mermaid]
 
-The pages' graphs are ` ```mermaid ` blocks, which `remarkMdxMermaid` turns into a `Mermaid` element, and the site
-has no `Mermaid` component. Add it, as [Set up your site](/docs/guides/site-setup#graphs) shows, or generate with
-`--graphs none`.
-
-### Property 'fortran' does not exist on type [#ts2339]
-
-The build's type check stops with `error TS2339: Property 'fortran' does not exist on type 'MacroDocEntry<…>'`. The
-page template reads `page.data.fortran` for the kind letters, and the page schema lacks the field. Extend the schema,
-as [Set up your site](/docs/guides/site-setup#mdx-options) shows.
+The pages' graphs are ` ```mermaid ` blocks, which `withFortran` turns into `Mermaid` elements with `graphs: true`, and
+the site has no `Mermaid` component. Register the one of `fumadocs-fortran/mermaid`, as
+[Set up your site](/docs/guides/site-setup#graphs) shows, or generate with `--graphs none`.
 
 ### metadataBase property in metadata export is not set [#metadatabase]
 
@@ -157,15 +152,15 @@ site's address.
 
 The site exports static files, and its search route is not static: the line under it says that
 `export const revalidate` is not configured on the route with `output: export`. The message gives the route's path:
-`/api/search.json` for the folder that [Set up your site](/docs/guides/site-setup#search) names `search.json`, and
-`/api/search` for the template's. Make the route static, as
+`/api/search` for the template's, and `/api/search.json` for the folder that
+[Large references](/docs/guides/large-references#search) names `search.json`. Make the route static, as
 [Publish on GitHub Pages](/docs/guides/github-pages#other-sites) shows.
 
 ### Cannot find module '../../../app/api/search/route.js' [#route-types]
 
 The build's type check stops with error TS2307 after the search route's folder is renamed `search.json`: it reads
 the types the development server keeps in `docs/.next/dev`, which name the template's folder. Delete them, as
-[Set up your site](/docs/guides/site-setup#search) does, and build again:
+[Large references](/docs/guides/large-references#search) does, and build again:
 
 ```bash
 rm -rf docs/.next/dev
@@ -201,7 +196,7 @@ with the doc comment, as [Ask for help](#help) says.
 
 ### Graphs show as Mermaid code [#graphs-as-code]
 
-Every graph shows as code when the site lacks `remarkMdxMermaid` in its MDX options: add it, as
+Every graph shows as code when the site's `withFortran` lacks `graphs: true`: add it, as
 [Set up your site](/docs/guides/site-setup#mdx-options) shows. One graph shown as code, under the title Mermaid, is
 one Pele cannot read, such as a diagram written in a doc comment: the component shows it as code rather than
 failing the build.
@@ -209,20 +204,22 @@ failing the build.
 ### Maths shows as code, in red or twice [#maths]
 
 - As code, in `$…$`: the pages were generated with `--math code`.
-- Commands in red, such as `\norm`: KaTeX lacks them, and the site's rehype-katex has no `katexMacros`; pass them,
-  as [Set up your site](/docs/guides/site-setup#mdx-options) shows.
+- Commands in red, such as `\norm`: KaTeX lacks them, and the site gives rehype-katex its options itself, without
+  `katexMacros`; give rehype-katex to `withFortran`'s `math`, which adds them, as
+  [Set up your site](/docs/guides/site-setup#mdx-options) shows.
 - Each formula twice and unstyled: the layout lacks `katex/dist/katex.css`, or the site's `katex` is 0.19
   ([above](#katex-version)).
 
 ### No letters in the table of contents [#no-letters]
 
-The page template passes the table of contents through `fortranToc`, as
-[Set up your site](/docs/guides/site-setup#kind-letters) shows.
+Neither the tables of contents nor the sidebar show the kinds' letters when the site's loader lacks `fortranPlugin`,
+or when the docs collection's schema drops the generated pages' `fortran` field, which the plugin reads. Give the
+loader the plugin and the collection `fortranPageSchema`, as [Get started](/docs/get-started#source) does.
 
 ### Tables without their layout [#no-layout]
 
-Badges show as plain words and argument tables as text when the root layout does not import
-`fumadocs-fortran/style.css`: import it, as [Get started](/docs/get-started#register) does.
+Badges show as plain words and argument tables as text when the site's global CSS does not import
+`fumadocs-fortran/style.css`: import it, as [Get started](/docs/get-started#stylesheet) does.
 
 ### Search is slow on a phone [#slow-search]
 
@@ -230,9 +227,9 @@ The search dialog downloads the site's whole index on its first search, and show
 In the browser's developer tools, the Network tab lists the index's request, `search.json` or `search`. Without a
 `Content-Encoding` among its response headers, the server sent it uncompressed, as `npm start` and nginx send the
 static template's `api/search`, a file without an extension: name the route `search.json`, as
-[Set up your site](/docs/guides/site-setup#search) shows. GitHub Pages compresses the index under either name, so
-there the index's size is the cause. The Fortran components' text in place of their tags makes it smaller, as
-[Set the MDX options](/docs/guides/site-setup#mdx-options) shows.
+[Large references](/docs/guides/large-references#search) shows. GitHub Pages compresses the index under either name,
+so there the index's size is the cause. `withFortran` keeps it smaller with the Fortran components' text in place of
+their tags, as [Get started](/docs/get-started#source) sets it up.
 
 ## On GitHub Pages [#on-github-pages]
 
@@ -254,8 +251,8 @@ the site, or the address lacks the repository's name, `https://OWNER.github.io/R
 ### Links lead off the site, to OWNER.github.io/docs/… [#off-site]
 
 The links of cards, source headers and graph nodes lack the repository's name, and answer 404. The site registers
-`fortranComponents` rather than the wrapped `fortranMdxComponents`, or its `Mermaid` component lacks `siteHref`:
-see [Keep the reference's links on the site](/docs/guides/github-pages#links).
+`fortranComponents` rather than `createFortranComponents({ href: siteHref })`, or its `Mermaid` component lacks
+`href={siteHref}`: see [Keep the reference's links on the site](/docs/guides/github-pages#links).
 
 ### A page reloads when a link to one of its own entries is opened [#reload]
 
@@ -271,18 +268,19 @@ see [Search, Copy Markdown and the llms files](/docs/guides/github-pages#search)
 
 ## Without Node.js on your machine [#without-nodejs]
 
-Docker runs the steps of Get started in a container with Node.js. In your project's top folder, start a shell in the
-`node:24-bookworm` image, with the folder mounted, your own user and port 3000 published on your machine alone:
+Docker runs the steps of Start a new site and Get started in a container with Node.js. In your project's top folder,
+start a shell in the `node:24-bookworm` image, with the folder mounted, your own user and port 3000 published on your
+machine alone:
 
 ```bash
 docker run --rm -it -p 127.0.0.1:3000:3000 -v "$PWD":/work -w /work -u "$(id -u):$(id -g)" -e HOME=/tmp node:24-bookworm bash
 ```
 
-The steps then run unchanged in that shell, from step 1, and http://localhost:3000 opens in your own browser, as the
-development server and `npm start` listen on every address of the container. `node_modules/` then holds Linux
-builds, so run the site's commands in the container from then on. With Docker on macOS, the development server can
-miss a page added while it runs: stop it and start it again. `HOME=/tmp` keeps npm's cache in the container, so each
-new container downloads the packages again.
+The steps then run unchanged in that shell, each page's from its step 1, and http://localhost:3000 opens in your own
+browser, as the development server and `npm start` listen on every address of the container. `node_modules/` then
+holds Linux builds, so run the site's commands in the container from then on. With Docker on macOS, the development
+server can miss a page added while it runs: stop it and start it again. `HOME=/tmp` keeps npm's cache in the
+container, so each new container downloads the packages again.
 
 ## Ask for help [#help]
 

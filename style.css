@@ -1,6 +1,7 @@
 /* fumadocs-fortran: badges, argument tables, hover cards, source blocks, graphs and the kind letters of the table of
-   contents on generated Fortran pages, and directive lines in Fortran code blocks. Plain CSS on fumadocs'
-   --color-fd-* variables: no Tailwind setup, and light and dark follow the site's theme (.dark on <html>). */
+   contents on generated Fortran pages, the kinds of those pages in the sidebar, the diagrams of the Mermaid component,
+   and directive lines in Fortran code blocks. Plain CSS on fumadocs' --color-fd-* variables: no Tailwind setup, and
+   light and dark follow the site's theme (.dark on <html>). */
 
 /* Library, intent and kind colours, a mid tone each. Text mixes the tone with black (light) or white (dark), so one
    value serves both themes; set any of them on :root to change it. The defaults sit in :where(), which has no
@@ -54,7 +55,8 @@
    on a row that exists only under a cpp condition, and .fdf-intent-arrow. */
 
 /* Values shared by the parts, worked out on each so that they follow the theme where they sit */
-.fdf-badges, .fdf-badge, .fdf-args, .fdf-arg, .fdf-ref, .fdf-source, .fdf-graph, .fdf-toc {
+.fdf-badges, .fdf-badge, .fdf-args, .fdf-arg, .fdf-ref, .fdf-source, .fdf-graph, .fdf-toc, .fdf-nav-kind,
+.fdf-mermaid, .fdf-mermaid-code {
   --fdf-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace);
   --fdf-line: var(--color-fd-border, rgb(204 204 204 / 0.5));
   /* muted text with a fifth of the foreground: fumadocs' muted-foreground alone is under 4.5:1 on some themes */
@@ -1176,14 +1178,89 @@
   overflow-wrap: anywhere;
 }
 
+/* ---- the sidebar: the kind of each generated page, in the place of its icon (fortranPlugin) ---- */
+
+/* one width for all, so that the names line up: mod, smod, prog, bd and proc */
+.fdf-nav-kind {
+  --fdf-c: var(--color-fd-muted-foreground, currentColor);
+  flex: none;
+  box-sizing: border-box;
+  width: 2.25rem;
+  padding: 0 0.25rem;
+  border-radius: 0.25rem;
+  background-color: color-mix(in oklab, var(--fdf-c) var(--fdf-fill-share), transparent);
+  color: color-mix(in oklab, var(--fdf-c) var(--fdf-text-share), var(--fdf-text-mix));
+  font-family: var(--fdf-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1rem;
+  text-align: center;
+}
+
+.fdf-nav-module { --fdf-c: var(--fdf-k-module); }
+.fdf-nav-submodule { --fdf-c: var(--fdf-k-submodule); }
+.fdf-nav-program { --fdf-c: var(--fdf-k-program); }
+/* block data in a program's tone, as the graphs draw it */
+.fdf-nav-blockdata { --fdf-c: var(--fdf-k-program); }
+.fdf-nav-procedures { --fdf-c: var(--fdf-k-subroutine); }
+
+/* ---- diagrams drawn by the Mermaid component (fumadocs-fortran/mermaid) ---- */
+
+/* a diagram wider than the column scrolls; inside a FortranGraph, the graph's body scrolls instead */
+.fdf-mermaid {
+  overflow-x: auto;
+}
+
+.fdf-graph-body .fdf-mermaid {
+  overflow-x: visible;
+}
+
+/* two layouts (narrow): the narrow one where the column is under 600px wide, the wide one from there */
+.fdf-mermaid-two {
+  container: fdf-mermaid / inline-size;
+}
+
+@container fdf-mermaid (width < 600px) {
+  .fdf-mermaid-wide { display: none; }
+}
+
+@container fdf-mermaid (width >= 600px) {
+  .fdf-mermaid-narrow { display: none; }
+}
+
+/* a diagram Pele cannot draw, shown as its code under a small title */
+.fdf-mermaid-code {
+  margin: 1rem 0;
+  border: 1px solid var(--fdf-line);
+  border-radius: 0.75rem;
+  background-color: var(--color-fd-card, transparent);
+}
+
+.fdf-mermaid-code > figcaption {
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--fdf-line);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--fdf-quiet);
+}
+
+.fdf-mermaid-code > pre {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  font-family: var(--fdf-mono);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
 /* ---- graphs drawn by Pele ---- */
 
 /* Pele takes its fonts and colours from --pele-* variables, and without them draws lines and edge labels for a light
-   page: near-black arrows, which a dark theme hides, and labels in white boxes. These give a generated graph fumadocs'
-   fonts and colours, which follow the theme; the fallbacks serve a page without fumadocs' variables. In :where(),
-   which has no specificity, so that a site's own .pele rule, outside any @layer, wins whichever stylesheet comes
-   first. */
-:where(.fdf-graph .pele) {
+   page: near-black arrows, which a dark theme hides, and labels in white boxes. These give a generated graph, and any
+   diagram the Mermaid component draws, fumadocs' fonts and colours, which follow the theme; the fallbacks serve a page
+   without fumadocs' variables. In :where(), which has no specificity, so that a site's own .pele rule, outside any
+   @layer, wins whichever stylesheet comes first. */
+:where(.fdf-graph .pele, .fdf-mermaid .pele) {
   --pele-font: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
   --pele-font-mono: var(--fdf-mono);
   --pele-bg: var(--color-fd-background, Canvas);

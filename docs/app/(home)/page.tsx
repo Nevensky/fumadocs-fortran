@@ -16,7 +16,7 @@ import {
   type FortranRefTarget,
 } from 'fumadocs-fortran/react';
 import { fortranLanguages, transformerFortranDirectives } from 'fumadocs-fortran/shiki';
-import { Mermaid } from '@/components/mdx/mermaid';
+import { Mermaid } from 'fumadocs-fortran/mermaid';
 import { changelogRoute, gitConfig, githubUrl, siteHref, siteOpenGraph, statusSentence } from '@/lib/shared';
 
 // the home page's address, as the site links it (metadataBase gives it its origin); its title is the root layout's
@@ -224,7 +224,7 @@ export default async function HomePage() {
               when USE_MPI
             </p>
             <FortranGraph title="Call graph" collapsed>
-              <Mermaid chart={CALLS} />
+              <Mermaid chart={CALLS} href={siteHref} narrow={320} />
             </FortranGraph>
             {fn && (
               <FortranSource

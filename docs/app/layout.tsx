@@ -3,11 +3,10 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import StaticSearchDialog from '@/components/search';
 import { appDescription, appName, appTitle, author, siteOpenGraph, siteUrl } from '@/lib/shared';
-// The packages' stylesheets come before the site's own, so that global.css can override their variables (such as
-// --fdf-mpi): KaTeX's, for the $…$ maths of remark-math and rehype-katex (lib/source.ts), then fumadocs-fortran's,
-// for the badges, argument lists and source lines of the generated pages.
+// KaTeX's stylesheet, for the $…$ maths of remark-math and rehype-katex (withFortran's math, lib/source.ts), before the
+// site's own; global.css imports fumadocs-fortran's, for the badges, argument lists and source lines of the generated
+// pages.
 import 'katex/dist/katex.css';
-import 'fumadocs-fortran/style.css';
 import './global.css';
 
 const inter = Inter({

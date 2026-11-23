@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// The tutorial is the test. This follows docs/content/docs/get-started.mdx as a reader would, in a new folder whose
-// src/ is a copy of examples/modern/src, and then the guides' phases (docs/scripts/phases/*.mjs) on the site it made.
-// The page's GitHub install line installs a tarball packed from this repository instead (npm pack), unless --github.
+// The tutorial is the test. This follows docs/content/docs/new-site.mdx, which makes a site, and then
+// docs/content/docs/get-started.mdx, which adds the reference to it, as a reader would, in a new folder whose src/ is a
+// copy of examples/modern/src, and then the guides' phases (docs/scripts/phases/*.mjs) on the site they made. Get
+// started's GitHub install line installs a tarball packed from this repository instead (npm pack), unless --github.
 //
 //   node docs/scripts/test-get-started.mjs [options]
 //
@@ -9,7 +10,8 @@
 //   --tarball FILE   the packed package to install in place of the GitHub line (default: npm pack of this repository)
 //   --github         run the page's GitHub install line as it is written (the repository must be public)
 //   --scaffold VER   run create-fumadocs-app@VER in place of the page's version, such as latest (the weekly run)
-//   --page FILE      the Get started page to follow (default: docs/content/docs/get-started.mdx)
+//   --page FILE      the Get started page to follow (default: docs/content/docs/get-started.mdx), after Start a new
+//                    site (docs/content/docs/new-site.mdx)
 //   --phases LIST    the phases to run after Get started: all (default), none, or names, comma-separated
 //   --keep-going     run the later phases when one fails
 //   --keep           keep the work folder when every check passes (it is always kept when one fails)
@@ -19,13 +21,15 @@
 // pkg/ (the tarball), project/ (the reader's folder: src/ and the site in docs/) and logs/, whose report.txt lists
 // every block, command and check.
 //
-// Get started fails on:
+// Start a new site and Get started fail on:
 // - a command that exits non-zero, a bash block of more than one command, a cd to a folder that does not exist;
 // - drift: a titled file block whose lines, without those marked [!code ++], differ from the file already there
 //   (the template's), or a diff block whose context lines are not in the file;
 // - a server that never listens; a reference page (the overview and each page of the generated meta.json) that is
 //   not 200, holds "Expected component", lacks "API reference" in its sidebar, or (but for the overview) lacks badges
-//   and source blocks; no argument table on any page; the same checks on the pages of the static export;
+//   and source blocks; no argument table on any page; the same checks on the pages of the static export, where the
+//   reference also needs the letters of fortranPlugin (in its tables of contents and in the sidebar) and the marked
+//   directive lines of withFortran, and the navigation bar the site's name (Name the site);
 // - a quoted output the run does not print: each ```text block against the output of the bash block before it, and
 //   each EXPECT entry below, which the page must also quote; times (12 ms, 3.4 s) are masked on both sides.
 //
@@ -74,7 +78,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..');
 const contentDir = path.join(repo, 'docs', 'content', 'docs');
-const PHASE_ORDER = ['site-setup', 'generate', 'github-pages', 'troubleshooting'];
+// Large references runs before Publish on GitHub Pages, and gives the site back the template's search route when it
+// ends, as the GitHub Pages guide starts from that route
+const PHASE_ORDER = ['site-setup', 'large-references', 'generate', 'github-pages', 'troubleshooting'];
 const INSTALL = 'github:Nevensky/fumadocs-fortran';
 const SCAFFOLD = /create-fumadocs-app@[\w.-]+/;
 const PORT = 3000;
@@ -334,6 +340,7 @@ const MARKS = {
   badge: /class="fdf-badge[ "]/g, refCard: /class="fdf-ref-card[ "]/g, source: /class="fdf-source[ "]/g,
   graph: /class="fdf-graph"/g, peleSvg: /<svg[^>]*class="pele/g, mermaidCode: /fdf-graph-body not-prose"><figure/g,
   katex: /class="katex"/g, katexError: /class="katex-error"/g, tocLetters: /class="fdf-toc-kind/g,
+  navLetters: /class="fdf-nav-kind/g,
   directive: /fdf-directive/g, expected: /Expected component/g, apiReference: /API reference/g,
 };
 const count = (html, mark) => {
@@ -481,8 +488,12 @@ async function follow(page, { sections = null, cwd = project, expect = [], dir =
   return { ok: true, cwd };
 }
 
-// ---- Get started
+// ---- Start a new site, then Get started
 async function getStarted() {
+  const newSite = parsePage(path.join(contentDir, 'new-site.mdx'));
+  const made = await follow(newSite, { expect: [['npx --yes create-fumadocs-app', 'Done']] });
+  if (!made.ok) return false;
+  if (path.resolve(made.cwd) !== path.resolve(project)) fail(`${newSite.rel} ends in ${made.cwd}, not the top folder`);
   const page = parsePage(opt.page ?? path.join(contentDir, 'get-started.mdx'));
   const install = page.blocks.filter((b) => b.lang === 'bash' && commands(b.body).some((c) => c.includes(INSTALL)));
   if (install.length !== 1) fail(`${page.rel} has ${install.length} bash blocks with ${INSTALL}, not one`);
@@ -491,9 +502,8 @@ async function getStarted() {
     : JSON.parse(spawnSync('tar', ['-xOzf', tarball, 'package/package.json'], { encoding: 'utf8' }).stdout).version;
   // quoted outputs: the start of the command, and what its output must hold (also quoted on the page)
   const EXPECT = [
-    ['npx --yes create-fumadocs-app', 'Done'],
     ['npx fumadocs-fortran --version', version],
-    ['npm exec --prefix docs -- fumadocs-fortran generate', '7 files (7 changed, 0 removed) from 3 sources in 70 ms'],
+    ['npm run reference', '7 files (7 changed, 0 removed) from 3 sources in 70 ms'],
     ['npm run dev', `http://localhost:${PORT}`],
     ['npm run dev', 'metadataBase'],
     ['npm run build', 'metadataBase'],
@@ -506,13 +516,24 @@ async function getStarted() {
     fail('no docs/out after the build');
     return false;
   }
+  const sum = { tocLetters: 0, navLetters: 0, directive: 0 };
   for (const { url } of refPages()) {
     const html = outHtml(url);
-    if (html === null) fail(`out: no page for ${url}`);
-    else note(checkPage('out', url, 200, html));
+    if (html === null) {
+      fail(`out: no page for ${url}`);
+      continue;
+    }
+    note(checkPage('out', url, 200, html));
+    for (const m of Object.keys(sum)) sum[m] += count(html, m);
   }
   for (const where of ['GET', 'out']) if (!argTables[where]) fail(`${where}: no argument table on any reference page`);
-  note(`argument tables: ${JSON.stringify(argTables)}`);
+  note(`argument tables: ${JSON.stringify(argTables)}; on the exported reference: ${JSON.stringify(sum)}`);
+  if (!sum.tocLetters) fail('no kind letters in the tables of contents of the reference (fortranPlugin)');
+  if (!sum.navLetters) fail('no kind letters in the sidebar of the reference (fortranPlugin)');
+  if (!sum.directive) fail('no directive line marked in the source blocks of the reference (withFortran)');
+  if (!(outHtml('/docs/api') ?? '').includes('My Fortran code')) {
+    fail("the site's name, appName (Start a new site), is not in the navigation bar");
+  }
   return problems.length === 0;
 }
 

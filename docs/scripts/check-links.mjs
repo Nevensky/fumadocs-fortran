@@ -12,7 +12,8 @@
 //   client chunk names its path under the base path, which the search dialog fetches. A server gives a file the type
 //   of its extension, and one that compresses by type sends a file without one (api/search, the route's path in
 //   Fumadocs' templates) uncompressed: nginx as application/octet-stream, serve with no type. GitHub Pages compresses
-//   both.
+//   both, so with CHECK_LINKS_HOST=github-pages an index without an extension is no problem, as for a reader's site
+//   with the template's route (Publish on GitHub Pages); its path must still be one a client chunk names.
 // The pages' HTML is read (links: hover cards, graph nodes, Markdown links and the rest; and what a page loads: images,
 // link elements, scripts), and so are the llms files and Markdown copies (Markdown links, JSX href attributes, graph
 // click lines and refs' "href"), outside code samples, code blocks and inline code alike.
@@ -40,6 +41,8 @@ if (base && !/^\/[^/]/.test(base)) {
 }
 // the site's origin, which its absolute URLs start with (|| and not ??, as an empty value is not a URL)
 const origin = (process.argv[4] || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(/\/+$/, '');
+// a host that compresses a file whatever its extension, as GitHub Pages does
+const compressesAll = process.env.CHECK_LINKS_HOST === 'github-pages';
 if (!/^https?:\/\/[^/]+$/.test(origin)) {
   console.error(`check-links: an origin is a scheme and a host, such as https://owner.github.io, as ${origin} is not`);
   process.exit(2);
@@ -260,7 +263,7 @@ for (const f of files) {
   if ((ext && ext !== '.json') || !INDEX_START.test(startOf(f))) continue;
   indexes++;
   const rel = path.relative(out, f).split(path.sep).join('/');
-  if (!ext) {
+  if (!ext && !compressesAll) {
     problem('search index without an extension, which a server that compresses by type sends uncompressed (name its '
       + 'route search.json, and the search dialog\'s from)', f, `${base}/${rel}`);
   } else if (![`"${base}/${rel}"`, `\`${base}/${rel}\``, `}/${rel}\``]

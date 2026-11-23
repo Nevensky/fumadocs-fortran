@@ -4,18 +4,20 @@ description: The React components the generated pages are drawn with, each shown
 ---
 
 The generated pages use seven components from `fumadocs-fortran/react`, Fumadocs' own `Callout`, `Cards` and `Card`,
-and, for the graphs, a `Mermaid` component that the site provides. `Callout` holds the notes and warnings of doc
-comments (see [Doc comments](/docs/reference/doc-comments#notes-and-warnings)), and the cards are the overview
+and, for the graphs, the `Mermaid` component of `fumadocs-fortran/mermaid`. `Callout` holds the notes and warnings of
+doc comments (see [Doc comments](/docs/reference/doc-comments#notes-and-warnings)), and the cards are the overview
 page's. The seven are plain `createElement` code with no state, effects or context and no `'use client'`, so the same
 set renders on the server and in client-side MDX. `FortranRef` uses `useId`, which server components have too, to tie
 a hover card to its name. Rows that open, source blocks, hover cards and the cards in which badges and pills say what
 they mean are HTML and CSS only. Every prop is a string, a number or a boolean, except a row's `refs`, and
 `types/react.d.ts` in the package declares them.
 
-[Set up your site](/docs/guides/site-setup) registers the components, imports their stylesheet and adds the `Mermaid`
-component. The links of hover cards, source headers and graph nodes are plain links, which a site served under a base
-path passes through a function of its own: [Publish on GitHub Pages](/docs/guides/github-pages#links) shows how.
-This page draws each component live, as this site registers them.
+[Get started](/docs/get-started#register) registers the seven and imports their stylesheet, and
+[Set up your site](/docs/guides/site-setup#graphs) adds the `Mermaid` component. The links of hover cards, source
+headers and graph nodes are plain links, which Next.js never sees: a site served under a base path passes them through
+a function of its own, with [`createFortranComponents`](#fortrancomponents) and the `href` of [`Mermaid`](#mermaid).
+[Publish on GitHub Pages](/docs/guides/github-pages#links) shows how. This page draws each component live, as this
+site registers them.
 
 ## FortranBadges and FortranBadge
 
@@ -622,8 +624,8 @@ A `FortranSource` with neither a file nor a link draws nothing.
 A graph, with an optional title: an open card, or, with `collapsed`, a block that opens to it. The generator draws a
 unit's dependencies and the overview's units open, the overview's with no title, under a heading of its own, and a
 type's inheritance and the calls of a procedure, a program or a generic collapsed. The graph inside is a
-` ```mermaid ` block, which Fumadocs' `remarkMdxMermaid` turns into a `Mermaid` element and the site's `Mermaid`
-component draws (see [Set up your site](/docs/guides/site-setup#graphs)).
+` ```mermaid ` block, which `withFortran({ graphs: true })` turns into a `Mermaid` element, for the
+[`Mermaid`](#mermaid) component to draw.
 
 <Tabs items={['Preview', 'MDX']}>
 <Tab value="Preview">
@@ -698,12 +700,91 @@ What each graph draws, how far it reaches, its limit of 40 nodes, and the shapes
     },
     children: {
       type: 'ReactNode',
-      description: 'The diagram: a ```mermaid block, which the site draws.',
+      description: 'The diagram: a ```mermaid block, which the Mermaid component draws.',
     },
   }}
 />
 
 A `FortranGraph` without a diagram draws nothing.
+
+## Mermaid
+
+The `Mermaid` component of `fumadocs-fortran/mermaid` draws a ` ```mermaid ` block as SVG, with Pele, where the page
+renders: for a static site, when it is built, so that no script reaches the browser. `withFortran({ graphs: true })`
+turns each block into `<Mermaid chart="…" />`, those of the generated graphs and those a page writes itself, such as
+this one:
+
+<Tabs items={['Preview', 'MDX']}>
+<Tab value="Preview">
+
+```mermaid
+flowchart LR
+  block("mermaid block")
+  remark("remarkMdxMermaid")
+  element("Mermaid element")
+  pele("Pele")
+  svg("SVG in the page")
+  block --> remark
+  remark --> element
+  element --> pele
+  pele --> svg
+  click remark href "/docs/reference/javascript#withfortran"
+  click element href "/docs/reference/javascript#mermaid"
+```
+
+</Tab>
+<Tab value="MDX">
+
+````mdx
+```mermaid
+flowchart LR
+  block("mermaid block")
+  remark("remarkMdxMermaid")
+  element("Mermaid element")
+  pele("Pele")
+  svg("SVG in the page")
+  block --> remark
+  remark --> element
+  element --> pele
+  pele --> svg
+  click remark href "/docs/reference/javascript#withfortran"
+  click element href "/docs/reference/javascript#mermaid"
+```
+````
+
+</Tab>
+</Tabs>
+
+The diagram takes Fumadocs' fonts and colours from `fumadocs-fortran/style.css`, so that it follows the light and dark
+themes (see [Graphs](#graphs) under Styling), and scrolls when it is wider than the column. Its ids take a prefix of
+their own, as a page holds several diagrams. A diagram Pele cannot draw, such as one written in a doc comment for
+another renderer, shows as its code under the title Mermaid, rather than failing the build. This site registers the
+component as `Mermaid: (props) => <Mermaid {...props} href={siteHref} narrow={320} />`: the two nodes above that link
+go to the JavaScript API through `siteHref`, which adds the base path the site is served under, and in a column under
+600px wide, as on a phone, the diagram shows a second layout, at most 320 pixels across.
+
+### Props of Mermaid
+
+<TypeTable
+  type={{
+    chart: {
+      type: 'string',
+      required: true,
+      description: 'The diagram, as Mermaid writes it: the text of the ```mermaid block, which remarkMdxMermaid passes.',
+    },
+    href: {
+      type: '(link: string) => string',
+      description:
+        "Rewrites each link of the diagram's nodes that goes to a page of the site, a path that starts with one /: it gets the link and returns the one to write, such as the path with the base path the site is served under before it. The other links stay as they are, and without href, all of them.",
+    },
+    narrow: {
+      type: 'number',
+      default: 'none: one layout',
+      description:
+        'A second layout, at most this many pixels across, which shows where the column is under 600px wide, as on a phone. It is drawn only when it is narrower than the first.',
+    },
+  }}
+/>
 
 ## fortranToc
 
@@ -711,8 +792,15 @@ A `FortranGraph` without a diagram draws nothing.
 names. `kinds` maps anchors, without `#`, to kinds, as a generated page's front matter `fortran.toc` does; a
 percent-encoded anchor is looked up decoded too. An entry it has no kind for stays as it is, and without `kinds` it
 returns `toc` itself. The letter is hidden from screen readers, which read the entry's title alone.
-[Set up your site](/docs/guides/site-setup#kind-letters) wires it into the page template, with the page schema's
-`fortran` field.
+
+A Fumadocs site calls it through `fortranPlugin`, the plugin of `fumadocs-fortran/source` for its `loader()`. The
+plugin passes each generated page's table of contents through `fortranToc`, with the kinds of the page's
+`fortran.toc`, so that the page template passes `page.data.toc` to `DocsPage` as it is. It also gives each generated
+page a letter for its own kind in the sidebar, in the place of its icon, from `fortran.kind`. Both need the
+`fortran` field, which the collection's schema keeps with `fortranPageSchema` of `fumadocs-fortran/mdx`:
+[Get started](/docs/get-started#source) sets the two up, and the
+[JavaScript API](/docs/reference/javascript#fortranplugin) has the plugin's options. The letters of the table of
+contents are:
 
 <div className="not-prose flex flex-wrap gap-x-5 gap-y-2 text-sm">
   <span className="fdf-toc"><span className="fdf-toc-kind fdf-toc-module">mod</span><span className="fdf-toc-name">module</span></span>
@@ -725,6 +813,16 @@ returns `toc` itself. The letter is hidden from screen readers, which read the e
   <span className="fdf-toc"><span className="fdf-toc-kind fdf-toc-variable">v</span><span className="fdf-toc-name">variable</span></span>
   <span className="fdf-toc"><span className="fdf-toc-kind fdf-toc-parameter">p</span><span className="fdf-toc-name">parameter</span></span>
   <span className="fdf-toc"><span className="fdf-toc-kind fdf-toc-enum">e</span><span className="fdf-toc-name">enum</span></span>
+</div>
+
+and those of the sidebar, for a module, a submodule, a program, block data and a page of external procedures:
+
+<div className="not-prose flex flex-wrap gap-x-5 gap-y-2 text-sm">
+  <span className="fdf-toc"><span className="fdf-nav-kind fdf-nav-module">mod</span><span className="fdf-toc-name">module</span></span>
+  <span className="fdf-toc"><span className="fdf-nav-kind fdf-nav-submodule">smod</span><span className="fdf-toc-name">submodule</span></span>
+  <span className="fdf-toc"><span className="fdf-nav-kind fdf-nav-program">prog</span><span className="fdf-toc-name">program</span></span>
+  <span className="fdf-toc"><span className="fdf-nav-kind fdf-nav-blockdata">bd</span><span className="fdf-toc-name">block data</span></span>
+  <span className="fdf-toc"><span className="fdf-nav-kind fdf-nav-procedures">proc</span><span className="fdf-toc-name">procedures</span></span>
 </div>
 
 ## fortranComponents
@@ -746,6 +844,20 @@ import {
 } from 'fumadocs-fortran/react';
 ```
 
+`createFortranComponents({ href })` returns the seven with the links they write to the site's own pages passed
+through `href`: the links of `FortranRef`, of the names in a row's type that its `refs` lists, and of source headers,
+each a path that starts with one `/`. Links to other sites, such as GitHub's, stay as they are. A site served under a
+base path spreads these in the place of `fortranComponents`, with a function that adds the path
+([Publish on GitHub Pages](/docs/guides/github-pages#links) shows one). This site's is `siteHref`, which also adds the
+trailing slash of the static export's pages, without which a link to an entry of the page being read loads the page
+again rather than scroll to it:
+
+```tsx title="components/mdx.tsx"
+const fortranMdxComponents = createFortranComponents({ href: siteHref });
+```
+
+Without `href`, it returns the seven as `fortranComponents` has them, in an object of its own.
+
 ## Styling
 
 `fumadocs-fortran/style.css` is plain CSS on `.fdf-*` classes, built on Fumadocs' colour variables
@@ -760,10 +872,12 @@ Fumadocs puts on `<html>`. It needs no Tailwind `@source` line. Sites can change
 | `--fdf-blas`, `--fdf-lapack`, `--fdf-scalapack` | the libraries' badges, and the graph nodes of their routines |
 | `--fdf-cpp` | cpp badges |
 | `--fdf-in`, `--fdf-out`, `--fdf-inout` | the intent markers of arguments |
-| `--fdf-k-module`, `--fdf-k-submodule`, `--fdf-k-program`, `--fdf-k-type` | the letters in the table of contents, and the graph nodes of each kind (block data with the programs) |
+| `--fdf-k-module`, `--fdf-k-submodule`, `--fdf-k-program` | the letters in the table of contents and the sidebar, and the graph nodes of each kind; block data takes the programs', for its nodes and its letter `bd` |
+| `--fdf-k-type` | the letter `t`, and the types of the graphs |
 | `--fdf-k-interface` | the letter `i`, and the generics of the graphs |
-| `--fdf-k-subroutine` | the letter `s`, and every procedure of the graphs, functions included |
-| `--fdf-k-function`, `--fdf-k-variable`, `--fdf-k-parameter`, `--fdf-k-enum` | the letters `f`, `v`, `p` and `e` in the table of contents |
+| `--fdf-k-subroutine` | the letter `s`, `proc` in the sidebar, and every procedure of the graphs, functions included |
+| `--fdf-k-variable` | the letter `v` in the table of contents |
+| `--fdf-k-function`, `--fdf-k-parameter`, `--fdf-k-enum` | the letters `f`, `p` and `e` in the table of contents |
 
 Each is one mid tone for both themes: the text mixes it with black in light mode and with white in dark mode, and
 the tint and the border are made from it. The grey of what lies outside the project is Fumadocs' muted foreground.
@@ -794,33 +908,28 @@ Three classes are hooks for a site's own CSS, as the stylesheet gives them no st
 `.fdf-kind-<kind>` (`.fdf-kind-hdf5` for the one above), which has a style only for the HPC kinds. A row that exists
 only under a cpp condition has `.fdf-arg-conditional`, and an intent's arrow `.fdf-intent-arrow`.
 
+The kind letters have a class for all and one for each kind, which takes its tone from the table above. In the table
+of contents, a letter is `.fdf-toc-kind` with `.fdf-toc-module`, `.fdf-toc-type` and the like, beside the entry's
+title in `.fdf-toc-name`, both inside `.fdf-toc`. In the sidebar, it is `.fdf-nav-kind`, one width for all, so that
+the pages' names line up, with `.fdf-nav-module`, `.fdf-nav-submodule`, `.fdf-nav-program`, `.fdf-nav-blockdata` or
+`.fdf-nav-procedures`.
+
 ### Graphs
 
-Pele, which this site draws the graphs with, takes its fonts and colours from `--pele-*` variables, and without them
-draws for a light page: near-black arrows, which a dark theme hides, and labels in white boxes. The stylesheet maps
-them to Fumadocs' fonts and colours for the graphs in a `FortranGraph`, so that their lines, arrows and labels follow
-the light and dark themes, and draws their nodes in the tones of the table above. The Mermaid itself holds fixed mid
-tones for each kind of node, which read on light and dark backgrounds whatever draws them. A diagram that a site
-writes in a page itself, a ` ```mermaid ` block outside a `FortranGraph`, needs the same mapping in the site's CSS.
-This site's:
+Pele, which the `Mermaid` component draws with, takes its fonts and colours from `--pele-*` variables, and without
+them draws for a light page: near-black arrows, which a dark theme hides, and labels in white boxes. The stylesheet
+maps them to Fumadocs' fonts and colours for every diagram the component draws, the generated graphs and the diagrams
+a page writes itself, so that their lines, arrows and labels follow the light and dark themes. It draws the nodes of
+the generated graphs in the tones of the table above; the Mermaid itself holds fixed mid tones for each kind of node,
+which read on light and dark backgrounds whatever draws them. The mapping is in `:where()`, which has no specificity,
+and in no cascade layer, so a site's own `.pele` rule outside any `@layer` wins wherever its CSS comes: it is how a
+site changes the lines and labels of its diagrams.
 
-```css title="app/global.css"
-.pele:not(.fdf-graph .pele) {
-  --pele-font: var(--font-sans);
-  --pele-font-mono: var(--font-mono);
-  --pele-bg: var(--color-fd-background);
-  --pele-fg: var(--color-fd-foreground);
-  --pele-muted: var(--color-fd-muted-foreground);
-  --pele-line: var(--color-fd-muted-foreground);
-  --pele-surface: var(--color-fd-card);
-  --pele-surface-alt: var(--color-fd-secondary);
-  --pele-border: var(--color-fd-border);
-  --pele-accent: var(--color-fd-primary);
-}
-```
-
-A plain `.pele` rule outside any `@layer` would apply to the generated graphs as well, as the stylesheet's mapping has
-no specificity and is in no cascade layer: it is how a site changes their lines and labels.
+The component's diagram is a `.fdf-mermaid` block, which scrolls when it is wider than the column; in a
+`FortranGraph`, the graph's body scrolls instead. With `narrow`, when the second layout is the narrower, the block also
+has `.fdf-mermaid-two` and holds both, `.fdf-mermaid-wide` and `.fdf-mermaid-narrow`, of which a container query
+shows the narrow one where the block is under 600px wide. A diagram Pele cannot draw is a `.fdf-mermaid-code`
+figure, its code under a caption.
 
 ### Print and right to left
 

@@ -25,15 +25,16 @@ it. Run from the top folder, a file is `src/solver.F90`, as in the repository. R
 
 ## Keep the command in a script [#reference-script]
 
-A `reference` script in the site's `package.json` keeps the command and its flags in one place, for you and for a
-workflow. Add it from the top folder:
+[Get started](/docs/get-started#generate) keeps the command and its flags in a `reference` script of the site's
+`package.json`, in one place, for you and for a workflow. npm runs a script in the site's folder, so the script goes
+up to the top folder first. To change it, run `npm pkg set` with the whole command, from the top folder; it replaces
+the script. This is the script after [Set up your site](/docs/guides/site-setup), with maths and graphs:
 
 ```bash
 npm pkg set --prefix docs scripts.reference="cd .. && fumadocs-fortran generate src -o docs/content/docs/api"
 ```
 
-npm runs a script in the site's folder, so the script goes up to the top folder first. With the site in another folder
-than `docs/`, change `cd ..` and the paths to match. Run it:
+With the site in another folder than `docs/`, change `cd ..` and the paths to match. Run it:
 
 ```bash
 npm run --prefix docs reference
@@ -52,14 +53,13 @@ not installed, after asking in a terminal and without asking in a script or in C
 
 ### Flags for one run [#one-run]
 
-Flags after `--` are added to the script's command for that run. On a site without maths and graphs, as Get started
-leaves it:
+Flags after `--` are added to the script's command for that run, and the script itself does not change. With the
+script above on a site without maths and graphs, as Get started leaves it, these keep a run to what the site can
+build:
 
 ```bash
 npm run --prefix docs reference -- --math code --graphs none
 ```
-
-To change the script itself, run `npm pkg set` again with the whole command: it replaces the script.
 
 ## Choose the build [#choose-the-build]
 
@@ -126,7 +126,7 @@ npm exec --prefix docs -- fumadocs-fortran dump --summary src -D USE_MPI
 3 files, 520 lines, 48 entities, 0 diagnostics, 9 ms
 ```
 
-With no macro, the total in Get started reads 47 entities: the `comm` component of the `dense_matrix` type exists
+With no macro, the total reads 47 entities: the `comm` component of the `dense_matrix` type exists
 only in the MPI build, and the arguments go from 43 to 44 with the `comm` argument of `norm2_parallel`.
 
 `0 files` has three causes: a misspelt path, as a path that does not exist is passed over without a message; a run in
@@ -253,7 +253,7 @@ folder:
 
 `--title` names the overview and the folder in the sidebar, API reference by default. When the folder's parent has a
 `meta.json` that lists its pages, as many sites' `content/docs/meta.json` does, add the folder's name to that list, or
-the reference is missing from the sidebar; the static template of Get started has none.
+the reference is missing from the sidebar; the static template of Start a new site has none.
 
 The folder is the generator's. Each run rewrites its `meta.json` and replaces a file with the name of a page it
 writes, and a page written into the folder by hand stays out of the sidebar. Keep your own pages beside it, such as
@@ -318,8 +318,7 @@ project are left out first, the farthest first, and then the farthest of the res
 than 80 modules, submodules and programs. The JavaScript option [`graphs`](/docs/reference/javascript#graphs) sets
 both limits.
 
-For the site's search index, see [Name the search route search.json](/docs/guides/site-setup#search), and for the
-sidebar's prefetching, [Large references](/docs/guides/site-setup#large), both on Set up your site.
+For the site's search index and the sidebar's prefetching, see [Large references](/docs/guides/large-references).
 
 ### The site's build [#large-build]
 

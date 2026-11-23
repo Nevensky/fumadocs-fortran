@@ -364,18 +364,23 @@ Entity sections contain no sub-headings, so fumadocs' own `<include>…#solve</i
 - Above a size budget, the argument records are dropped (`search.granularity`), because a static export ships the whole
   index to every visitor.
 - Huge modules can be split into a page per entity (json-fortran's `json_value_module` has 247 procedures).
-- The components give the records their text, not their tags: Set up your site shows the `filterElement` option of
+- The components give the records their text, not their tags: `withFortran` sets the `filterElement` option of
   fumadocs' remark-structure that does it, as the docs site uses it (its index 24% smaller, stdlib's 73%). A heading
   keeps an underscore inside a name unescaped, so that search finds the name as one word.
 - No page's URL ends in `-` and a number, the form of the ids fumadocs gives a page's records: units of one name are
   numbered after an underscore (`miniweather-program_2`).
-- Sites with large references turn the sidebar's prefetch off (`sidebar={{ prefetch: false }}`), as Set up your site
+- Sites with large references turn the sidebar's prefetch off (`sidebar={{ prefetch: false }}`), as Large references
   says under Large references; Next prefetches every page whose link is in view.
 
 **Links** are absolute paths under `baseUrl`. `fortran-inventory.json` feeds the remark plugin and the code-block
 linker. A FORD-compatible `modules.json` lets FORD sites link into ours.
 
-**Sidebar badges** (optional) come from a small loader plugin; no virtual source is needed.
+**Sidebar badges** come from a small loader plugin, `fortranPlugin` (`fumadocs-fortran/source`), which also gives the
+tables of contents their kind letters; no virtual source is needed. A site takes the package as it takes Fumadocs'
+own integrations (2026-11-23): `withFortran` and `fortranPageSchema` (`fumadocs-fortran/mdx`) in its docs collection,
+the plugin in its loader, the components (`createFortranComponents` for a base path, and `Mermaid` of
+`fumadocs-fortran/mermaid`) and `style.css` in its global CSS. Get started adds the reference to an existing site;
+Start a new site makes one first.
 
 ## 7. Components and styling
 

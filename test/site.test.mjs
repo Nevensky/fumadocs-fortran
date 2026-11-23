@@ -1,6 +1,6 @@
 // The docs site: the checks its build runs first (docs/package.json's check script), what its pages say about the
 // package against the package, its stylesheet and the generated pages, and the width of the docs' prose, then its own
-// code (docs/lib/shared.ts, docs/components/mdx): the links next/link
+// code (docs/lib/shared.ts, and the components as docs/components/mdx.tsx registers them): the links next/link
 // never sees, those of hover cards, source headers, graph nodes and the llms files, get what it gives the others,
 // the base path the site is served under and, in the static export, a page's trailing slash, so that a link to an
 // anchor of the page being read only scrolls; the search index's route, api/search.json, and the path the search
@@ -61,13 +61,13 @@ export default async function ({ ok, eq, here, out }) {
   ok(refSection && !refSection.includes('<Tabs') && examples.length === 3
     && examples.reduce((n, e) => n + refsIn(e), 0) === refsIn(live),
   'the live FortranRef examples stand outside Tabs, whose box clips a card, as expressions, which search leaves out');
-  // the Mermaid component that Set up your site gives a site, in full
+  // the Mermaid component that Set up your site registers is the package's, which shows a diagram Pele cannot parse
+  // as its code (test/fumadocs.test.mjs)
   const setUp = sectionOf(read('docs/content/docs/guides/site-setup.mdx'), '## Draw the graphs');
-  const snippet = /```tsx title="(?:docs\/)?components\/mdx\/mermaid\.tsx"\n([\s\S]*?)\n```/.exec(setUp)?.[1] ?? '';
-  ok(/\bcatch\b/.test(snippet) && /<CodeBlock\b/.test(snippet),
-    'the Mermaid component of Set up your site shows a diagram Pele cannot parse as its code');
-  const shownCss = /```css title="app\/global.css"\n(\.pele[^\n]*\{[\s\S]*?\n\})\n```/.exec(comp)?.[1];
-  ok(!!shownCss && read('docs/app/global.css').includes(shownCss), "the Pele block the page shows is the site's own");
+  ok(/import \{ Mermaid \} from 'fumadocs-fortran\/mermaid';/.test(setUp),
+    "Set up your site's Draw the graphs registers the Mermaid component of fumadocs-fortran/mermaid");
+  // the site's diagrams take their colours from style.css, as any site's do: its own CSS sets no Pele variable
+  ok(!/--pele-[\w-]+\s*:/.test(read('docs/app/global.css')), "the site's global.css leaves Pele's variables to style.css");
   ok(!/title: \{\s*type: 'string',\s*required: true/.test(section('### Props of FortranGraph')),
     "FortranGraph's title is optional");
   // a link without the base path leaves the site; one without the slash reloads the page it is on
@@ -236,10 +236,12 @@ export default async function ({ ok, eq, here, out }) {
     "import { createElement as h } from 'react';",
     "import { renderToStaticMarkup } from 'react-dom/server';",
     `import { siteHref, siteLinks } from ${at('lib/shared.ts')};`,
-    `import { fortranMdxComponents } from ${at('components/mdx/fortran.tsx')};`,
-    `import { Mermaid } from ${at('components/mdx/mermaid.tsx')};`,
+    "import { createFortranComponents } from 'fumadocs-fortran/react';",
+    "import { Mermaid } from 'fumadocs-fortran/mermaid';",
     'export { siteHref, siteLinks };',
-    'const all = { ...fortranMdxComponents, Mermaid };',
+    // as components/mdx.tsx registers them
+    'const all = { ...createFortranComponents({ href: siteHref }),',
+    '  Mermaid: (props) => h(Mermaid, { ...props, href: siteHref, narrow: 320 }) };',
     'export const html = (name, props, ...children) => renderToStaticMarkup(h(all[name], props, ...children));',
   ].join('\n'));
   const site = {
@@ -247,7 +249,8 @@ export default async function ({ ok, eq, here, out }) {
     setup(b) {
       // the package from this repository, whatever docs/node_modules links to
       b.onResolve({ filter: /^fumadocs-fortran\/react$/ }, () => ({ path: path.join(repo, 'react/index.js') }));
-      b.onResolve({ filter: /^react(-dom)?(\/.*)?$/ }, (a) => ({ path: need.resolve(a.path) }));
+      b.onResolve({ filter: /^fumadocs-fortran\/mermaid$/ }, () => ({ path: path.join(repo, 'react/mermaid.js') }));
+      b.onResolve({ filter: /^(react(-dom)?(\/.*)?|pele)$/ }, (a) => ({ path: need.resolve(a.path) }));
       // Next's own stand-in, which a bundle outside Next lacks
       b.onResolve({ filter: /^server-only$/ }, () => ({ path: 'server-only', namespace: 'empty' }));
       b.onLoad({ filter: /.*/, namespace: 'empty' }, () => ({ contents: '' }));

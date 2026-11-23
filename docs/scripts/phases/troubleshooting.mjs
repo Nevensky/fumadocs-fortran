@@ -32,11 +32,10 @@ const ENTRIES = {
   'expected-component': { message: true, from: 'site-setup', pattern: /Expected component Fortran\w+ to be defined/,
     words: ['to be defined: you likely forgot to import, pass, or provide it'] },
   'expected-mermaid': { message: true, from: 'site-setup' },
-  ts2339: { message: true, from: 'site-setup', words: ["error TS2339: Property 'fortran' does not exist on type"] },
   metadatabase: { message: true, from: 'get-started' },
   'api-search': { message: true, words: ['export const revalidate not configured'] },
-  // the build the site-setup phase runs with the search route renamed and the development server's types left
-  'route-types': { message: true, from: 'site-setup',
+  // the build the large-references phase runs with the search route renamed and the development server's types left
+  'route-types': { message: true, from: 'large-references',
     words: ['error TS2307', 'or its corresponding type declarations'] },
   font: { message: true, outside: 'a build of the tutorial\'s site with no network (docker run --network none), '
     + 'run by hand for the Troubleshooting page' },
@@ -48,8 +47,8 @@ const ENTRIES = {
   maths: { from: 'site-setup' },
   'no-letters': { from: 'site-setup' },
   'no-layout': { from: 'site-setup' },
-  // the index under its name, and as npm start sends it (gzipped, application/json): the github-pages phase
-  'slow-search': { from: 'github-pages' },
+  // the index under its name, and as npm start sends it (gzipped, application/json): the large-references phase
+  'slow-search': { from: 'large-references' },
   // GitHub's own Jekyll build, which runs only on GitHub with Pages set to deploy from a branch
   liquid: { message: true, outside: 'GitHub\'s pages build and deployment run on this repository, with Pages set to '
     + 'deploy from a branch: Liquid syntax error (line 104) on reference/components.mdx' },
@@ -99,8 +98,8 @@ export default {
 
     // ---- creating the site over a docs/ with files in it, then with another name
     {
-      const gs = ctx.page('get-started.mdx');
-      const step1 = gs.blocks.find((b) => b.lang === 'bash' && b.body.includes('create-fumadocs-app'));
+      const ns = ctx.page('new-site.mdx');
+      const step1 = ns.blocks.find((b) => b.lang === 'bash' && b.body.includes('create-fumadocs-app'));
       const cmd = ctx.commands(step1.body)[0];
       const dir = ctx.scratch('docs-exists');
       fs.mkdirSync(path.join(dir, 'docs'));
@@ -274,12 +273,12 @@ export default {
       ctx.expect(b1.code === 0 && b2.code === 0 && without === 0 && withIt > 0,
         `"API reference" in the first page's sidebar: ${without} without the folder in meta.json, ${withIt} with it`);
 
-      // the route as Set up your site names it, whose path the message gives
-      ctx.seed('docs/app/api/search.json/route.ts', (t) => t.replace('export const revalidate = false;\n', '')
+      // the template's route, whose path the message gives
+      ctx.seed('docs/app/api/search/route.ts', (t) => t.replace('export const revalidate = false;\n', '')
         .replace('staticGET: GET', 'GET'));
       const b3 = ctx.build({ label: 'a search route that is not static', allowFail: true });
-      ctx.expect(b3.code !== 0 && b3.out.includes('Failed to collect configuration for /api/search.json'),
-        'a search route that is not static did not stop the build with the route\'s path, /api/search.json');
+      ctx.expect(b3.code !== 0 && /Failed to collect configuration for \/api\/search\b(?!\.json)/.test(b3.out),
+        'a search route that is not static did not stop the build with the route\'s path, /api/search');
     }
 
     // ---- every message heading against the logs

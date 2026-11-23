@@ -6,6 +6,7 @@
     "node": "^22.22.0 || >=24.11.0"
   },
   "scripts": {
+    "postinstall": "node scripts/link-package.mjs",
     "dev": "next dev",
     "check": "node scripts/check-docs.mjs && node scripts/gen-examples.mjs --check && node scripts/check-cli.mjs && node scripts/check-api.mjs && node scripts/check-readme.mjs",
     "prebuild": "npm run check",

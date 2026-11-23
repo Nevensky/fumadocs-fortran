@@ -1,0 +1,86 @@
+---
+title: Start a new site
+description: A Fumadocs site in a docs/ folder of your Fortran project, from Fumadocs' static template.
+---
+
+A project without a documentation site, or with one that FORD or Doxygen writes, starts with a Fumadocs site of its
+own. Fumadocs' `create-fumadocs-app` makes one in a `docs/` folder of the project, which builds as static files for
+GitHub Pages or any web server, and [Get started](/docs/get-started) then adds the API reference to it. A project
+that has a Fumadocs site goes to Get started directly.
+
+## Before you begin
+
+The site needs Node.js 22.22 or a later 22 release, or 24.11 or later, with the npm that comes with it:
+
+```bash
+node --version
+```
+
+If `node` is missing or older, install Node.js 24 from [nodejs.org](https://nodejs.org/en/download), or with
+[nvm](https://github.com/nvm-sh/nvm) or [fnm](https://github.com/Schniz/fnm), which need no administrator rights;
+[Troubleshooting](/docs/guides/troubleshooting#without-nodejs) runs the steps in Docker. npm needs Git to install
+fumadocs-fortran from GitHub:
+
+```bash
+git --version
+```
+
+The site goes in a `docs/` folder of your project's top folder, the one that holds your Fortran in `src/`. If a
+`docs/` folder with files in it is already there, step 1 stops without changing anything. Give the site another
+name, such as `site`, and write it for `docs` in step 1's command and in the paths that start with `docs/`, here and
+in Get started, but not in `content/docs` or in the site's addresses.
+
+The site takes up to 900 MB of disk, and npm's cache in `~/.npm` about 600 MB. Run the commands in a terminal on
+Linux, macOS or WSL. From a remote machine, such as a cluster's login node, connect with
+`ssh -L 3000:localhost:3000 HOST`, so that the site's addresses open in your own browser.
+
+## 1. Create the site [#create-the-site]
+
+In your project's top folder, create the site with Fumadocs' static template:
+
+```bash
+npx --yes create-fumadocs-app@16.3.9 docs --template +next+fuma-docs-mdx+static --pm npm --no-git --install --yes
+```
+
+This runs `create-fumadocs-app` at the version these steps were tested with and installs the site's packages, which
+takes from half a minute to a few minutes. `--no-git` keeps the site in your project's repository. It prints `Done`,
+then the template's own next steps, which the steps below and Get started take the place of. A notice of a newer npm
+may follow, which needs nothing.
+
+`docs/` then holds a Next.js site that builds as static files, for GitHub Pages or any web server. Its `.gitignore`
+leaves out `node_modules/`, `.next/` and `out/`, so it can be committed with the rest of your project.
+
+## 2. Name the site [#name-the-site]
+
+Give the site your project's name and your repository, for the navigation bar's GitHub link and each page's Open in
+GitHub link:
+
+```diff title="docs/lib/shared.ts"
+-export const appName = 'My App';
++export const appName = 'My Fortran code';
+@@
+ export const gitConfig = {
+-  user: 'fuma-nama',
+-  repo: 'fumadocs',
++  user: 'OWNER',
++  repo: 'REPOSITORY',
+   branch: 'main',
+ };
+```
+
+The template's sample pages are `docs/content/docs/index.mdx`, the first page of the docs, and
+`docs/content/docs/test.mdx`, called Components. Make the first your introduction, with a link to `/docs/api`, where
+the reference will be, and delete the second:
+
+```bash
+rm docs/content/docs/test.mdx
+```
+
+The home page, `docs/app/(home)/page.tsx`, links to `/docs`; point it at the reference, or write your own.
+
+## 3. Add the reference [#add-the-reference]
+
+The site is now a Fumadocs site like any other. In your project's top folder, follow [Get started](/docs/get-started)
+from its step 1, which installs fumadocs-fortran in `docs/` and writes the reference into the site.
+
+To start again, delete `docs/`: nothing outside it changed.

@@ -1,0 +1,134 @@
+---
+title: Large references
+description: A compressed search index, no prefetching of large pages, and no layout shift on long pages.
+---
+
+The reference of a large code, such as stdlib's or LAPACK's, makes long pages and a large search index, which readers
+download. Three changes to the site keep what they download, and what moves while it arrives, down: a search index
+that servers compress, a sidebar that fetches a page when it is clicked, and the table of contents' column from the
+first paint. None is needed for a small reference. The files are those of the site
+[Get started](/docs/get-started) leaves, and paths start at your project's top folder, with the site in `docs/`. The
+generator's own options for a large code are under [Large codes](/docs/guides/generate#large-codes).
+
+## Name the search route search.json [#search]
+
+The search dialog downloads the site's whole search index on its first search, and searches it in the browser. The
+static template's route, `docs/app/api/search/route.ts`, exports the index as `api/search`, a file without an
+extension. A web server sends a file with the type of its extension, and many compress only text types, such as
+`application/json`: nginx, with its `gzip_types`, sends `api/search` as `application/octet-stream`, uncompressed, and
+`serve`, which `npm start` runs, sends it with no type, uncompressed. GitHub Pages compresses it either way. This
+documentation site's index is 2.2 MB, and 0.49 MB gzipped. Served by nginx to Chromium with its Slow 4G network and a
+processor four times slower, the first result came 13.1 s after the first key with the index uncompressed, and 3.7 s
+with it gzipped.
+
+Stop the development server if it runs, and rename the route's folder, so that the build exports the index as
+`api/search.json`; its `route.ts` stays as it is:
+
+```bash
+mv docs/app/api/search docs/app/api/search.json
+```
+
+The development server keeps types that name the template's folder in `docs/.next/dev`, and the build checks them.
+Delete them, or the build stops with Cannot find module '../../../app/api/search/route.js'; the development server
+writes them again when it starts:
+
+```bash
+rm -rf docs/.next/dev
+```
+
+Point the search dialog at the index:
+
+```tsx title="docs/components/search.tsx"
+'use client';
+import {
+  SearchDialog,
+  SearchDialogClose,
+  SearchDialogContent,
+  SearchDialogHeader,
+  SearchDialogIcon,
+  SearchDialogInput,
+  SearchDialogList,
+  SearchDialogOverlay,
+  type SharedProps,
+} from 'fumadocs-ui/components/dialog/search';
+import { useStaticSearch } from 'fumadocs-core/search/client';
+import { useI18n } from 'fumadocs-ui/contexts/i18n';
+
+export default function DefaultSearchDialog(props: SharedProps) {
+  const { locale } = useI18n(); // (optional) for i18n
+  const search = useStaticSearch({
+    locale,
+    from: '/api/search.json', // [!code ++]
+  });
+
+  return (
+    <SearchDialog {...search} {...props}>
+      <SearchDialogOverlay />
+      <SearchDialogContent>
+        <SearchDialogHeader>
+          <SearchDialogIcon />
+          <SearchDialogInput />
+          <SearchDialogClose />
+        </SearchDialogHeader>
+        <SearchDialogList />
+      </SearchDialogContent>
+    </SearchDialog>
+  );
+}
+```
+
+Without `from`, the dialog fetches `/api/search`, which answers 404 once the route is renamed. A site served under a
+base path gives `from` the base path as well, as [Publish on GitHub Pages](/docs/guides/github-pages#search) shows.
+Built again, the site exports the index as `docs/out/api/search.json`, which `npm start` sends as `application/json`,
+gzipped.
+
+The index holds the text of the reference's components rather than their tags, as `withFortran` filters them, which
+makes the index of stdlib's pages 73% smaller (64% gzipped) than Fumadocs' defaults would.
+
+## Turn off the sidebar's prefetching [#prefetch]
+
+Next.js fetches the page behind each link in view ahead of a click, and Fumadocs' sidebar keeps that default. On a
+site with large reference pages, turn it off in the sidebar: a first visit to stdlib's `stdlib_ansi` page fetched
+10.3 MB gzipped with the pages' source blocks and graphs, and 1.4 MB without either.
+
+```diff title="docs/app/docs/layout.tsx"
+-    <DocsLayout tree={source.getPageTree()} {...baseOptions()}>
++    <DocsLayout tree={source.getPageTree()} sidebar={{ prefetch: false }} {...baseOptions()}>
+```
+
+The sidebar's links then load a page when they are clicked. The links in a page's text, its breadcrumbs, and the
+previous and next links under it still fetch ahead. Next.js does this only in a production build, so measure one.
+
+## Give the table of contents its column from the first paint [#toc-column]
+
+On a desktop screen, Fumadocs gives the table of contents its column only once the table of contents is in the page,
+and it comes after the article in the HTML: 350 to 520 KB in, on this documentation site's longest pages. A paint
+before it arrives lays the article out wider and moves it when the column comes, a layout shift of up to 0.44. An
+element with the table of contents' own class, ahead of the page, gives the column from the first paint:
+
+```diff title="docs/app/docs/[[...slug]]/page.tsx"
+   return (
+-    <DocsPage toc={page.data.toc} full={page.data.full}>
++    <>
++    {!page.data.full && <div hidden className="xl:layout:[--fd-toc-width:268px]" />}
++    <DocsPage toc={page.data.toc} full={page.data.full}>
+@@
+     </DocsPage>
++    </>
+   );
+```
+
+The class is the one fumadocs-ui 16.19 gives its table of contents (the `#nd-toc` element), and it does nothing
+below the `xl` breakpoint. A full page shows no table of contents, so it gets no column; a page without headings gets
+the same column from Fumadocs' placeholder.
+
+## Build and check [#check]
+
+Build the site again:
+
+```bash
+npm run --prefix docs build
+```
+
+`docs/out/api/` then holds `search.json` alone, and each page of the reference has the hidden element ahead of its
+article.

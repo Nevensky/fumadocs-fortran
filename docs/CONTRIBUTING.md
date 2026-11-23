@@ -128,6 +128,7 @@ NEXT_PUBLIC_BASE_PATH=/fumadocs-fortran scripts/docs.sh build
 
 Before every deploy,
 [docs.yml](https://github.com/Nevensky/fumadocs-fortran/blob/main/.github/workflows/docs.yml) runs the commands of
+[Start a new site](https://nevensky.github.io/fumadocs-fortran/docs/new-site/) and
 [Get started](https://nevensky.github.io/fumadocs-fortran/docs/get-started/) as a reader would, with
 [test-get-started.mjs](https://github.com/Nevensky/fumadocs-fortran/blob/main/docs/scripts/test-get-started.mjs) in
 `docs/scripts/`: in an empty folder whose `src/` is a copy of `examples/modern/src`, with the commit it deploys packed
@@ -197,7 +198,8 @@ runs the documentation's checks and binds these pages and files to the code:
 
 - the Components page: its live examples, the CSS snippets it shows against the site's own files, and its Meanings
   and Styling against `style.css`;
-- the Mermaid component of Set up your site, and what Publish on GitHub Pages says of the components' links;
+- the Mermaid component Set up your site registers, the site's own CSS for diagrams (none: `style.css` has it), and
+  what Publish on GitHub Pages says of the components' links;
 - the Introduction's list of what a page holds, and the home page's sample against the generated entry it copies;
 - the 120-character rule on the hand-written pages (the Showcase's own page among them), `README.md`,
   `CHANGELOG.md`, `docs/README.md` and this file.
@@ -218,6 +220,7 @@ A change to the code updates its page in the same pull request.
 | `src/emit/graphs.js` and `src/emit/fortran-names.js` | The graphs on [How it works](https://nevensky.github.io/fumadocs-fortran/docs/how-it-works/), and FortranGraph on [Components](https://nevensky.github.io/fumadocs-fortran/docs/reference/components/) |
 | `registry/`, `src/emit/library.js` and `src/emit/kinds.js` | Library names on [How it works](https://nevensky.github.io/fumadocs-fortran/docs/how-it-works/), and `--links` and `--library-cards` on [Command line](https://nevensky.github.io/fumadocs-fortran/docs/reference/cli/) |
 | `react/` and `style.css` | [Components](https://nevensky.github.io/fumadocs-fortran/docs/reference/components/) |
+| `fumadocs/` (`withFortran`, `fortranPageSchema` and `fortranPlugin`) | [Get started](https://nevensky.github.io/fumadocs-fortran/docs/get-started/), [Set up your site](https://nevensky.github.io/fumadocs-fortran/docs/guides/site-setup/), and `fumadocs-fortran/mdx` and `fumadocs-fortran/source` on [JavaScript API](https://nevensky.github.io/fumadocs-fortran/docs/reference/javascript/) |
 | `shiki/` and `src/emit/shiki-langs.js` | [Highlighting](https://nevensky.github.io/fumadocs-fortran/docs/reference/highlighting/) |
 | `examples/modern/` | [Showcase](https://nevensky.github.io/fumadocs-fortran/docs/showcase/), through `docs/scripts/gen-showcase.mjs` |
 | `CHANGELOG.md` | [Changelog](https://nevensky.github.io/fumadocs-fortran/docs/changelog/), which includes it |

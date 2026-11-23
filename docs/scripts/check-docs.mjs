@@ -2,10 +2,11 @@
 // site's prebuild) and in npm test (test/site.test.mjs). Some have checks of their own, which the prebuild runs beside
 // this one: Command line (check-cli.mjs), JavaScript API (check-api.mjs), the examples of Doc comments
 // (gen-examples.mjs --check), and the README and the contributor guide (check-readme.mjs). This one checks:
-// - Components (reference/components.mdx) against types/react.d.ts and style.css: each component's "Props of" table
-//   holds the props its interface declares and no other, with required: true on those that are not optional, and the
-//   default a prop's doc comment gives as a value; each kind of FortranBadgeKind is drawn live and named in the kind
-//   prop; Styling names every --fdf-* custom property the stylesheet sets, and none it lacks;
+// - Components (reference/components.mdx) against types/react.d.ts, types/mermaid.d.ts and style.css: each
+//   component's "Props of" table holds the props its interface declares and no other, with required: true on those
+//   that are not optional, and the default a prop's doc comment gives as a value; each kind of FortranBadgeKind is
+//   drawn live and named in the kind prop; Styling names every --fdf-* custom property the stylesheet sets, and none it
+//   lacks;
 // - Doc comments (reference/doc-comments.mdx) against src/docs/index.js: each keyword of its lists (FORD_META, DOXY
 //   and ENV, then MIDLINE, DROPPED, FORD's environments and the commands renderDoxygen and INLINE_RE read) is a word
 //   of the page's code, and so are \f$ and \f[;
@@ -13,7 +14,7 @@
 //   SENTINEL, FIXED_SENTINEL, VENDOR and FIXED_VENDOR, and no other directive;
 // - the versions: the sentences that give this site's own Fumadocs and Next.js versions say docs/package.json's, the
 //   one that gives the grammars' tested versions says those of ci.yml's Shiki job, and every create-fumadocs-app
-//   version is the one Get started runs;
+//   version is the one Start a new site runs;
 // - the status: statusSentence of docs/lib/shared.ts, word for word, in the Pre-release callouts of the Introduction
 //   and Get started (check-readme.mjs holds the README to it); the root meta.json's description is appDescription;
 // - Get started's steps end, by their cd commands, in the top folder they start in, where the guides' commands run;
@@ -510,13 +511,15 @@ export function checkDocs(root = ROOT) {
       }
     }
   }
-  const scaffold = /create-fumadocs-app@(\d+\.\d+\.\d+)/.exec(texts.get('get-started.mdx') ?? '')?.[1];
-  if (!scaffold) say(`${CONTENT}/get-started.mdx`, 'no create-fumadocs-app@VERSION command');
+  // the version Start a new site runs, which makes the site Get started adds the reference to
+  const scaffold = /create-fumadocs-app@(\d+\.\d+\.\d+)/.exec(texts.get('new-site.mdx') ?? '')?.[1];
+  if (!scaffold) say(`${CONTENT}/new-site.mdx`, 'no create-fumadocs-app@VERSION command');
   for (const p of own) {
     const text = texts.get(p);
     for (const m of text.matchAll(/create-fumadocs-app`?(?:@|\s+)(\d+\.\d+\.\d+)/g)) {
       if (scaffold && m[1] !== scaffold) {
-        say(`${CONTENT}/${p}:${lineAt(text, m.index)}`, `create-fumadocs-app ${m[1]}, where Get started runs ${scaffold}`);
+        say(`${CONTENT}/${p}:${lineAt(text, m.index)}`,
+          `create-fumadocs-app ${m[1]}, where Start a new site runs ${scaffold}`);
       }
     }
   }
@@ -594,22 +597,29 @@ export function checkDocs(root = ROOT) {
   // ---------------------------------------------------------------- Components
   const compRel = `${CONTENT}/reference/components.mdx`;
   const comp = texts.get('reference/components.mdx') ?? need(compRel) ?? '';
-  const react = fs.existsSync(path.join(root, 'types/react.d.ts')) ? parseDts(path.join(root, 'types/react.d.ts')) : null;
-  if (!react) say('types/react.d.ts', 'missing');
+  // the components' types: fumadocs-fortran/react's and fumadocs-fortran/mermaid's
+  const dtsOf = (rel) => {
+    const dts = fs.existsSync(path.join(root, rel)) ? parseDts(path.join(root, rel)) : null;
+    if (!dts) say(rel, 'missing');
+    return dts;
+  };
+  const react = dtsOf('types/react.d.ts');
+  const propTypes = [['types/react.d.ts', react], ['types/mermaid.d.ts', dtsOf('types/mermaid.d.ts')]];
   const css = need('style.css') ?? '';
   // the page outside its code blocks: what it draws
   const live = scan(comp).map(({ line, fence }) => (fence ? '' : line)).join('\n');
-  if (react) {
-    for (const d of react.decls.values()) {
+  for (const [dtsRel, dts] of propTypes) {
+    if (!dts) continue;
+    for (const d of dts.decls.values()) {
       if (d.kind !== 'function') continue;
       const props = /^function\s+(\w+)\s*\(\s*props\s*:\s*(\w+)\s*\)/.exec(d.text);
       if (!props) continue;
       const [, component, iface] = props;
-      const declared = react.decls.get(iface);
+      const declared = dts.decls.get(iface);
       if (declared?.kind !== 'interface') continue;
       const section = sectionOf(comp, `Props of ${component}`);
       if (!section) {
-        say(compRel, `no ### Props of ${component} section, for the props of ${iface} (types/react.d.ts)`);
+        say(compRel, `no ### Props of ${component} section, for the props of ${iface} (${dtsRel})`);
         continue;
       }
       const tableAt = section.text.indexOf('<TypeTable');
@@ -632,16 +642,18 @@ export function checkDocs(root = ROOT) {
         // the default its doc comment gives as a value, as JavaScript API's own tables of these props had it
         const lit = row ? docDefault(m.doc ?? '') : null;
         if (lit !== null && bare(row.default ?? '') !== bare(lit)) {
-          say(`${compRel}:${row.line}`, `${component}'s ${m.name} defaults to ${lit} (${iface} in types/react.d.ts), `
+          say(`${compRel}:${row.line}`, `${component}'s ${m.name} defaults to ${lit} (${iface} in ${dtsRel}), `
             + `and the table gives ${row.default === undefined ? 'no default' : row.default}`);
         }
       }
       for (const [name, row] of table) {
         if (!declared.members.some((m) => m.name === name)) {
-          say(`${compRel}:${row.line}`, `Props of ${component} has ${name}, which ${iface} (types/react.d.ts) lacks`);
+          say(`${compRel}:${row.line}`, `Props of ${component} has ${name}, which ${iface} (${dtsRel}) lacks`);
         }
       }
     }
+  }
+  if (react) {
     const kindType = react.decls.get('FortranBadgeKind');
     const kinds = kindType ? [...kindType.text.matchAll(/'([\w-]+)'/g)].map((m) => m[1]) : [];
     if (!kinds.length) say('types/react.d.ts', 'no FortranBadgeKind union, whose kinds Components draws');

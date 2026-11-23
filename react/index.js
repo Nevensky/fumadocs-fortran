@@ -638,3 +638,38 @@ export function fortranToc(toc, kinds) {
 export const fortranComponents = {
   FortranBadges, FortranBadge, FortranArgs, FortranArg, FortranRef, FortranSource, FortranGraph,
 };
+
+// a link to a page of the site: a path that starts with one /
+const sitePath = (link) => typeof link === 'string' && /^\/(?!\/)/.test(link);
+
+/**
+ * The components with the links they write to the site's own pages passed through `href`: the names of FortranRef,
+ * the type names of argument rows and the headers of source blocks. `href` gets each link that starts with one /
+ * (such as /docs/api/solver_kernels#dense_matrix) and returns the link to write, such as the path under the base path
+ * the site is served from; the other links, such as GitHub's, stay as they are. Without `href`, fortranComponents.
+ */
+export function createFortranComponents({ href } = {}) {
+  if (typeof href !== 'function') return { ...fortranComponents };
+  const site = (link) => (sitePath(link) ? href(link) : link);
+  return {
+    ...fortranComponents,
+    FortranArg: (props) => h(FortranArg, { ...props, refs: siteRefs(props.refs, site) }),
+    FortranRef: (props) => h(FortranRef, { ...props, href: site(props.href) }),
+    FortranSource: (props) => h(FortranSource, { ...props, href: site(props.href) }),
+  };
+}
+
+// A row's refs with the site's links: an object, as generated, or JSON text, which FortranArg reads too
+function siteRefs(refs, site) {
+  let r = refs;
+  if (typeof r === 'string') {
+    try {
+      r = JSON.parse(r);
+    } catch {
+      return refs;
+    }
+  }
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return refs;
+  return Object.fromEntries(Object.entries(r).map(([name, ref]) => [name,
+    ref && typeof ref === 'object' && typeof ref.href === 'string' ? { ...ref, href: site(ref.href) } : ref]));
+}

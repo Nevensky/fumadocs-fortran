@@ -195,18 +195,31 @@ registry behind their library cards and graph colours; and Shiki grammars for Fo
   (`RenderDocOptions`: `ns`, `include` and `aliases` among them), `escapeText`'s `links`, `safeMarkdown`'s `math` and
   the `defaultOpen` of the sidebar's `meta.json`, and describe each doc-comment mark as the character after a
   comment's `!`: `docmark: '!'` reads `!!` comments.
-- **Documentation.** [The documentation site](https://nevensky.github.io/fumadocs-fortran/) has Get started, which a
-  workflow runs as a reader would before every deploy, guides to setting up a site, generating the reference, moving
-  from FORD or Doxygen and publishing on GitHub Pages, the references, How it works, and the Showcase, generated from
-  `examples/modern`. The guides show a site how to keep the components' tags out of its search index, as the project's
-  own site does: on 22 November 2026, that made the site's index 24% smaller (18% gzipped), and that of stdlib's pages
-  73% smaller (64% gzipped). They also say when to turn off the sidebar's prefetch for large references. They name the
-  static search route `search.json`, as the site's own route is (`app/api/search.json/route.ts`), so that a server
-  that compresses by type, such as nginx or `serve`, sends the index compressed, as GitHub Pages does under either
-  name: on 22 November 2026, with nginx and a phone on slow 4G, the site's first result came 3.7 s after the first
-  key, and 13.1 s with the index uncompressed. Set up your site gives the page template the table of contents' column
-  from the first paint, with a hidden element of the table of contents' class, as the site's docs pages have it:
-  without it, a long page moved on a desktop screen when its table of contents arrived, a layout shift of up to 0.44.
+- **Fumadocs integration.** A site takes the package as it takes Fumadocs' own integrations, with a few lines in the
+  files it has. `fumadocs-fortran/mdx`'s `withFortran()` gives a docs collection's MDX options the Fortran grammars in
+  Fumadocs' code blocks and the components' text, rather than their tags, in the search records, and on request maths
+  (remark-math and rehype-katex, KaTeX before the code blocks, with `katexMacros`) and graphs (`remarkMdxMermaid`);
+  `fortranPageSchema()` keeps the generated pages' `fortran` front matter on any Standard Schema, such as Fumadocs'
+  `pageSchema`. `fumadocs-fortran/source`'s `fortranPlugin()`, a loader plugin, gives the generated pages' tables of
+  contents the letters of their entries' kinds, and their sidebar entries the letters of their own, with no change to
+  the page template. `fumadocs-fortran/mermaid` draws ` ```mermaid ` blocks with Pele, at build time, in Fumadocs'
+  colours, with a second layout for phones on request, and `createFortranComponents({ href })` passes the components'
+  links to the site's pages through a function, such as one that adds the base path a site is served under.
+  `fumadocs-core` and `pele` are optional peer dependencies, as React is.
+- **Documentation.** [The documentation site](https://nevensky.github.io/fumadocs-fortran/) has Get started, which
+  adds the reference to a Fumadocs site, and Start a new site, which makes one from Fumadocs' static template, both
+  of which a workflow runs as a reader would before every deploy; guides to maths and graphs, generating the
+  reference, moving from FORD or Doxygen, publishing on GitHub Pages and large references; the references, How it
+  works, and the Showcase, generated from `examples/modern`. Keeping the components' tags out of the search index, as
+  `withFortran` does, made the site's index 24% smaller (18% gzipped) on 22 November 2026, and that of stdlib's pages
+  73% smaller (64% gzipped). The guides also say when to turn off the sidebar's prefetch for large references. They
+  name the static search route `search.json`, as the site's own route is (`app/api/search.json/route.ts`), so that a
+  server that compresses by type, such as nginx or `serve`, sends the index compressed, as GitHub Pages does under
+  either name: on 22 November 2026, with nginx and a phone on slow 4G, the site's first result came 3.7 s after the
+  first key, and 13.1 s with the index uncompressed. Large references gives the page template the table of contents'
+  column from the first paint, with a hidden element of the table of contents' class, as the site's docs pages have
+  it: without it, a long page moved on a desktop screen when its table of contents arrived, a layout shift of up to
+  0.44.
   The site's build checks the pages against the code first: Command line against the command's help, messages,
   diagnostics and exit codes, JavaScript API against the entry points' exports and types, the examples of Doc
   comments against what `generate()` writes for them, and Components against the components' props and the
