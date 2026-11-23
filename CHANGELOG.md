@@ -236,3 +236,6 @@ registry behind their library cards and graph colours; and Shiki grammars for Fo
 - **Tests.** `npm test` gives each run a scratch folder of its own under `test/out`, removed when every check passes
   and kept, with its path printed, when one fails or the run stops with an error, so that runs side by side do not
   disturb each other.
+- **Releases** go to npm from a tag: pushing a tag such as `v0.1.0` runs `.github/workflows/release.yml`, which tests
+  the tagged commit and stages its version by trusted publishing, with no npm token, and npm publishes the version
+  once a maintainer approves it with two-factor authentication. Contributing gives the routine.

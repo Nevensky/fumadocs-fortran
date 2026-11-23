@@ -228,21 +228,63 @@ A change to the code updates its page in the same pull request.
 
 ## Make a release
 
-A release is a commit on `main` that CI and docs.yml have passed, and a tag on it.
+A release is a commit on `main` that CI and docs.yml have passed, and a tag on it: `v` and the version, such as
+`v0.1.0`. Pushing the tag runs
+[release.yml](https://github.com/Nevensky/fumadocs-fortran/blob/main/.github/workflows/release.yml), which tests the
+tagged commit and stages its version on npm, and npm makes the version public only when a maintainer approves it on
+npmjs.com, with two-factor authentication (2FA). The workflow needs no npm token: npm trusts it as the package's
+[trusted publisher](https://docs.npmjs.com/trusted-publishers/), over OpenID Connect, and generates provenance when
+the workflow stages the version, which ties it to the repository, the commit and the run.
+
+### Set up the trusted publisher
+
+Once, on npmjs.com, a maintainer of the package adds the workflow as its trusted publisher: in the package's Settings,
+under Trusted Publisher, they choose GitHub Actions and fill in:
+
+- Organization or user: `Nevensky`
+- Repository: `fumadocs-fortran`
+- Workflow filename: `release.yml`
+- Environment name: `npm`
+- Allowed actions: `npm stage publish` alone, which is always allowed, with `npm publish` and `npm dist-tag` off, so
+  that no version is published without a maintainer's approval.
+
+The fields are case-sensitive, and npm checks them only when the workflow stages a version. A trusted publisher that
+has not published within 2 days of being added expires, and a maintainer then deletes it and adds it again. So add it
+on the day of the first release, before pushing its tag, and approve that release within the same 2 days, as npm's
+documentation does not say whether a stage counts as that first publish.
+
+npm trusts any run of release.yml that uses the environment `npm`, whatever its branch or tag, so the environment is
+kept to the release tags. The repository's owner creates it on GitHub before the first release: in the repository's
+Settings, under Environments, they click New environment, name it `npm` and click Configure environment. In its
+Deployment branches dropdown they choose Selected branches and tags, then, with Add deployment branch or tag rule, add
+one rule, of Ref type Tag and name pattern `v*`. A run from a branch then cannot use the environment, and so cannot
+stage. A tag ruleset can also keep others with write access from pushing a release tag: in the repository's Settings,
+under Rules, Rulesets, a tag ruleset (New ruleset, New tag ruleset) that targets `v*`, with Restrict creations,
+Repository admin in its bypass list and the enforcement status Active.
+
+Once a release has gone through the workflow, npm advises one more setting: under Publishing access in the package's
+Settings, "Require two-factor authentication and disallow tokens", saved with Update Package Settings, which stops
+npm tokens from publishing and leaves the trusted publisher working.
+
+### Release a version
 
 1. In `CHANGELOG.md`, read the section `## 0.1.0 (unreleased)` against the code, and give it the date of the release
    in place of `unreleased`: `## 0.1.0 (YYYY-MM-DD)`. Changes after the release go into a section above it, headed
    `## Unreleased` until the next release names it.
 2. Set the version in `package.json` (`"version": "0.1.0"`), and add it and the date to `CITATION.cff`:
-   `version: 0.1.0` and `date-released: "YYYY-MM-DD"`.
+   `version: 0.1.0` and `date-released: "YYYY-MM-DD"`. Give the version, too, where a page quotes what
+   `npx fumadocs-fortran --version` prints: on Get started, which the Get started test checks against the command's
+   output, and in the `--version` entry of Command line.
 3. Reword the status sentence for the release: `statusSentence` in `docs/lib/shared.ts`, which the home page and the
    footer show, and its copies in Get started's Pre-release callout, the Introduction and the README. check-docs
    fails when a callout lacks the constant's, and check-readme when the README lacks Get started's or the
-   constant's.
-4. If the package goes to npm, change the install line to `npm install fumadocs-fortran`, in the README and on Get
-   started at once: check-readme fails when they differ, and the Get started test, which replaces the line with the
-   packed commit, has to find it. With the GitHub install, the line can name the tag instead
-   (`npm install github:Nevensky/fumadocs-fortran#v0.1.0 --allow-git=root`).
+   constant's. At the first release, reword the Introduction callout's other sentence as well, which says that the
+   site describes the main branch until a release is tagged; no check reads it.
+4. Keep the install line, in the README and on Get started, as the GitHub install
+   (`npm install github:Nevensky/fumadocs-fortran --allow-git=root`): the Get started test replaces that line, and
+   no other, with the packed commit, and a line that names the tag fails at step 6, before the tag exists. Moving the
+   pages to `npm install fumadocs-fortran` is a change of its own, once the version is on npm: it also changes the
+   Get started test, docs.yml's weekly GitHub-install legs and the pages that describe the GitHub install.
 5. Generate the Showcase and the examples of Doc comments again (`scripts/dev.sh npm run --prefix docs gen`), and
    commit what changed.
 6. Run every check: CI passes on the release commit, and docs.yml passes when run by hand from the Actions tab, once
@@ -257,8 +299,39 @@ A release is a commit on `main` that CI and docs.yml have passed, and a tag on i
    git push origin v0.1.0
    ```
 
-8. On GitHub, make a release from the tag, with the CHANGELOG section as its notes. If the package goes to npm,
-   `npm publish` runs the tests and the registry checks first (`prepublishOnly`).
+8. The push runs release.yml, which the Actions tab lists as Release. Its first job checks that the tag is `v` and
+   the version in `package.json`, that `CHANGELOG.md` has a section for that version with its date, and that
+   `CITATION.cff` gives the same version and date. Its test jobs then run `npm test` and `npm run test:registry` as
+   CI's test job does, on the same Node.js versions. The publish job runs only when they have all passed: in the
+   environment `npm`, it stages the version with `npm stage publish`, under the dist-tag `latest`, or `next` for a
+   pre-release such as `0.2.0-rc.1`. It skips `prepublishOnly`, whose checks the test jobs have run. A release below
+   the highest one on npm, such as a fix 0.1.1 after 0.2.0, needs a dist-tag of its own, which the workflow does not
+   give: npm refuses to stage it, and the publish job fails with nothing staged.
+9. On npmjs.com, open the Staged Packages tab of your account settings, review the staged version (its dist-tag, its
+   publisher and its files) and approve it, with 2FA. npm then publishes it. Check that the version's page on
+   npmjs.com shows its provenance: npm's pages on staged publishing do not say that approval keeps it.
+10. On GitHub, make a release from the tag, with the CHANGELOG section as its notes.
+
+### When a job fails
+
+When a job fails and the Staged Packages tab does not list the version, nothing was staged: fix the cause on `main`,
+and delete the tag, on GitHub and on your machine:
+
+```bash
+git push origin --delete v0.1.0
+```
+
+```bash
+git tag -d v0.1.0
+```
+
+Then, once CI and docs.yml have passed on the fixed commit (step 6), tag it and push the tag (step 7). A job that
+failed for a cause outside the commit, such as a field of the trusted publisher, the environment's rule or a registry
+outage, runs again with Re-run failed jobs on the run's page, once the cause is fixed, without tagging again. A staged
+version that should not be published is rejected, with 2FA: in the Staged Packages tab, or with `npm stage reject` and
+its stage id, which `npm stage list fumadocs-fortran` and the run's log give. Its version can then be staged again:
+from the same commit, with Re-run all jobs on the run's page, or from a fixed one, tagged again as above. A published
+version can never be published again, even after `npm unpublish`: its fix goes into the next version.
 
 ## Glossary
 

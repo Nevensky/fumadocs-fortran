@@ -1,0 +1,148 @@
+# A release on npm. Pushing a tag v<version>, such as v0.1.0, runs it: the version job checks that the tag,
+# package.json, CHANGELOG.md and CITATION.cff give the same version; the test jobs run the suite and the registry
+# checks on the tagged commit, with each Node.js version of ci.yml's test job; the publish job then stages that version
+# on npm, where it is not public until a maintainer approves it.
+#
+# Set up once, on npmjs.com, by a maintainer of the package: Settings → Trusted Publisher → GitHub Actions, with
+#   Organization or user: Nevensky
+#   Repository: fumadocs-fortran
+#   Workflow filename: release.yml
+#   Environment name: npm
+#   Allowed actions: npm stage publish alone, which is always allowed (npm publish and npm dist-tag left off)
+# The fields are case-sensitive, and npm checks them only when a run stages a version. npm then trusts this workflow
+# over OpenID Connect, so the workflow needs no npm token, and generates provenance when the workflow stages the
+# version, which ties the package to this repository, commit and run. A trusted publisher that has not published
+# within 2 days of being added expires, and a maintainer then deletes it and adds it again: add it on the day of the
+# first release.
+#
+# Set up once, on GitHub, by the repository's owner, before the first release: Settings → Environments → New
+# environment, npm, with Deployment branches set to Selected branches and tags, and one rule, of Ref type Tag, v*.
+# npm trusts any run of release.yml that uses the environment npm, whatever its branch or tag: the rule keeps those
+# runs to the release tags.
+#
+# After a run: the version waits in the Staged Packages tab of the account settings on npmjs.com, where a maintainer
+# reviews it and approves it with 2FA, and npm publishes it. docs/CONTRIBUTING.md (Make a release) has the whole
+# routine, and what to do when a job fails.
+name: Release
+
+on:
+  push:
+    tags:
+      # v and a version: v0.1.0, or a pre-release such as v0.2.0-rc.1
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Check the version
+    # not for a push that deletes a tag, which GitHub delivers as a push too; the jobs after this one need it, so they
+    # are skipped with it
+    if: ${{ !github.event.deleted }}
+    runs-on: ubuntu-latest
+    steps:
+      # the commit the tag names
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # the release routine's versions: the tag is v and package.json's version, CHANGELOG.md has a section for it with
+      # its date (## 0.1.0 (YYYY-MM-DD)), a day of the calendar, and CITATION.cff gives the same version and date
+      - name: Check the tag against package.json, CHANGELOG.md and CITATION.cff
+        run: |
+          node --input-type=module <<'EOF'
+          import fs from 'node:fs';
+          const tag = process.env.GITHUB_REF_NAME;
+          const { version } = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const sections = fs.readFileSync('CHANGELOG.md', 'utf8').matchAll(/^## (\S+) \((\d{4}-\d{2}-\d{2})\)$/gm);
+          const date = [...sections].find((m) => m[1] === version)?.[2];
+          // Date reads 2026-02-30 as 2 March, and month 13 as no date at all
+          const time = Date.parse(`${date}T00:00:00Z`);
+          const day = !Number.isNaN(time) && new Date(time).toISOString().slice(0, 10) === date;
+          const cff = fs.readFileSync('CITATION.cff', 'utf8');
+          const field = (key) => new RegExp(`^${key}:\\s*["']?([^"'\\s]+)["']?\\s*$`, 'm').exec(cff)?.[1];
+          const problems = [];
+          if (tag !== `v${version}`) problems.push(`the tag is ${tag}, and package.json's version ${version}`);
+          if (!date) problems.push(`CHANGELOG.md has no section headed ## ${version} (YYYY-MM-DD)`);
+          else if (!day) problems.push(`CHANGELOG.md dates ${version} ${date}, which is no day of the calendar`);
+          if (field('version') !== version) {
+            problems.push(`CITATION.cff gives version ${field('version') ?? '(none)'}, not ${version}`);
+          }
+          if (date && field('date-released') !== date) {
+            problems.push(`CITATION.cff gives date-released ${field('date-released') ?? '(none)'}, not ${date}`);
+          }
+          for (const problem of problems) console.log(`::error::${problem}`);
+          if (problems.length) process.exit(1);
+          console.log(`${tag}: package.json, CHANGELOG.md (${date}) and CITATION.cff agree`);
+          EOF
+
+  test:
+    name: Test the tagged commit (Node ${{ matrix.node }})
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # ci.yml's test matrix: from the oldest Node the package supports (engines) to 26
+        node: [18, 20, 22, 24, 26]
+    steps:
+      # the commit the tag names
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      # as ci.yml's test job: the package has no dependencies; React and MDX are installed only so that the rendering
+      # and MDX checks run
+      - run: npm install --no-save --no-package-lock react@19 react-dom@19 @mdx-js/mdx@3
+      - run: npm test
+      # the committed HPC registry: counts, size, known entries, links, sources and notices (no network)
+      - run: npm run test:registry
+
+  publish:
+    name: Stage on npm
+    # every test job, and through them the version job
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # GitHub's OIDC token, which npm exchanges for a short-lived token in place of an npm token, and which Sigstore
+      # needs to sign the provenance
+      id-token: write
+    # the environment the trusted publisher names on npmjs.com
+    environment: npm
+    steps:
+      # the same commit as the test jobs
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # the public registry, with no cache, as npm's own example of trusted publishing sets up a release
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      # trusted publishing needs npm 11.5.1 or later, and npm stage publish 11.15.0 or later; when the npm that Node.js
+      # bundles is older, the job installs npm 11.15.0 or a later 11
+      - name: Use npm 11.15.0 or later
+        run: |
+          if [ "$(printf '%s\n' 11.15.0 "$(npm --version)" | sort -V | head -n 1)" != 11.15.0 ]; then
+            npm install --global npm@^11.15.0
+          fi
+          npm --version
+      # npm stage publish runs prepublishOnly, as npm publish does: the suite and the registry checks, which the test
+      # jobs have run on this commit with React and MDX installed. Here, without them, they would check less, in the
+      # only job that can request the OIDC token, so --ignore-scripts skips them; the package has no other lifecycle
+      # script (no prepack or prepare). A pre-release takes the dist-tag next, as npm stages one only with an explicit
+      # --tag, and a release takes latest. A release below the highest one on npm, such as 0.1.1 after 0.2.0, needs a
+      # dist-tag of its own, which this step does not give: npm refuses to stage it, and nothing is staged.
+      - name: Stage the version on npm
+        run: |
+          case "$GITHUB_REF_NAME" in
+            *-*) npm stage publish --ignore-scripts --tag next ;;
+            *) npm stage publish --ignore-scripts ;;
+          esac
+          echo "::notice::$GITHUB_REF_NAME is staged on npm: approve it with 2FA in npmjs.com's Staged Packages tab"
