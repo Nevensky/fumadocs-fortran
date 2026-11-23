@@ -110,7 +110,7 @@ export const githubUrl = `https://github.com/${gitConfig.user}/${gitConfig.repo}
 // who makes the package: shown under every page and in the site's metadata
 export const author = {
   name: 'Neven Golenić',
-  displayName: 'Dr. Neven Golenić',
+  displayName: 'Neven Golenić',
   url: 'https://github.com/Nevensky',
 };
 export const copyrightYear = 2026;

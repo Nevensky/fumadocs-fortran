@@ -14,6 +14,9 @@ import {
 const link = 'underline underline-offset-4 transition-colors hover:text-fd-foreground';
 const dot = <span aria-hidden="true"> · </span>;
 
+// the framework the package extends and this site is built with
+const fumadocsUrl = 'https://www.fumadocs.dev/';
+
 // what GitHub Pages does with its visitors' addresses, in its own words
 const pagesDataUrl =
   'https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages#data-collection';
@@ -62,6 +65,13 @@ export function SiteFooter({ className }: { className?: string }) {
     <footer className={cn('border-t px-4 py-8 text-sm text-fd-muted-foreground', className)}>
       <div className="mx-auto flex max-w-3xl flex-col items-center gap-2 text-center">
         <Credits />
+        <p>
+          Built with{' '}
+          <a href={fumadocsUrl} className={link}>
+            Fumadocs
+          </a>
+          , the documentation framework by Fuma Nama that fumadocs-fortran extends.
+        </p>
         <p>{statusSentence}</p>
         <p>
           This site sets no cookies, runs no analytics and loads nothing from other sites; search runs in your browser.

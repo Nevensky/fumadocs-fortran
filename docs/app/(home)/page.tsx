@@ -156,7 +156,11 @@ export default async function HomePage() {
         <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Fortran API reference for Fumadocs</h1>
         <p className="mx-auto mt-5 max-w-2xl text-lg text-fd-muted-foreground">
           fumadocs-fortran reads your Fortran and the doc comments it already has, and writes the API reference as MDX
-          pages that build with the rest of your site.
+          pages that build with the rest of your{' '}
+          <a href="https://www.fumadocs.dev/" className="underline underline-offset-4 hover:text-fd-foreground">
+            Fumadocs
+          </a>{' '}
+          site.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Link href="/docs/get-started" className={primary}>

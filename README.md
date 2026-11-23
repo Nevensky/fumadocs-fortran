@@ -76,6 +76,12 @@ and `fumadocs-fortran/source` (`fortranPlugin`) in its content source, `fumadocs
 `fumadocs-fortran/mermaid` among its MDX components, and `fumadocs-fortran/style.css` in its global CSS.
 [JavaScript API](https://nevensky.github.io/fumadocs-fortran/docs/reference/javascript/) has each of them.
 
+## Acknowledgements
+
+fumadocs-fortran is built on [Fumadocs](https://www.fumadocs.dev/), the documentation framework by
+[Fuma Nama](https://github.com/fuma-nama), which is MIT-licensed too: the pages it writes are Fumadocs pages, and its
+documentation site is a Fumadocs site.
+
 ## Licence
 
 MIT ([LICENSE](https://github.com/Nevensky/fumadocs-fortran/blob/main/LICENSE)). The package also ships material from
